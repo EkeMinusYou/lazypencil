@@ -304,6 +304,15 @@ Imports stage immutable files in memory. The complete batch and captured source 
 
 A copy may read a library that already imports the consumer without adding a reverse edge to the saved import graph. A link that would create that cycle is rejected. A late conflict or interrupted save may leave complete unreferenced immutable files; it never publishes a partial document or deletes a file that another operation may use. Use the explicit [project asset maintenance](#project-asset-maintenance) review to collect eligible unreferenced files. Replaying a committed request returns its recorded IDs and URIs before attempting to reopen the original library.
 
+## Checkpoints and retention
+
+Checkpoint listings use byte-bounded pages and return `next_before_sequence` even
+when a large result makes the page shorter than its requested entry limit. Follow
+the cursor instead of inferring completion from the entry count. See
+[checkpoints and retention](checkpoints.md) for explicit local history pruning,
+expired-request reservations and interrupted-cleanup recovery. Pruning is not an
+MCP tool.
+
 ## Managed assets
 
 Create code with `{"kind":"script","source":{"text":"return [];"}}`. Images use `{"kind":"image","source":{"mime_type":"image/png","data":"BASE64_DATA"}}`; static PNG, JPEG, and WebP input is normalized to PNG, including orientation. Animated input, false MIME types, and oversized images are rejected. Code is limited to 1 MiB, source and normalized images to 20 MiB each, and decoded images to 16 megapixels. MCP's 4 MiB argument limit also applies to encoded data.

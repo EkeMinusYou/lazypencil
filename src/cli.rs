@@ -135,6 +135,15 @@ pub enum Command {
         limit: usize,
         #[arg(long)]
         before_sequence: Option<u64>,
+        /// Review removal of older checkpoints; commit only with the returned revision.
+        #[arg(long, conflicts_with = "before_sequence")]
+        prune: bool,
+        /// Number of newest committed checkpoints to retain during pruning.
+        #[arg(long, requires = "prune", required_if_eq("prune", "true"))]
+        keep: Option<usize>,
+        /// Commit the exact retention plan returned by history --prune.
+        #[arg(long, requires = "prune")]
+        expected_revision: Option<String>,
     },
     /// Browse saved local conversations without starting or authenticating an agent.
     Conversations {
@@ -1009,26 +1018,35 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             file,
             limit,
             before_sequence,
+            prune,
+            keep,
+            expected_revision,
         } => {
+            let store = open(file)?;
+            if *prune {
+                return store.prune_history(
+                    &store::PruneRequest {
+                        keep: keep.ok_or_else(|| {
+                            Error::new("INVALID_ARGUMENT", "history --prune requires --keep")
+                        })?,
+                        expected_revision: expected_revision.as_deref(),
+                    },
+                    Some(&crate::cancel::token()),
+                );
+            }
             if !(1..=1000).contains(limit) {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
                     "History limit must be 1..1000",
                 ));
             }
-            let store = open(file)?;
-            let entries = store.history_with_cancellation(
+            let page = store.history_page_with_cancellation(
                 *limit,
                 *before_sequence,
                 Some(&crate::cancel::token()),
             )?;
-            let next = if entries.len() == *limit {
-                entries.last().map(|e| e.sequence)
-            } else {
-                None
-            };
             Ok(
-                json!({"revision":store.read()?.revision(),"entries":entries,"next_before_sequence":next}),
+                json!({"revision":store.read()?.revision(),"entries":page.entries,"next_before_sequence":page.next_before_sequence}),
             )
         }
         Command::Restore {
@@ -1096,7 +1114,9 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         }
         Command::Recover { file } => {
             let store = open(file)?;
-            Ok(json!({"recovered":store.recover()?,"revision":store.read()?.revision()}))
+            Ok(
+                json!({"recovered":store.recover_with_cancellation(Some(&crate::cancel::token()))?,"revision":store.read()?.revision()}),
+            )
         }
         Command::Doctor(options) => {
             crate::doctor::run(options, arguments.data_dir.clone(), arguments.json)

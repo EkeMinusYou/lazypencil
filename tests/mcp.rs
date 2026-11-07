@@ -1808,6 +1808,45 @@ fn mcp_document_versions_create_edit_validate_and_restore_without_migration() {
 }
 
 #[test]
+fn history_byte_pages_keep_continuation_when_large_results_fill_the_response() {
+    let (_temp, file, data) = fixture();
+    let store = Store::open(&file, Some(data.clone())).unwrap();
+    for index in 0..3 {
+        store
+            .transact(
+                &format!("large-{index}"),
+                &store.read().unwrap().revision(),
+                "large",
+                |document| {
+                    Ok((
+                        document.clone(),
+                        json!({"payload":"x".repeat(2 * 1024 * 1024)}),
+                    ))
+                },
+            )
+            .unwrap();
+    }
+    let mut client = Client::start(&file, &data);
+    let mut before = Value::Null;
+    let mut sequences = Vec::new();
+    loop {
+        let page = client.data(
+            "get_history",
+            json!({"limit":1000,"before_sequence":before}),
+        );
+        let entries = page["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        sequences.push(entries[0]["sequence"].as_u64().unwrap());
+        before = page["next_before_sequence"].clone();
+        if before.is_null() {
+            break;
+        }
+    }
+    assert_eq!(sequences, [3, 2, 1]);
+    client.finish();
+}
+
+#[test]
 fn shared_reference_expansion_limits_leave_the_mcp_worker_available() {
     let (temporary, file, data) = fixture();
     let mut nodes = vec![

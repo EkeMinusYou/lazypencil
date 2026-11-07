@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Bound shared component cycle checks and honor cancellation without recursive stack growth.
+- Escape control characters in human-readable errors while preserving structured messages.
+- Keep large diagnostic collections out of small layout and PNG responses; expose totals and bounded excerpts alongside paginated validation.
+- Prevent project settings from relaxing a user offline policy, including image acquisition during inspection.
+- Index checkpoint history for direct replay and bounded pages, share consecutive immutable snapshots, and add reviewed `history --prune --keep` retention with durable expired-request reservations and resumable cleanup.
+- Use personal Cargo configuration or `CARGO_TARGET_DIR` for machine-specific build caches.
+
 ## 0.2.1
 
 - Read and edit `.pen` 2.22 documents, use 2.22 for new documents, and accept `@schema 2.22` scripts. Preserve existing 2.19/2.21 document and user-library versions, including mixed-version imports and checkpoint restoration.

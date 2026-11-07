@@ -68,17 +68,17 @@ impl Task {
             }
             let revision = project.root_document().revision();
             let dependency_revision = project.dependency_revision();
-            let mut entries = store.history_with_cancellation(
-                PAGE_SIZE + 1,
+            let page = store.history_page_with_cancellation(
+                PAGE_SIZE,
                 cursors.last().copied().flatten(),
                 Some(cancel),
             )?;
             crate::store::require_revision(&store.read()?, &revision)?;
             project.verify_unchanged()?;
             crate::cancel::check(Some(cancel))?;
-            let next_before = (entries.len() > PAGE_SIZE).then(|| entries[PAGE_SIZE - 1].sequence);
-            entries.truncate(PAGE_SIZE);
-            let entries = entries
+            let next_before = page.next_before_sequence;
+            let entries = page
+                .entries
                 .into_iter()
                 .map(|entry| Checkpoint {
                     id: entry.id,

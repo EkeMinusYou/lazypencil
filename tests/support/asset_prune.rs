@@ -95,7 +95,7 @@ impl Fixture {
         value
     }
     fn checkpoint(&self, owner: &Path, before: Value, state: &str, legacy: bool) {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = format!("{:020}-{}", 1, uuid::Uuid::new_v4().simple());
         let namespace = lazypencil::document::hash(owner.as_os_str().as_encoded_bytes());
         let path = self
             .data()
@@ -159,6 +159,62 @@ fn review_and_apply_keep_sibling_disabled_theme_and_unknown_metadata_references(
     assert!(inactive_path.exists() && disabled_path.exists() && sibling_path.exists());
     assert_eq!(fs::read(&fixture.file).unwrap(), before);
     assert!(candidates(&fixture.command(None)).is_empty());
+}
+
+#[test]
+fn real_checkpoint_retention_protects_assets_until_the_referencing_history_is_pruned() {
+    let fixture = Fixture::new();
+    let (uri, asset) = fixture.asset(b"previously referenced", "glsl");
+    {
+        let store = Store::open(&fixture.file, Some(fixture.data())).unwrap();
+        for (index, metadata) in [json!({"previous_asset":uri}), json!({}), json!({})]
+            .into_iter()
+            .enumerate()
+        {
+            store
+                .transact(
+                    &format!("edit-{index}"),
+                    &store.read().unwrap().revision(),
+                    &format!("edit-{index}"),
+                    |document| {
+                        let mut after = document.clone();
+                        after.set_property("", "metadata", &metadata)?;
+                        Ok((after, json!({})))
+                    },
+                )
+                .unwrap();
+        }
+    }
+    let review = fixture.command(None);
+    assert!(review.get("error").is_none(), "{review}");
+    assert!(candidates(&review).is_empty(), "{review}");
+    {
+        let store = Store::open(&fixture.file, Some(fixture.data())).unwrap();
+        let review = store
+            .prune_history(
+                &lazypencil::store::PruneRequest {
+                    keep: 1,
+                    expected_revision: None,
+                },
+                None,
+            )
+            .unwrap();
+        let applied = store
+            .prune_history(
+                &lazypencil::store::PruneRequest {
+                    keep: 1,
+                    expected_revision: review["revision"].as_str(),
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(applied["cleanup_complete"], true);
+    }
+    let review = fixture.command(None);
+    assert_eq!(candidates(&review), vec![asset.clone()], "{review}");
+    let applied = fixture.command(review["revision"].as_str());
+    assert_eq!(applied["errors"], json!([]), "{applied}");
+    assert!(!asset.exists());
 }
 
 #[test]

@@ -446,7 +446,9 @@ A successful change restores the selected draft and images, closes the previous 
 
 ## Checkpoint restoration
 
-Choose **Checkpoints · Browse and restore checkpoints…** in the command palette, or use `/checkpoints` (`/history` remains an alias). The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads 50 entries per page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
+Explicit local retention and cleanup are described in [checkpoints and retention](checkpoints.md).
+
+Choose **Checkpoints · Browse and restore checkpoints…** in the command palette, or use `/checkpoints` (`/history` remains an alias). The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads up to 50 entries per byte-bounded page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
 
 Select an entry with arrows and press Enter to review its ID and current/target revisions. The review does not change the document. Esc returns to the list; a second Enter requests restoration. The shared CLI/MCP service validates the checkpoint and both captured revision preconditions, then restores it as a new history entry. The submitted draft, pending images, and source files are preserved. Referenced assets use their current contents; restoration does not roll back external asset edits.
 

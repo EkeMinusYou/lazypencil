@@ -602,17 +602,12 @@ impl DocumentWorker {
                         "History limit must be 1..1000",
                     ));
                 }
-                let entries = self.store.history_with_cancellation(
+                let page = self.store.history_page_with_cancellation(
                     args.limit,
                     args.before_sequence,
                     Some(cancel),
                 )?;
-                let next = if entries.len() == args.limit {
-                    entries.last().map(|e| e.sequence)
-                } else {
-                    None
-                };
-                json!({"revision":self.store.read()?.revision(),"entries":entries,"next_before_sequence":next})
+                json!({"revision":self.store.read()?.revision(),"entries":page.entries,"next_before_sequence":page.next_before_sequence})
             }
             ToolKind::RestoreCheckpoint => {
                 let args: Restore = parse(arguments)?;

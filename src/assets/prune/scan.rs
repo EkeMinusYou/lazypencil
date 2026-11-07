@@ -346,7 +346,8 @@ impl Scan {
                     Error::new("RECOVERY_REQUIRED", "Cannot verify checkpoint metadata")
                 })?;
                 if entry.id != checkpoint.file_name().unwrap().to_string_lossy()
-                    || uuid::Uuid::parse_str(&entry.id).is_err()
+                    || (!crate::store::valid_checkpoint_id(&entry.id)
+                        && uuid::Uuid::parse_str(&entry.id).is_err())
                 {
                     return Err(Error::new(
                         "RECOVERY_REQUIRED",

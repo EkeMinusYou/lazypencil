@@ -61,6 +61,8 @@ A batch resolves references against captured inputs, validates the resulting doc
 and checks expected document/dependency revisions before publication. Immutable assets
 are staged before the document is replaced. A dry run publishes neither files nor
 history. Request IDs bind identical payloads to committed results for safe retries.
+Explicit [checkpoint retention](checkpoints.md) expires selected results while
+preserving request-ID reservations, so a pruned request cannot execute again.
 
 Cooperating readers and writers use stable per-user path locks, independent of the
 selected history directory. Save journals and before/after snapshots support recovery

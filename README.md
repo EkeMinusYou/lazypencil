@@ -243,6 +243,7 @@ See [runtime setup](docs/runtimes.md) before using these features.
 | Use the terminal workspace | [TUI](docs/tui.md), [image attachments](docs/image-attachments.md) |
 | Configure agents and preferences | [Agent setup](docs/agents.md), [configuration](docs/configuration.md), [shell completion](docs/completions.md) |
 | Automate document editing | [MCP and editing reference](docs/mcp.md) |
+| Browse, restore or prune editing history | [Checkpoints and retention](docs/checkpoints.md) |
 | Understand document rendering | [`.pen` semantics](docs/pen-semantics.md), [graphics](docs/graphics.md), [fonts](docs/fonts.md), [icons](docs/icons.md) |
 | Use scripts, browser nodes, or shaders | [Dynamic content](docs/dynamic-content.md), [runtimes](docs/runtimes.md) |
 | Build, test, or contribute | [Development](docs/development.md), [architecture](docs/design.md) |

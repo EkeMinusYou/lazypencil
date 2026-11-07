@@ -17,6 +17,8 @@ use tempfile::NamedTempFile;
 use uuid::Uuid;
 
 mod activity;
+mod history;
+pub use history::PruneRequest;
 pub(crate) mod content;
 pub use activity::AssetActivity;
 
@@ -43,6 +45,12 @@ pub struct HistoryEntry {
     /// Canonical owner of new checkpoints; absent in older retained history.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HistoryPage {
+    pub entries: Vec<HistoryEntry>,
+    pub next_before_sequence: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -198,32 +206,9 @@ impl Store {
     ) -> Result<Option<Value>> {
         validate_request_id(request_id)?;
         let _lock = self.lock_mode_cancellable(false, cancel)?;
-        self.recover_locked()?;
+        self.recover_locked(cancel)?;
         crate::cancel::check(cancel)?;
-        self.replay_locked(&self.entries_locked()?, request_id, fingerprint)
-    }
-
-    fn replay_locked(
-        &self,
-        entries: &[HistoryEntry],
-        request_id: &str,
-        fingerprint: &str,
-    ) -> Result<Option<Value>> {
-        if let Some(previous) = entries.iter().rev().find(|e| e.request_id == request_id) {
-            if previous.fingerprint != fingerprint {
-                return Err(Error::new(
-                    "REQUEST_ID_CONFLICT",
-                    "This request ID was used with different content",
-                ));
-            }
-            if previous.state == TransactionState::Committed {
-                let mut result = previous.result.clone();
-                result["replayed"] = json!(true);
-                result["current_revision"] = json!(self.read()?.revision());
-                return Ok(Some(result));
-            }
-        }
-        Ok(None)
+        history::Index::load(self, cancel)?.replay(self, request_id, fingerprint, cancel)
     }
 
     pub fn transact<F>(
@@ -277,10 +262,10 @@ impl Store {
         validate_request_id(request_id)?;
         crate::cancel::check(cancel)?;
         let _lock = self.lock_mode_cancellable(false, cancel)?;
-        self.recover_locked()?;
+        self.recover_locked(cancel)?;
         crate::cancel::check(cancel)?;
-        let entries = self.entries_locked()?;
-        if let Some(result) = self.replay_locked(&entries, request_id, fingerprint)? {
+        let index = history::Index::load(self, cancel)?;
+        if let Some(result) = index.replay(self, request_id, fingerprint, cancel)? {
             return Ok(result);
         }
         let before = self.read()?;
@@ -297,7 +282,7 @@ impl Store {
         let (after, mut result) = edit(&before)?;
         after.ensure_writable()?;
         crate::cancel::check(cancel)?;
-        let sequence = entries.last().map_or(1, |e| e.sequence + 1);
+        let sequence = index.next_sequence()?;
         let id = format!("{sequence:020}-{}", Uuid::new_v4().simple());
         let mut entry = HistoryEntry {
             id: id.clone(),
@@ -318,21 +303,24 @@ impl Store {
         entry.result = result.clone();
         let directory = self.history_directory().join(&id);
         create_private_directory(&directory)?;
-        write_new_synced(&directory.join("before.pen"), before.text().as_bytes())?;
+        index.write_before(self, &directory.join("before.pen"), &before, cancel)?;
         write_new_synced(&directory.join("after.pen"), after.text().as_bytes())?;
         self.write_entry(&directory, &entry)?;
         sync_directory(&directory)?;
         sync_directory(&self.history_directory())?;
+        index.prepare(self, &entry)?;
 
         let current = self.read()?;
         if current.revision() != entry.before_revision {
             entry.state = TransactionState::Aborted;
             self.write_entry(&directory, &entry)?;
+            history::Index::finish(self, &entry)?;
             return Err(conflict(&entry.before_revision, &current.revision()));
         }
         if let Err(error) = verify().and_then(|()| crate::cancel::check(cancel)) {
             entry.state = TransactionState::Aborted;
             self.write_entry(&directory, &entry)?;
+            history::Index::finish(self, &entry)?;
             return Err(error);
         }
         // Once replacement begins, finish the journal commit even if cancellation arrives.
@@ -346,10 +334,12 @@ impl Store {
             }
             entry.state = TransactionState::Aborted;
             self.write_entry(&directory, &entry)?;
+            history::Index::finish(self, &entry)?;
             return Err(error);
         }
         entry.state = TransactionState::Committed;
-        self.write_entry(&directory, &entry).map_err(|error| Error::new("RECOVERY_REQUIRED",
+        self.write_entry(&directory, &entry)
+            .and_then(|()| history::Index::finish(self, &entry)).map_err(|error| Error::new("RECOVERY_REQUIRED",
             "The document was saved, but its history commit needs recovery"
         ).details(json!({"checkpoint_id": id, "revision": entry.after_revision, "cause": error.to_string()})))?;
         Ok(result)
@@ -364,19 +354,31 @@ impl Store {
         before_sequence: Option<u64>,
         cancel: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Vec<HistoryEntry>> {
-        let _lock = self.lock_mode_cancellable(false, cancel)?;
-        self.recover_locked()?;
-        crate::cancel::check(cancel)?;
         Ok(self
-            .entries_locked()?
-            .into_iter()
-            .rev()
-            .filter(|e| {
-                e.state == TransactionState::Committed
-                    && before_sequence.is_none_or(|s| e.sequence < s)
-            })
-            .take(limit.min(1000))
-            .collect())
+            .history_page_with_cancellation(limit, before_sequence, cancel)?
+            .entries)
+    }
+
+    /// Pages may end at the shared response byte limit before the entry limit.
+    pub fn history_page_with_cancellation(
+        &self,
+        limit: usize,
+        before_sequence: Option<u64>,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<HistoryPage> {
+        let _lock = self.lock_mode_cancellable(false, cancel)?;
+        self.recover_locked(cancel)?;
+        crate::cancel::check(cancel)?;
+        history::Index::load(self, cancel)?.page(self, limit, before_sequence, cancel)
+    }
+
+    /// Review retention, or commit exactly the reviewed plan. Never called implicitly.
+    pub fn prune_history(
+        &self,
+        request: &PruneRequest<'_>,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Value> {
+        history::prune_history(self, request, cancel)
     }
 
     pub fn restore(
@@ -406,7 +408,7 @@ impl Store {
             return Err(Error::new("INVALID_ARGUMENT", "Invalid checkpoint ID"));
         }
         let directory = self.history_directory().join(checkpoint);
-        let entry = read_entry(&directory)?;
+        let entry = history::checkpoint(self, checkpoint, None)?;
         if entry.state != TransactionState::Committed {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -424,76 +426,26 @@ impl Store {
     }
 
     pub fn recover(&self) -> Result<Vec<String>> {
-        let _lock = self.lock()?;
-        self.recover_locked()
+        self.recover_with_cancellation(None)
     }
 
-    fn recover_locked(&self) -> Result<Vec<String>> {
-        let mut recovered = Vec::new();
-        for mut entry in self.entries_locked()? {
-            if entry.state != TransactionState::Prepared {
-                continue;
-            }
-            let directory = self.history_directory().join(&entry.id);
-            for (name, expected) in [
-                ("before.pen", &entry.before_revision),
-                ("after.pen", &entry.after_revision),
-            ] {
-                if hash(read_text(&directory.join(name))?.as_bytes()) != *expected {
-                    return Err(Error::new(
-                        "RECOVERY_REQUIRED",
-                        format!("Corrupt recovery content in {}", entry.id),
-                    ));
-                }
-            }
-            let current = self.read()?.revision();
-            entry.state = if current == entry.after_revision {
-                TransactionState::Committed
-            } else if current == entry.before_revision {
-                TransactionState::Aborted
-            } else {
-                return Err(Error::new("RECOVERY_REQUIRED", "The document differs from both recovery snapshots; automatic recovery would overwrite external changes")
-                        .details(json!({"checkpoint_id": entry.id, "current_revision": current})));
-            };
-            self.write_entry(&directory, &entry)?;
-            recovered.push(entry.id);
-        }
-        Ok(recovered)
+    pub fn recover_with_cancellation(
+        &self,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Vec<String>> {
+        let _lock = self.lock_mode_cancellable(false, cancel)?;
+        self.recover_locked(cancel)
+    }
+
+    fn recover_locked(
+        &self,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<Vec<String>> {
+        history::recover(self, cancel)
     }
 
     fn history_directory(&self) -> PathBuf {
         self.document_data_dir().join("history")
-    }
-
-    fn entries_locked(&self) -> Result<Vec<HistoryEntry>> {
-        let directory = self.history_directory();
-        if !directory.exists() {
-            return Ok(Vec::new());
-        }
-        let mut entries = Vec::new();
-        for child in fs::read_dir(&directory).map_err(|e| Error::io(&directory, e))? {
-            let child = child.map_err(|e| Error::io(&directory, e))?;
-            let path = child.path();
-            if !path.is_dir() || !path.join("metadata.json").exists() {
-                continue;
-            }
-            let entry = read_entry(&path)?;
-            if path.file_name().and_then(|s| s.to_str()) != Some(&entry.id)
-                || !valid_checkpoint_id(&entry.id)
-                || entry
-                    .document_path
-                    .as_ref()
-                    .is_some_and(|owner| owner != &self.path)
-            {
-                return Err(Error::new(
-                    "RECOVERY_REQUIRED",
-                    "History identity does not match its document or directory",
-                ));
-            }
-            entries.push(entry);
-        }
-        entries.sort_by_key(|e| e.sequence);
-        Ok(entries)
     }
 
     fn write_entry(&self, directory: &Path, entry: &HistoryEntry) -> Result<()> {
@@ -825,16 +777,6 @@ pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_entry(directory: &Path) -> Result<HistoryEntry> {
-    let path = directory.join("metadata.json");
-    serde_json::from_str(&read_text(&path)?).map_err(|e| {
-        Error::new(
-            "RECOVERY_REQUIRED",
-            format!("Cannot read history metadata {}: {e}", path.display()),
-        )
-    })
-}
-
 fn timestamp() -> Result<String> {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
@@ -852,7 +794,7 @@ fn validate_request_id(id: &str) -> Result<()> {
     }
 }
 
-fn valid_checkpoint_id(id: &str) -> bool {
+pub(crate) fn valid_checkpoint_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     bytes.len() == 53
         && bytes[20] == b'-'

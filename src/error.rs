@@ -100,7 +100,7 @@ impl Error {
     pub fn exit_code(&self) -> u8 {
         match self.code {
             "INVALID_ARGUMENT" => 2,
-            "REVISION_CONFLICT" | "REQUEST_ID_CONFLICT" => 3,
+            "REVISION_CONFLICT" | "REQUEST_ID_CONFLICT" | "REQUEST_EXPIRED" => 3,
             "INVALID_DOCUMENT"
             | "UNSUPPORTED_VERSION"
             | "INVALID_OPERATION"

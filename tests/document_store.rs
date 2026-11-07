@@ -10,6 +10,9 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[path = "support/history_retention.rs"]
+mod history_retention;
+
 fn fixture() -> String {
     "{\r\n  // 日本語のコメント\r\n  \"version\": \"2.21\",\r\n  \"future\": {\"number\": 1.000e+3},\r\n  \"children\": [\r\n    {\"id\": \"a\", \"type\": \"rectangle\", \"width\": 100, \"unknown\": 42},\r\n    // untouched\r\n    {\"id\": \"b\", \"type\": \"future_shape\", \"magic\": [1, 2, 3]},\r\n  ]\r\n}\r\n".into()
 }
