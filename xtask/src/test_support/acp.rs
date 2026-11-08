@@ -473,7 +473,7 @@ impl<'a> Peer<'a> {
                 self.response(&message, json!({"outcome":if mode == "steering-idle" {"promptRequired"} else if mode == "steering-unowned" {"startedNewTurn"} else {"injected"}}))?;
             }
             "session/set_mode" => {
-                append_json("received-mode-changes.jsonl",params)?;
+                append_json("received-mode-changes.jsonl", params)?;
                 self.selection = params["modeId"]
                     .as_str()
                     .ok_or("Missing selected mode")?
@@ -485,19 +485,19 @@ impl<'a> Peer<'a> {
                     append_json("received-settings.jsonl", params)?;
                 }
                 match params["configId"].as_str() {
-                    Some("mode"|"permissions") => {
-                        append_json("received-mode-changes.jsonl",params)?;
-                        if mode=="settings-permissions-timeout" {
+                    Some("mode" | "permissions") => {
+                        append_json("received-mode-changes.jsonl", params)?;
+                        if mode == "settings-permissions-timeout" {
                             return Ok(());
                         }
-                        if mode=="settings-permissions-reject" {
+                        if mode == "settings-permissions-reject" {
                             self.send(json!({"id":message["id"],"error":{"code":-32603,"message":"PRIVATE_MODE_FAILURE"}}))?;
                             return Ok(());
                         }
-                        if mode!="settings-permissions-unconfirmed" {
-                            self.selection=params["value"].as_str().ok_or("Missing mode")?.into();
+                        if mode != "settings-permissions-unconfirmed" {
+                            self.selection = params["value"].as_str().ok_or("Missing mode")?.into();
                         }
-                    },
+                    }
                     Some("model") => {
                         self.model = params["value"]
                             .as_str()
