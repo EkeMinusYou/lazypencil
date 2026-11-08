@@ -369,7 +369,7 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
         for value in [
             "Codex",
             "gpt-6.1-sol",
-            "Fast",
+            "fast",
             "fixture@example.test",
             &app.conversation.id()[..8],
             "subscription",

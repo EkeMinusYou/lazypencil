@@ -137,7 +137,7 @@ impl App {
         if self.agent.fast() {
             spans.extend([
                 Span::raw(" "),
-                Span::styled("Fast", Style::default().fg(theme::colors().success)),
+                Span::styled("fast", Style::default().fg(theme::colors().success)),
             ]);
         }
         spans.extend([

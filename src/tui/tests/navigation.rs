@@ -313,7 +313,7 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "settings-fast");
     assert!(app.header_line().to_string().contains(" · connecting · "));
-    assert!(!app.header_line().to_string().contains("Fast"));
+    assert!(!app.header_line().to_string().contains("fast"));
     app.message(&json!({"type":"ready","response":{"configOptions":[
         {"id":"engine","category":"model","currentValue":"fixture-model"},
         {"id":"reasoning_effort","category":"thought_level","currentValue":"xhigh"},
@@ -328,11 +328,11 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     let top: String = (0..80)
         .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
         .collect();
-    assert!(top.contains(" · fixture-model xhigh Fast · "), "{top}");
+    assert!(top.contains(" · fixture-model xhigh fast · "), "{top}");
     for label in ["model:", "effort:", "account:", "session:"] {
         assert!(!app.header_line().to_string().contains(label));
     }
-    for value in ["fixture-model", "xhigh", "Fast"] {
+    for value in ["fixture-model", "xhigh", "fast"] {
         let offset = top.find(value).unwrap();
         let start = top[..offset].chars().count() as u16;
         for x in start..start + value.len() as u16 {
@@ -352,19 +352,19 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
     }}}));
     assert!(app.dirty);
     assert!(app.header_line().to_string().contains(" · fixture-model-2 high · "));
-    assert!(!app.header_line().to_string().contains("Fast"));
+    assert!(!app.header_line().to_string().contains("fast"));
     app.message(&json!({"type":"ready","response":{"configOptions":[
         {"id":"model","currentValue":"another-model"},
         {"id":"fast-mode","currentValue":true}
     ]}}));
-    assert!(app.header_line().to_string().contains("Fast"));
+    assert!(app.header_line().to_string().contains("fast"));
     app.message(&json!({"type":"update","notification":{"update":{
         "sessionUpdate":"config_option_update","configOptions":[
             {"id":"model","currentValue":"standard-model"}
         ]
     }}}));
     assert!(app.header_line().to_string().contains(" · standard-model not reported · "));
-    assert!(!app.header_line().to_string().contains("Fast"));
+    assert!(!app.header_line().to_string().contains("fast"));
     assert!(!app.header_line().to_string().contains(" high "));
     runtime().block_on(async {
         app.update_agent_configuration(&json!([{"id":"fast-mode","currentValue":true}]));
@@ -379,7 +379,7 @@ fn agent_header_tracks_negotiated_model_and_hides_inactive_fast_mode() {
             .await
             .unwrap();
         assert!(app.header_line().to_string().contains(" · connecting · "));
-        assert!(!app.header_line().to_string().contains("Fast"));
+        assert!(!app.header_line().to_string().contains("fast"));
         worker.cancel();
     });
 }
