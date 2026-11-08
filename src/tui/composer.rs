@@ -574,7 +574,10 @@ fn history_text(
             continue;
         }
         close_tools(&mut lines, &mut activity);
-        let styled = if let Some(message) = line.strip_prefix("You:") {
+        let styled = if let Some(message) = line
+            .strip_prefix("You:")
+            .or_else(|| line.strip_prefix("You (mid-turn):"))
+        {
             flush_body(&mut body, &mut lines, true, user);
             if lines.last().is_some_and(|line| !line.spans.is_empty()) {
                 lines.push(Line::default());
@@ -769,6 +772,24 @@ mod tests {
                 .bg
                 .is_none()
         );
+    }
+
+    #[test]
+    fn mid_turn_messages_use_the_same_style_as_regular_prompts() {
+        for agent in ["Codex", "Claude"] {
+            let rendered = history_text(
+                &format!(
+                    "You: First request\n\n{agent}:\nChecking.\n\nYou (mid-turn): Use blue.\n\n{agent}:\nUnderstood.\n"
+                ),
+                &Default::default(),
+            );
+            assert_eq!(
+                rendered.to_string(),
+                "First request\n\nChecking.\n\nUse blue.\n\nUnderstood."
+            );
+            assert_eq!(rendered.lines[0].style, rendered.lines[4].style);
+            assert_ne!(rendered.lines[4].style.bg, rendered.lines[6].style.bg);
+        }
     }
 
     #[test]

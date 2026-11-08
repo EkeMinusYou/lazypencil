@@ -187,7 +187,11 @@ impl App {
         }
         let input = self.outbox.steering.take().expect("pending steering");
         if value["outcome"] == "injected" {
-            self.append(&format!("\nYou (mid-turn): {}\n", input.text));
+            self.append(&format!(
+                "\nYou (mid-turn): {}\n\n{:?}:\n",
+                input.text,
+                self.conversation.settings().agent
+            ));
             self.set_status("Mid-turn input delivered".into());
         } else {
             self.outbox.queued.push_front(Prompt {

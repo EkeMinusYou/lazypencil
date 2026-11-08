@@ -201,6 +201,7 @@ fn saved_page(app: &App) -> &saved::Page {
 include!("tests/preview.rs");
 include!("tests/preview_search.rs");
 include!("tests/conversation.rs");
+include!("tests/steering_display.rs");
 include!("tests/images.rs");
 include!("tests/navigation.rs");
 include!("tests/mouse.rs");
