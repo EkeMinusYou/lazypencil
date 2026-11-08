@@ -1,14 +1,16 @@
 //! Select the completion contract independently of early reproduction ordering.
 use crate::{process, util};
 use anyhow::{Result, ensure};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{path::Path, process::Command, time::Duration};
+
+mod outcome;
+pub use outcome::{gate, write_gate_report};
 
 pub fn documentation(path: &str) -> bool {
     (path.ends_with(".md") && (!path.contains('/') || path.starts_with("docs/")))
         || (path.starts_with("tests/fixtures/") && path.ends_with("/README.md"))
 }
-
 fn presentation(path: &str) -> bool {
     [
         "src/tui/mod.rs",
@@ -204,44 +206,4 @@ pub fn check_documentation(root: &Path) -> Result<()> {
         Duration::from_secs(30),
     )?;
     Ok(())
-}
-
-pub fn gate(mode: &str, results: &Value) -> Result<Value> {
-    ensure!(
-        ["docs", "tools", "focused", "full"].contains(&mode),
-        "Unknown verification mode"
-    );
-    let jobs = [
-        "plan",
-        "audit",
-        "shader-preprocessor",
-        "native",
-        "targeted",
-        "source",
-    ];
-    let map = results
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("Expected job results"))?;
-    ensure!(
-        map.len() == jobs.len() && jobs.iter().all(|k| map.contains_key(*k)),
-        "Incomplete verification job results"
-    );
-    for job in jobs {
-        let expected = job == "plan"
-            || mode == "full" && ["audit", "native", "source"].contains(&job)
-            || mode == "tools" && job == "audit"
-            || mode == "focused" && job == "targeted";
-        let status = results[job]["result"].as_str().unwrap_or_default();
-        ensure!(
-            if mode == "full" && job == "shader-preprocessor" {
-                ["success", "skipped"].contains(&status)
-            } else if expected {
-                status == "success"
-            } else {
-                status == "skipped"
-            },
-            "Unexpected {job} result for {mode}: {status}"
-        );
-    }
-    Ok(json!({"verification":mode,"result":"success","complete_source":mode=="full"}))
 }

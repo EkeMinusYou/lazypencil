@@ -289,5 +289,14 @@ jobs:
       - name: Require the selected verification contract
         env:
           VERIFICATION_MODE: ${{ needs.plan.outputs.verification }}
+          VERIFICATION_REASON: ${{ needs.plan.outputs.verification_reason }}
           VERIFICATION_RESULTS: ${{ toJSON(needs) }}
-        run: xtask/target/debug/xtask ci verification-gate
+        run: xtask/target/debug/xtask ci verification-gate --report "$RUNNER_TEMP/verification-contract.json"
+      - name: Retain the selected contract and every job assessment
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: verification-contract-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification-contract.json
+          if-no-files-found: warn
+          retention-days: 7

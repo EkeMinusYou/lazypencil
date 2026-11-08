@@ -122,6 +122,85 @@ fn verification_gate_rejects_missing_failed_cancelled_or_wrongly_skipped_require
 }
 
 #[test]
+fn verification_reports_explain_every_failure_and_intentional_skip_before_failing() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("report.json");
+    let summary = temp.path().join("summary.md");
+    let jobs = json!({"plan":{"result":"success"},"audit":{"result":"failure"},"native":{"result":"cancelled"},"source":{"result":"skipped"},"targeted":{"result":"skipped"},"shader-preprocessor":{"result":"success"}});
+    let error = verification::write_gate_report(
+        "full",
+        "Shared renderer changed",
+        &jobs,
+        Some(&output),
+        Some(&summary),
+    )
+    .unwrap_err()
+    .to_string();
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+    assert_eq!(report["result"], "failure");
+    assert_eq!(report["complete_source"], false);
+    assert_eq!(report["failures"].as_array().unwrap().len(), 3);
+    assert_eq!(report["jobs"].as_array().unwrap().len(), 6);
+    for job in ["audit", "native", "source"] {
+        assert!(error.contains(job), "{error}");
+    }
+    let markdown = std::fs::read_to_string(&summary).unwrap();
+    assert!(markdown.contains("Shared renderer changed"));
+    assert!(markdown.contains("| targeted | skipped | skipped | expected | Not selected"));
+    assert!(markdown.contains("| source | skipped | success | needs attention |"));
+    assert!(markdown.contains("this existing run"));
+    let mut fixed = jobs;
+    for job in ["audit", "native", "source"] {
+        fixed[job]["result"] = json!("success");
+    }
+    let result =
+        verification::write_gate_report("full", "Fixed inputs", &fixed, Some(&output), None)
+            .unwrap();
+    assert_eq!(result["complete_source"], true);
+    assert!(result["failures"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn verification_cli_retains_missing_plan_evidence_and_never_claims_complete_source_for_focused_checks()
+ {
+    use std::{fs, process::Command, time::Duration};
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("report.json");
+    let summary = temp.path().join("summary.md");
+    for (mode, results, success) in [
+        ("", "not valid json", false),
+        (
+            "focused",
+            r#"{"plan":{"result":"success"},"audit":{"result":"skipped"},"native":{"result":"skipped"},"source":{"result":"skipped"},"targeted":{"result":"success"},"shader-preprocessor":{"result":"skipped"}}"#,
+            true,
+        ),
+    ] {
+        let result = lazypencil_xtask::process::output(
+            Command::new(env!("CARGO_BIN_EXE_xtask"))
+                .args(["ci", "verification-gate", "--report"])
+                .arg(&output)
+                .env("VERIFICATION_MODE", mode)
+                .env("VERIFICATION_RESULTS", results)
+                .env("VERIFICATION_REASON", "Selection | <test>\nreason")
+                .env("GITHUB_STEP_SUMMARY", &summary),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(result.status.success(), success);
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+        assert_eq!(report["complete_source"], false);
+        assert_eq!(report["jobs"].as_array().unwrap().len(), 6);
+        if !success {
+            assert!(!report["failures"].as_array().unwrap().is_empty());
+        }
+    }
+    let markdown = fs::read_to_string(summary).unwrap();
+    assert!(markdown.contains("Selection &#124; &lt;test&gt; reason"));
+}
+
+#[test]
 fn pr_planner_uses_the_actual_base_diff_and_rejects_bad_documentation() {
     use lazypencil_xtask::process;
     use std::{fs, process::Command, time::Duration};

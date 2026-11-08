@@ -103,6 +103,13 @@ to their normal, pixel, runtime and terminal consumers. Standalone focused runs 
 their early reproductions; the full builder does not repeat the consumers' tests.
 Do not interpret focused success as a full product verification result.
 
+The final `Verification` job publishes its selected contract, selection reason, and
+every job's actual and required status in the Actions step summary. Expected skips
+are distinguished from failed, cancelled, missing, or incorrectly skipped required
+checks. The `verification-contract-<sha>-attempt-<n>` artifact retains the same JSON
+assessment even when the gate fails. Inspect the listed jobs in that existing run
+before retrying; a successful focused contract never claims complete-source verification.
+
 The stable `Verification` check requires precisely the jobs selected by the contract.
 A required failure, cancellation, skip or missing result fails the check. A focused run
 cannot issue a complete-source result. The original `Verified source artifact` job and

@@ -58,7 +58,11 @@ pub enum Command {
         #[arg(long, default_value_t = 30)]
         interval: u64,
     },
-    VerificationGate,
+    VerificationGate {
+        /// Retain the complete assessment, including every failure, before exiting.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
     Gate,
     Cache {
         #[command(subcommand)]
@@ -171,10 +175,23 @@ impl Command {
                 head,
                 interval,
             } => watch::run(&util::root(), run, &head, interval),
-            Self::VerificationGate => {
-                let mode = std::env::var("VERIFICATION_MODE")?;
-                let results = serde_json::from_str(&std::env::var("VERIFICATION_RESULTS")?)?;
-                util::print(&verification::gate(&mode, &results)?)
+            Self::VerificationGate { report } => {
+                let mode = std::env::var("VERIFICATION_MODE").unwrap_or_default();
+                let reason = std::env::var("VERIFICATION_REASON").unwrap_or_else(|_| {
+                    "Selection reason unavailable; inspect the plan job".into()
+                });
+                let results = serde_json::from_str(
+                    &std::env::var("VERIFICATION_RESULTS").unwrap_or_default(),
+                )
+                .unwrap_or(Value::Null);
+                let summary = std::env::var_os("GITHUB_STEP_SUMMARY").map(PathBuf::from);
+                util::print(&verification::write_gate_report(
+                    &mode,
+                    &reason,
+                    &results,
+                    report.as_deref(),
+                    summary.as_deref(),
+                )?)
             }
             Self::Gate => {
                 let value: Value = serde_json::from_str(&std::env::var("VERIFICATION_RESULTS")?)?;
