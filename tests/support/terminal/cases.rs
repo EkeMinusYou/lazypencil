@@ -48,11 +48,33 @@ fn arrow(h: &mut Harness, distance: isize) -> Result {
     }
     Ok(())
 }
-fn command(h: &mut Harness, label: &str, index: usize) -> Result {
+fn palette_selection(h: &Harness) -> Option<String> {
+    h.screen
+        .text()
+        .lines()
+        .find(|line| line.contains("▏›"))
+        .map(str::to_owned)
+}
+fn command(h: &mut Harness, label: &str) -> Result {
     h.key(b"\x1bp")?;
-    h.visible(label)?;
-    arrow(h, index as isize)?;
-    h.key(b"\r")
+    h.visible("Commands")?;
+    h.wait("command palette selection", 15.0, |h| {
+        palette_selection(h).is_some()
+    })?;
+    for _ in 0..64 {
+        let current = palette_selection(h).ok_or("Missing command palette selection")?;
+        if current.contains(label) {
+            return h.key(b"\r");
+        }
+        if current.contains("Quit") {
+            break;
+        }
+        h.key(b"\x1b[B")?;
+        h.wait("next command palette selection", 15.0, |h| {
+            palette_selection(h).is_some_and(|line| line != current)
+        })?;
+    }
+    Err(format!("Command is not available in the palette: {label}").into())
 }
 fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
     let inspected = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?;
@@ -540,7 +562,7 @@ pub fn run(
                     && !header.contains("effort:")
                     && !header.contains("account:")
                     && !header.contains("session:")
-                    && header.contains("Fast") == fast
+                    && header.contains(" fast") == fast
             };
             h.wait(
                 "configured model and speed in the top row",
@@ -906,7 +928,7 @@ fn command_palette(h: &mut Harness) -> Result {
     let document = fs::read(&h.document)?;
     h.paste(draft)?;
     h.draft(draft)?;
-    command(h, "Commands", 15)?;
+    command(h, "Seek shader time")?;
     h.visible("Seek shader time")?;
     h.paste("NaN")?;
     h.key(b"\r")?;
@@ -918,7 +940,7 @@ fn command_palette(h: &mut Harness) -> Result {
 
     for (width, height) in [(130, 34), (50, 16)] {
         h.resize(width, height)?;
-        command(h, "Commands", 7)?;
+        command(h, "Attach image file")?;
         h.visible("Arguments")?;
         h.paste("画像.png")?;
         h.wait("Unicode command input cursor", 15.0, |h| {
@@ -1293,9 +1315,7 @@ fn ui_theme(h: &mut Harness) -> Result {
     h.visible("UI theme: Dark")?;
     theme_canvas(h, [30, 30, 46, 255])?;
     // The shared command palette opens theme arguments without sending a prompt.
-    h.key(b"\x1bp")?;
-    arrow(h, 17)?;
-    h.key(b"\r")?;
+    command(h, "Theme")?;
     h.visible("Arguments")?;
     h.paste("light")?;
     h.key(b"\r")?;
@@ -1813,7 +1833,7 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
         15.0,
         |h| h.screen.text().contains("PROJECT_NOT_TRUSTED"),
     )?;
-    assert_eq!(state(h)["draft"], draft);
+    h.draft(draft)?;
     no_agent(h);
     h.cli(&[
         "config".as_ref(),
@@ -2044,7 +2064,7 @@ fn basic(h: &mut Harness) -> Result {
 fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.paste("復元しても保持する下書き")?;
     h.draft("復元しても保持する下書き")?;
-    command(h, "Commands", 21)?;
+    command(h, "Browse and restore checkpoints")?;
     h.wait("checkpoint candidates", 15.0, |h| {
         h.screen.text().contains("first-checkpoint")
             && h.screen.text().contains("second-checkpoint")
@@ -2365,7 +2385,7 @@ fn permission_modes(h: &mut Harness) -> Result {
     h.visible("read-only")?;
     h.paste(draft)?;
     h.draft(draft)?;
-    command(h, "Commands", 0)?;
+    command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
     h.key(b"\x1b[B\r")?;
     h.visible("Apply permissions")?;
@@ -2373,7 +2393,7 @@ fn permission_modes(h: &mut Harness) -> Result {
     h.visible("Permissions changed to workspace-write")?;
     h.draft(draft)?;
     h.save_screen("permission-mode-applied-screen.txt")?;
-    command(h, "Commands", 0)?;
+    command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
     h.key(b"\x1b[B\r\r")?;
     h.visible("Allow full access?")?;
@@ -2382,12 +2402,12 @@ fn permission_modes(h: &mut Harness) -> Result {
     h.key(b"\x1b")?;
     h.visible("workspace-write")?;
     h.resize(80, 24)?;
-    command(h, "Commands", 0)?;
+    command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
     h.save_screen("permission-mode-compact-screen.txt")?;
     h.key(b"\x1b")?;
     h.resize(130, 34)?;
-    command(h, "Commands", 0)?;
+    command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
     h.key(b"\r")?;
     h.visible("Apply permissions")?;

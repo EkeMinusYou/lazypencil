@@ -141,9 +141,9 @@ pub fn workspace(h: &mut Harness) -> Result {
     event(h, 0, (point.0 + 4, point.1 + 2), true)?;
     h.key(b"\x1b[32;1:3u")?;
     button(h, "[N]")?;
-    h.hidden("Nodes")?;
+    h.hidden("▤ Nodes")?;
     button(h, "[N]")?;
-    h.visible("Nodes")?;
+    h.visible("▤ Nodes")?;
     button(h, "[Menu]")?;
     h.visible("View controls")?;
     button(h, "[Help]")?;
