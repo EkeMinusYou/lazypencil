@@ -413,6 +413,66 @@ fn canvas_cell(app: &App,picker: &Backend,world:[f64;2])->(u16,u16) {
      (f64::from(area.y)+f64::from(area.height)/2.0+(world[1]-view.center[1])*f64::from(view.zoom.unwrap())/f64::from(font.height)-0.5).round() as u16)
 }
 #[test]
+fn canvas_selection_is_present_on_the_first_pan_zoom_and_refresh_frame() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = selection_fixture(&temp).await;
+        let original = std::fs::read(app.conversation.store().path()).unwrap();
+        app.selection.ids = vec!["left".into()];
+        for action in 0..4 {
+            match action {
+                1 => app.view.pan([20.0, -10.0]),
+                2 => app.view.zoom = Some(1.25),
+                _ => {}
+            }
+            app.request(&worker, false, action == 3);
+            let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+            assert!(app.accept_interactive_preview(output, &worker, &picker));
+            let preview = app.preview.as_ref().unwrap();
+            assert!(app.selection.presentation_for(preview.view, preview.protocol.size()).is_some(),
+                "The first accepted frame must already include selection; action {action}");
+            paint_mouse(&mut app, 130, 34);
+            assert!(tokio::time::timeout(Duration::from_millis(30), worker.next_presentation()).await.is_err(),
+                "An exact frame must not require a second decoration job");
+        }
+
+        app.view.pan([20.0, 0.0]);
+        app.request(&worker, false, false);
+        let output = tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap();
+        app.selection.clear();
+        assert!(app.accept_interactive_preview(output, &worker, &picker));
+        assert!(app.selection.ids.is_empty());
+        assert!(app.selection.presentation.is_none(), "A completed frame must not restore a cleared selection");
+        assert_eq!(std::fs::read(app.conversation.store().path()).unwrap(), original);
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
+fn canvas_selection_is_kept_in_temporary_camera_feedback() {
+    use ratatui::widgets::Widget;
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let (mut app, worker, picker) = selection_fixture(&temp).await;
+        let original = app.preview.as_ref().unwrap().image.png().unwrap().into_owned();
+        app.view.pan([20.0, -10.0]);
+        let area = ratatui::layout::Rect::new(0, 0, app.cells.width, app.cells.height);
+        app.render_camera_feedback(&picker).unwrap();
+        let mut plain = ratatui::buffer::Buffer::empty(area);
+        graphics::Image(&app.camera.as_ref().unwrap().image).render(area, &mut plain);
+        app.selection.ids = vec!["left".into()];
+        app.render_camera_feedback(&picker).unwrap();
+        let mut selected = ratatui::buffer::Buffer::empty(area);
+        graphics::Image(&app.camera.as_ref().unwrap().image).render(area, &mut selected);
+        assert_ne!(selected, plain, "Temporary feedback must include the selected outline");
+        assert_eq!(app.preview.as_ref().unwrap().image.png().unwrap().as_ref(), original);
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
 fn node_navigation_preserves_canvas_selection_until_fit() {
     use crossterm::event::{MouseButton, MouseEventKind as M};
     runtime().block_on(async {

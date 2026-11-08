@@ -81,6 +81,7 @@ impl Frame<'_> {
         )?;
         Ok(Preview {
             protocol,
+            selection: None,
             image: PreviewImage::Pixels(image.pixels),
             view,
             nodes: self.nodes.clone(),

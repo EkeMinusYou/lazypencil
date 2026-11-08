@@ -95,6 +95,7 @@ pub struct Request {
 #[derive(Clone)]
 pub struct Preview {
     pub protocol: Encoded,
+    pub(super) selection: Option<super::selection::render::Completed>,
     pub(crate) image: PreviewImage,
     pub view: View,
     pub nodes: Arc<[Node]>,
@@ -151,6 +152,7 @@ pub struct Output {
 }
 struct Shared {
     canvas_background: Mutex<image::Rgba<u8>>,
+    selection: Mutex<super::selection::render::State>,
     request: Mutex<(Option<Request>, bool)>,
     wake: Condvar,
     active: Mutex<Option<CancellationToken>>,
@@ -175,6 +177,7 @@ impl Worker {
     ) -> Result<Self> {
         let shared = Arc::new(Shared {
             canvas_background: Mutex::new(picker.canvas_background()),
+            selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
             active: Mutex::new(None),
@@ -214,6 +217,9 @@ impl Worker {
     }
     pub(super) fn set_canvas_background(&self, background: image::Rgba<u8>) {
         *self.shared.canvas_background.lock().unwrap() = background;
+    }
+    pub(super) fn set_selection(&self, selection: super::selection::render::State) {
+        *self.shared.selection.lock().unwrap() = selection;
     }
     pub fn request(&self, request: Request) {
         if !request.check_only {
@@ -400,6 +406,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 let protocol = encode(picker, image, request.cells, image_id)?;
                 return Ok(Some(Preview {
                     protocol,
+                    selection: None,
                     image: PreviewImage::Png(png.into()),
                     view: request.view,
                     nodes: Arc::default(),
@@ -608,6 +615,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             }
             Ok(Some(Preview {
                 protocol,
+                selection: None,
                 image: retained_image,
                 view,
                 nodes,
@@ -618,25 +626,16 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 frame_time: frame_started.elapsed(),
             }))
         })();
-        let cancelled = cancel.is_cancelled();
-        *shared.active.lock().unwrap() = None;
-        if cancelled {
+        if cancel.is_cancelled() {
+            *shared.active.lock().unwrap() = None;
             continue;
         }
-        let result = match result {
-            Ok(Some(preview)) => {
-                if !preview.attachment {
-                    first_camera_frame = false;
-                    document_preview_time = Some(preview.view.time);
-                    document_preview_background = Some(canvas_background);
-                    if let Some(report) = timing.report(request.generation) {
-                        eprintln!("LAZYPENCIL_PREVIEW_TIMING {report}");
-                        profile_reports += 1;
-                    }
-                }
-                Ok(preview)
+        let mut result = match result {
+            Ok(Some(preview)) => Ok(preview),
+            Ok(None) => {
+                *shared.active.lock().unwrap() = None;
+                continue;
             }
-            Ok(None) => continue,
             Err(error) => Err(error),
         };
         let retain = result
@@ -649,6 +648,71 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     && preview.protocol.native_bytes().is_some()
             })
             .cloned();
+        // Compose selection before publishing the exact frame. This replaces
+        // the subsequent presentation job and avoids a second terminal upload.
+        if let Ok(preview) = &mut result
+            && !preview.attachment
+        {
+            let state = shared.selection.lock().unwrap().clone();
+            if !state.selected.is_empty() || state.marquee.is_some() {
+                let selected = state
+                    .selected
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<std::collections::HashSet<_>>();
+                let decoration = super::selection::render::Request {
+                    source: preview.image.clone(),
+                    nodes: preview.nodes.clone(),
+                    selected: state.selected.clone(),
+                    before: preview.view,
+                    view: preview.view,
+                    size: request.cells,
+                    viewport: pixel_size(picker, request.cells).expect("validated viewport"),
+                    outlines: preview
+                        .nodes
+                        .iter()
+                        .filter(|node| selected.contains(node.id.as_str()))
+                        .map(super::selection::shape_bounds)
+                        .collect(),
+                    marquee: state.marquee,
+                    picker: picker.clone(),
+                    image_id,
+                    serial: shared.presentation_clock.load(Ordering::Relaxed),
+                    clock: shared.presentation_clock.clone(),
+                };
+                match super::selection::render::run(
+                    decoration,
+                    &mut presentation_cache,
+                    &mut labels,
+                )
+                .result
+                {
+                    Ok(Some(image)) => {
+                        preview.selection =
+                            Some(super::selection::render::Completed { state, image })
+                    }
+                    Ok(None) => {}
+                    Err(error) => result = Err(error),
+                }
+                timing.mark("selection_ms");
+            }
+        }
+        let cancelled = cancel.is_cancelled();
+        *shared.active.lock().unwrap() = None;
+        if cancelled {
+            continue;
+        }
+        if let Ok(preview) = &result
+            && !preview.attachment
+        {
+            first_camera_frame = false;
+            document_preview_time = Some(preview.view.time);
+            document_preview_background = Some(canvas_background);
+            if let Some(report) = timing.report(request.generation) {
+                eprintln!("LAZYPENCIL_PREVIEW_TIMING {report}");
+                profile_reports += 1;
+            }
+        }
         *shared.output.lock().unwrap() = Some(Output {
             generation: request.generation,
             result,
@@ -1352,6 +1416,7 @@ mod tests {
         let background = Backend::halfblocks().canvas_background();
         let shared = Shared {
             canvas_background: Mutex::new(background),
+            selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
             active: Mutex::new(None),
@@ -1405,6 +1470,7 @@ mod tests {
     fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
         let shared = Arc::new(Shared {
             canvas_background: Mutex::new(Backend::halfblocks().canvas_background()),
+            selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
             active: Mutex::new(None),

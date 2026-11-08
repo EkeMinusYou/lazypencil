@@ -973,6 +973,111 @@ fn native_menu_preserves_uncovered_pixels_and_restores_full_placement() {
 }
 
 #[test]
+fn native_selection_is_composed_with_cached_and_fresh_camera_frames() {
+    use super::super::{preview, selection::render::State};
+    let directory = tempfile::TempDir::new().unwrap();
+    let store = crate::store::Store::init(
+        directory.path().join("design.pen"),
+        Some(directory.path().join("data")),
+    )
+    .unwrap();
+    std::fs::write(
+        store.path(),
+        serde_json::json!({"version":"2.21","children":[{
+            "id":"shape", "type":"rectangle", "width":100, "height":80, "fill":"#ff0000"
+        }]})
+        .to_string(),
+    )
+    .unwrap();
+    let backend = Backend {
+        font: FontSize::new(10, 20),
+        protocol: ProtocolType::Kitty,
+        tmux: false,
+        kitty_compression: false,
+        ..Backend::halfblocks()
+    };
+    let worker = preview::Worker::start(store, vec![], backend, 42).unwrap();
+    worker.set_selection(State {
+        selected: vec!["shape".into()],
+        marquee: None,
+    });
+    let size = Size::new(32, 16);
+    let area = Rect::new(0, 0, size.width, size.height);
+    let mut view = preview::View {
+        center: [50.0, 40.0],
+        zoom: Some(1.0),
+        time: 0.0,
+    };
+    let mut presentation = Presentation::default();
+    presentation.rectangular(true);
+    let mut observer = observer::KittyFrames::for_lazypencil();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            for generation in 1..=4 {
+                match generation {
+                    2 => view.pan([64.0, 0.0]),
+                    3 => view.pan([7.0, -9.0]),
+                    4 => view.zoom = Some(1.25),
+                    _ => {}
+                }
+                worker.request(preview::Request {
+                    generation,
+                    cells: size,
+                    view,
+                    refresh: false,
+                    refresh_pages: false,
+                    check_only: false,
+                    attachment: None,
+                });
+                let frame = tokio::time::timeout(std::time::Duration::from_secs(15), worker.next())
+                    .await
+                    .unwrap()
+                    .result
+                    .unwrap();
+                if generation == 2 {
+                    assert!(
+                        frame.frame_time.is_zero(),
+                        "Selection must preserve prepared camera cache hits"
+                    );
+                }
+                let original = frame.image.bitmap().unwrap();
+                assert!(
+                    !original
+                        .pixels()
+                        .any(|pixel| pixel.0 == [137, 180, 250, 255]),
+                    "Exported scene pixels stay undecorated"
+                );
+                let selected = frame.selection.unwrap();
+                let mut buffer = Buffer::empty(area);
+                presentation.begin();
+                presentation.render(&mut buffer, area, &selected.image);
+                presentation.finish(&mut buffer, false);
+                observer.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
+                assert_eq!(
+                    observer.images.len(),
+                    generation as usize,
+                    "Each completed viewport needs only one upload"
+                );
+                assert!(
+                    observer
+                        .images
+                        .last()
+                        .unwrap()
+                        .has_color([137, 180, 250, 255])
+                );
+                assert!(
+                    presentation.source_size().is_some(),
+                    "Selected exact frames must remain eligible for progressive navigation"
+                );
+                assert_eq!(observer.camera_frames, 0);
+            }
+        });
+}
+
+#[test]
 fn native_selection_frames_restore_original_pixels_after_deselection() {
     let backend = Backend {
         font: FontSize::new(10, 20),

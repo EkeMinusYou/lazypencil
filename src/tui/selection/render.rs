@@ -5,6 +5,18 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+#[derive(Clone, Default, PartialEq)]
+pub(in crate::tui) struct State {
+    pub selected: Vec<String>,
+    pub marquee: Option<Rect>,
+}
+
+#[derive(Clone)]
+pub(in crate::tui) struct Completed {
+    pub state: State,
+    pub image: graphics::Encoded,
+}
+
 pub(in crate::tui) struct Request {
     pub source: preview::PreviewImage,
     pub nodes: Arc<[preview::Node]>,
@@ -66,38 +78,14 @@ pub(in crate::tui) fn run(
             };
             projected
         };
-        let region = request.view.region(request.viewport);
-        let project = |bounds: Rect| -> [i64; 4] {
-            [
-                ((bounds.x - region.x) / region.width * image.width() as f32).round() as i64,
-                ((bounds.y - region.y) / region.height * image.height() as f32).round() as i64,
-                ((bounds.right() - region.x) / region.width * image.width() as f32).round() as i64,
-                ((bounds.bottom() - region.y) / region.height * image.height() as f32).round()
-                    as i64,
-            ]
-        };
-        let outlines = request
-            .outlines
-            .iter()
-            .copied()
-            .map(project)
-            .collect::<Vec<_>>();
-        let marquee = request.marquee.map(project);
-        for outline in outlines {
-            if request.serial != serial.load(Ordering::Relaxed) {
-                return Ok(None);
-            }
-            if !outline_pixels_checked(&mut image, outline, false, &|| {
-                request.serial != serial.load(Ordering::Relaxed)
-            }) {
-                return Ok(None);
-            }
-        }
-        if let Some(marquee) = marquee
-            && !outline_pixels_checked(&mut image, marquee, true, &|| {
-                request.serial != serial.load(Ordering::Relaxed)
-            })
-        {
+        if !paint(
+            &mut image,
+            request.view,
+            request.viewport,
+            &request.outlines,
+            request.marquee,
+            &|| request.serial != serial.load(Ordering::Relaxed),
+        ) {
             return Ok(None);
         }
         if request.serial != serial.load(Ordering::Relaxed) {
@@ -124,4 +112,31 @@ pub(in crate::tui) fn run(
         view: request.view,
         result,
     }
+}
+
+/// Paint screen-width outlines into an existing viewport before encoding it.
+pub(in crate::tui) fn paint(
+    image: &mut image::RgbaImage,
+    view: preview::View,
+    viewport: [u32; 2],
+    outlines: &[Rect],
+    marquee: Option<Rect>,
+    cancelled: &impl Fn() -> bool,
+) -> bool {
+    let region = view.region(viewport);
+    let [width, height] = [image.width() as f32, image.height() as f32];
+    let project = |bounds: Rect| -> [i64; 4] {
+        [
+            ((bounds.x - region.x) / region.width * width).round() as i64,
+            ((bounds.y - region.y) / region.height * height).round() as i64,
+            ((bounds.right() - region.x) / region.width * width).round() as i64,
+            ((bounds.bottom() - region.y) / region.height * height).round() as i64,
+        ]
+    };
+    for outline in outlines {
+        if cancelled() || !outline_pixels_checked(image, project(*outline), false, cancelled) {
+            return false;
+        }
+    }
+    marquee.is_none_or(|marquee| outline_pixels_checked(image, project(marquee), true, cancelled))
 }

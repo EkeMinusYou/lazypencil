@@ -740,6 +740,7 @@ impl App {
         if refresh && attachment.is_none() {
             self.nodes_loading = true;
         }
+        worker.set_selection(self.selection.render_state());
         worker.request(Request {
             generation: self.generation,
             cells: self.cells,

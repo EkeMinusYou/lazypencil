@@ -611,7 +611,7 @@ fn canvas_hierarchy_shortcuts_start_selection_and_fit_children_and_parents() {
                 break;
             }
         }
-        loop {
+        while app.selection.presentation.is_none() {
             let output = tokio::time::timeout(Duration::from_secs(15), worker.next_presentation())
                 .await.unwrap();
             if app.selection.accept_overlay(output).unwrap() {

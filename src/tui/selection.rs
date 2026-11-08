@@ -110,6 +110,12 @@ pub(super) struct Selection {
     additive: bool,
 }
 impl Selection {
+    pub(super) fn render_state(&self) -> render::State {
+        render::State {
+            selected: self.ids.clone(),
+            marquee: self.marquee,
+        }
+    }
     pub fn accept_overlay(&mut self, output: render::Finished) -> Result<bool> {
         if self
             .clock
@@ -371,6 +377,8 @@ impl App {
         picker: &graphics::Backend,
         worker: &super::Worker,
     ) -> Result<()> {
+        let state = self.selection.render_state();
+        worker.set_selection(state.clone());
         // Keep the last visible marquee during a drag, and let an in-flight
         // frame finish even when newer pointer positions are already queued.
         // Releasing/cancelling the drag still invalidates all marquee frames.
@@ -381,9 +389,19 @@ impl App {
         if self.selection.ids.is_empty() && self.selection.marquee.is_none() {
             return Ok(());
         }
-        let Some(preview) = self.preview.as_ref().filter(|preview| !preview.attachment) else {
+        let Some(preview) = self.preview.as_mut().filter(|preview| !preview.attachment) else {
             return Ok(());
         };
+        // Exact frames arrive with their decoration so the terminal never
+        // displays an undecorated scene between two selected frames.
+        if self.camera.is_none()
+            && let Some(completed) = &preview.selection
+            && completed.state == state
+        {
+            self.selection.presentation = Some(preview.selection.take().unwrap().image);
+            self.selection.presentation_view = Some(preview.view);
+            return Ok(());
+        }
         let view = if self.camera.is_some() {
             self.view
         } else {

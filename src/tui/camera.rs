@@ -94,6 +94,7 @@ impl super::App {
         worker: &super::preview::Worker,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
+        worker.set_selection(self.selection.render_state());
         let progressive = self.presentation.source_size().is_some()
             && self.pending_preview.is_none()
             && !self.playback.active()
@@ -299,7 +300,7 @@ impl super::App {
         {
             return Ok(());
         }
-        let Some(bitmap) = project_region(
+        let Some(mut bitmap) = project_region(
             &bitmap,
             preview.view,
             self.view,
@@ -311,6 +312,28 @@ impl super::App {
         // The projection owns its pixels; release a decoded fallback before
         // the terminal encoder allocates its own temporary transport buffers.
         drop(decoded);
+        if !self.selection.ids.is_empty() {
+            let selected = self
+                .selection
+                .ids
+                .iter()
+                .map(String::as_str)
+                .collect::<std::collections::HashSet<_>>();
+            let outlines = preview
+                .nodes
+                .iter()
+                .filter(|node| selected.contains(node.id.as_str()))
+                .map(super::selection::shape_bounds)
+                .collect::<Vec<_>>();
+            super::selection::render::paint(
+                &mut bitmap,
+                self.view,
+                [width, height],
+                &outlines,
+                None,
+                &|| false,
+            );
+        }
         let protocol = picker.encode(
             image::DynamicImage::ImageRgba8(bitmap),
             self.cells,
