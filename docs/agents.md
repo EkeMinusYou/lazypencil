@@ -100,7 +100,7 @@ When an adapter advertises its `authStatus` capability, the host waits up to fiv
 
 ## Images and assets
 
-Repeat `--image` for static PNG, JPEG, or WebP files. The default limits are eight images, 20 MiB per source and normalized image, 50 MiB total before and after normalization, and 16 megapixels per image. Files are decoded one at a time, orientation is applied, and immutable PNG copies are retained with the conversation. No image is silently resized or omitted; explicit `--image-max-size` can select a send size. User [attachment budgets](configuration.md#image-attachment-budgets) can change the count and aggregate limits.
+Repeat `--image` for static PNG, JPEG, or WebP files. The default limits are eight images, 20 MiB per source and normalized image, 50 MiB total before and after normalization, and 32 megapixels per image. Files are decoded one at a time, orientation is applied, and immutable PNG copies are retained with the conversation. No image is silently resized or omitted; explicit `--image-max-size` can select a send size. User [attachment budgets](configuration.md#image-attachment-budgets) can change the count and aggregate limits.
 
 Images are sent as ACP image blocks containing MIME-typed Base64 data. The host checks the negotiated image capability; an unsupported agent receives no text-only substitute. Each image also has an ordered display name and attachment ID. The prompt does not insert reference images into the document automatically.
 

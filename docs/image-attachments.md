@@ -56,7 +56,7 @@ platform/terminal baseline is listed in the [README](../README.md#supported-envi
 ## Budgets and failure
 
 Defaults are eight images, 20 MiB per source/send image, separate 50 MiB source/send
-totals, and 16 Mi pixels per source (16 × 1024 × 1024). User-only
+totals, and 32 Mi pixels per source (32 × 1024 × 1024). User-only
 [attachment settings](configuration.md#image-attachment-budgets) can change the count
 through 64 and aggregate totals through 256 MiB, while native per-image safety limits
 remain. Provider limits also apply.

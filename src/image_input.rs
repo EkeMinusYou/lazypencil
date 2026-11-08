@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 
 pub const MAX_SOURCE_BYTES: usize = 20 * 1024 * 1024;
-pub const MAX_IMAGE_PIXELS: u64 = 16 * 1024 * 1024;
+pub const MAX_IMAGE_PIXELS: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DecodeLimits {
@@ -46,7 +46,7 @@ impl ImageBounds {
     pub fn new(width: u32, height: u32) -> Result<Self> {
         if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS {
             return Err(invalid(
-                "Image bounds must be positive and within 16 megapixels",
+                "Image bounds must be positive and within 32 megapixels",
             ));
         }
         Ok(Self { width, height })

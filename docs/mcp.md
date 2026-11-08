@@ -315,7 +315,7 @@ MCP tool.
 
 ## Managed assets
 
-Create code with `{"kind":"script","source":{"text":"return [];"}}`. Images use `{"kind":"image","source":{"mime_type":"image/png","data":"BASE64_DATA"}}`; static PNG, JPEG, and WebP input is normalized to PNG, including orientation. Animated input, false MIME types, and oversized images are rejected. Code is limited to 1 MiB, source and normalized images to 20 MiB each, and decoded images to 16 megapixels. MCP's 4 MiB argument limit also applies to encoded data.
+Create code with `{"kind":"script","source":{"text":"return [];"}}`. Images use `{"kind":"image","source":{"mime_type":"image/png","data":"BASE64_DATA"}}`; static PNG, JPEG, and WebP input is normalized to PNG, including orientation. Animated input, false MIME types, and oversized images are rejected. Code is limited to 1 MiB, source and normalized images to 20 MiB each, and decoded images to 32 megapixels. MCP's 4 MiB argument limit also applies to encoded data.
 
 `put_asset` returns a relative URI and SHA-256 hash. Files live under `assets/lazypencil` beside the selected document. Identical content is reused, conflicting files are never overwritten, and asset creation does not itself edit the document or add a history entry. Link the returned URI with `apply_operations`. `read_asset` only reads captured script or shader dependencies after they have been referenced; it is not an arbitrary file reader. CLI users can use `assets put design.pen --kind image --input reference.jpg` and `assets read design.pen --hash HASH`.
 

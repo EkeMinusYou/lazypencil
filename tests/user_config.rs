@@ -149,16 +149,28 @@ fn attachment_limits_are_user_owned_validated_and_loaded_without_fonts() {
         settings.max_source_bytes,
         AttachmentSettings::default().max_source_bytes
     );
+    assert_eq!(settings.max_source_pixels, 33_554_432);
     let incomplete = UserSnapshot::load_file(path()).unwrap();
     assert_eq!(incomplete.summary()["fonts_complete"], false);
     assert_eq!(
         incomplete.require_fonts().unwrap_err().code,
         "ASSET_NOT_FOUND"
     );
+    for pixels in [16_777_216, 16_777_217, 33_554_432] {
+        f.settings(&format!("[attachments]\nmax_source_pixels={pixels}\n"));
+        assert_eq!(
+            attachments::load_file(path()).unwrap().max_source_pixels,
+            pixels
+        );
+    }
     f.settings("[attachments]\nmax_images=12\n");
     let shown = f.data(&["config", "show", "--user"]);
     assert_eq!(shown["settings"]["attachments"]["max_images"], 12);
-    assert!(f.data(&["config", "schema", "--user"])["properties"]["attachments"].is_object());
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert_eq!(
+        schema["$defs"]["AttachmentSettings"]["properties"]["max_source_pixels"]["maximum"],
+        33_554_432
+    );
     assert!(
         f.data(&["config", "schema"])["properties"]
             .get("attachments")
@@ -182,7 +194,7 @@ fn attachment_limits_are_user_owned_validated_and_loaded_without_fonts() {
         "max_total_send_bytes=0",
         "max_total_send_bytes=268435457",
         "max_source_pixels=0",
-        "max_source_pixels=16777217",
+        "max_source_pixels=33554433",
         "max_image=1",
     ] {
         f.settings(&format!("[attachments]\n{body}\n"));
@@ -612,6 +624,10 @@ fn native_user_configuration_commands_create_once_and_project_defaults_inherit()
     assert!(!f.user.exists());
     let initialized = f.data(&["config", "init", "--user"]);
     assert_eq!(initialized["scope"], "user");
+    assert_eq!(
+        f.data(&["config", "show", "--user"])["settings"]["attachments"]["max_source_pixels"],
+        33_554_432
+    );
     let saved = fs::read(f.user.join("config.toml")).unwrap();
     assert!(!f.cli(&["config", "init", "--user"]).status.success());
     assert_eq!(fs::read(f.user.join("config.toml")).unwrap(), saved);

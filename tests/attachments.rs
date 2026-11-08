@@ -18,6 +18,9 @@ fn send_image_bounds_are_explicit_positive_and_bounded() {
         "1024x768".parse::<ImageBounds>().unwrap(),
         ImageBounds::new(1024, 768).unwrap()
     );
+    for (width, height) in [(5416, 3108), (8192, 4096)] {
+        assert!(ImageBounds::new(width, height).is_ok());
+    }
     for invalid in [
         "",
         "1024",
@@ -25,7 +28,7 @@ fn send_image_bounds_are_explicit_positive_and_bounded() {
         "1024x0",
         "-1x2",
         "1x2x3",
-        "5000x5000",
+        "8192x4097",
         "4294967296x1",
     ] {
         assert!(invalid.parse::<ImageBounds>().is_err(), "{invalid}");
@@ -102,6 +105,46 @@ mod originals {
         .unwrap()
         .as_bytes()
         .to_vec()
+    }
+
+    #[test]
+    fn clipboard_references_up_to_thirty_two_megapixels_round_trip_without_resizing() {
+        use lazypencil::{config::attachments::AttachmentSettings, image_input};
+
+        for (width, height) in [(5416, 3108), (8192, 4096)] {
+            let rgba = [255, 0, 0, 255].repeat(width * height);
+            let image = image_input::from_rgba8(width, height, &rgba).unwrap();
+            drop(rgba);
+            assert_eq!((image.width, image.height), (width as u32, height as u32));
+            let temp = TempDir::new().unwrap();
+            let attachment =
+                Attachment::from_bytes(temp.path(), &image.png, "clipboard.png").unwrap();
+            assert_eq!(
+                (attachment.width, attachment.height),
+                (width as u32, height as u32)
+            );
+            assert_eq!(attachment.read_original(temp.path()).unwrap(), image.png);
+            AttachmentSettings::default()
+                .check_request([&attachment])
+                .unwrap();
+            let previous_limit = AttachmentSettings {
+                max_source_pixels: 16 * 1024 * 1024,
+                ..Default::default()
+            };
+            assert_eq!(
+                previous_limit
+                    .check_request([&attachment])
+                    .unwrap_err()
+                    .code,
+                "ATTACHMENT_INVALID"
+            );
+        }
+        let error = image_input::from_rgba8(8192, 4097, &[]).unwrap_err();
+        assert_eq!(error.code, "ATTACHMENT_INVALID");
+        assert_eq!(
+            error.message,
+            "Clipboard image 8192x4097 has 33562624 pixels; limit is 33554432"
+        );
     }
 
     #[test]

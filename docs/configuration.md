@@ -17,10 +17,10 @@ max_source_bytes = 20971520
 max_send_bytes = 20971520
 max_total_source_bytes = 52428800
 max_total_send_bytes = 52428800
-max_source_pixels = 16777216
+max_source_pixels = 33554432
 ```
 
-`max_images` accepts 1..64. Per-image source/send budgets accept 1..20 MiB; separate per-request source/send totals accept 1..256 MiB. `max_source_pixels` accepts 1..16 Mi pixels (16 × 1024 × 1024), measured before resizing. Per-image bytes and pixels remain bounded by the native decoder's safety limits; raising the count or aggregate budgets does not raise those ceilings. Adapter/model limits still apply.
+`max_images` accepts 1..64. Per-image source/send budgets accept 1..20 MiB; separate per-request source/send totals accept 1..256 MiB. `max_source_pixels` accepts 1..32 Mi pixels (32 × 1024 × 1024), measured before resizing. Per-image bytes and pixels remain bounded by the native decoder's safety limits; raising the count or aggregate budgets does not raise those ceilings. Existing explicit lower pixel budgets remain in effect; set `max_source_pixels = 33554432` to use the new ceiling. Adapter/model limits still apply.
 
 Source bytes count the captured original encoding; send bytes count the normalized PNG. Lower send budgets require an explicit `--image-max-size WIDTHxHEIGHT`, `/attach PATH WIDTHxHEIGHT`, `/paste-image WIDTHxHEIGHT`, or `/resize-image NUMBER WIDTHxHEIGHT`; images are never silently resized or omitted. `original` overrides a startup size for one TUI input command. Explicit resizing keeps the original encoding and applies orientation before fitting without upscaling.
 

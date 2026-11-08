@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 pub const MAX_IMAGES: usize = 64;
 pub const MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
-pub(super) const TEMPLATE: &str = "\n[attachments]\n# Personal image input/send budgets; no implicit resizing.\nmax_images = 8\nmax_source_bytes = 20971520\nmax_send_bytes = 20971520\nmax_total_source_bytes = 52428800\nmax_total_send_bytes = 52428800\nmax_source_pixels = 16777216\n";
+pub(super) const TEMPLATE: &str = "\n[attachments]\n# Personal image input/send budgets; no implicit resizing.\nmax_images = 8\nmax_source_bytes = 20971520\nmax_send_bytes = 20971520\nmax_total_source_bytes = 52428800\nmax_total_send_bytes = 52428800\nmax_source_pixels = 33554432\n";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -23,7 +23,7 @@ pub struct AttachmentSettings {
     #[schemars(range(min = 1, max = 268435456))]
     pub max_total_send_bytes: usize,
     /// Decoded source pixels, before any explicitly requested downscale.
-    #[schemars(range(min = 1, max = 16777216))]
+    #[schemars(range(min = 1, max = 33554432))]
     pub max_source_pixels: u64,
 }
 
@@ -50,7 +50,7 @@ impl AttachmentSettings {
             || !(1..=image_input::MAX_IMAGE_PIXELS).contains(&self.max_source_pixels)
         {
             return Err(super::invalid(
-                "Attachment limits require 1..64 images, per-image source/send bytes within 1..20 MiB, total source/send bytes within 1..256 MiB, and decoded source pixels within 1..16 Mi",
+                "Attachment limits require 1..64 images, per-image source/send bytes within 1..20 MiB, total source/send bytes within 1..256 MiB, and decoded source pixels within 1..32 Mi",
             ));
         }
         Ok(())
