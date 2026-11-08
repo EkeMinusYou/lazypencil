@@ -474,6 +474,12 @@ mod tests {
         transcript
             .record(&json!({"type":"user_prompt","text":text}))
             .unwrap();
+        transcript
+            .barrier()
+            .unwrap()
+            .blocking_recv()
+            .unwrap()
+            .unwrap();
         (transcript.id, transcript.path)
     }
     fn test_store(temp: &TempDir, name: &str) -> Store {

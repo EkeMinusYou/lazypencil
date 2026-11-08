@@ -20,6 +20,7 @@ use std::{
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+mod completion;
 mod continuity;
 pub mod history;
 #[cfg(unix)]
@@ -29,6 +30,8 @@ pub mod modes;
 mod preparation;
 pub(crate) mod references;
 mod storage;
+mod transcript;
+use completion::Completion;
 pub use storage::sanitize_event;
 use storage::{Session, Transcript};
 
@@ -70,6 +73,8 @@ pub struct Conversation {
     ready: bool,
     prepared_ready: Option<Value>,
     transcript: Option<Transcript>,
+    submission: Option<oneshot::Receiver<Result<()>>>,
+    completion: Option<Completion>,
     active: Option<ActiveTurn>,
     preparation: Option<preparation::Preparation>,
     permissions: DocumentPermissions,
@@ -151,6 +156,8 @@ impl Conversation {
             ready: false,
             prepared_ready: None,
             transcript: None,
+            submission: None,
+            completion: None,
             active: None,
             preparation: None,
             permissions: DocumentPermissions::for_server(format!(
@@ -191,7 +198,7 @@ impl Conversation {
         &self.session.state.pending_attachments
     }
     pub fn active(&self) -> bool {
-        self.active.is_some() || self.preparation.is_some()
+        self.active.is_some() || self.preparation.is_some() || self.completion.is_some()
     }
     /// Mid-turn input is available after the active prompt has been submitted.
     pub fn can_steer(&self) -> bool {
@@ -759,16 +766,22 @@ impl Conversation {
     }
     async fn submit(&mut self) -> Result<()> {
         self.require_project_agent()?;
+        let ready = self
+            .transcript
+            .as_ref()
+            .expect("active transcript")
+            .barrier()?;
         let active = self.active.as_mut().expect("active turn");
         let content = active
             .content
             .take()
             .ok_or_else(|| Error::new("AGENT_ERROR", "Duplicate turn submission"))?;
-        self.host
-            .as_ref()
-            .expect("agent connection")
-            .prompt(content, active.cancel.clone())
-            .await
+        self.submission = Some(self.host.as_ref().expect("agent connection").prompt_after(
+            content,
+            active.cancel.clone(),
+            ready,
+        )?);
+        Ok(())
     }
     pub fn cancel(&self) {
         if let Some(preparation) = &self.preparation {
@@ -781,6 +794,33 @@ impl Conversation {
 
     pub async fn next_event(&mut self) -> Result<ConversationEvent> {
         loop {
+            if self.completion.is_some() {
+                self.settle_completion().await?;
+                continue;
+            }
+            if let Some(submission) = self.submission.as_mut() {
+                let result = submission.await.unwrap_or_else(|_| {
+                    Err(Error::new("AGENT_ERROR", "Prompt delivery worker stopped"))
+                });
+                self.submission.take();
+                if let Err(error) = result {
+                    self.finish(Err(error))?;
+                    continue;
+                }
+            }
+            if self.active.is_some()
+                && let Some(transcript) = &self.transcript
+                && let Err(error) = transcript.check()
+            {
+                self.cancel();
+                if let Some(host) = self.host.take() {
+                    let _ = host.close().await;
+                }
+                self.ready = false;
+                self.grant.take();
+                self.finish(Err(error))?;
+                continue;
+            }
             if let Some(event) = self.events.pop_front() {
                 return Ok(event);
             }
@@ -809,6 +849,7 @@ impl Conversation {
                 drop(preparation);
                 if let Err(error) = result
                     && self.result.is_none()
+                    && self.completion.is_none()
                 {
                     // Preparation failed before creating a turn/transcript or
                     // launching an adapter. The durable draft is untouched.
@@ -831,7 +872,26 @@ impl Conversation {
             let Some(host) = self.host.as_mut() else {
                 return std::future::pending().await;
             };
-            let event = host.next_event().await;
+            let event = tokio::select! {
+                event = host.next_event() => Ok(event),
+                error = async {
+                    if let Some(transcript) = &self.transcript { transcript.failure().await }
+                    else { std::future::pending().await }
+                } => Err(error),
+            };
+            let event = match event {
+                Ok(event) => event,
+                Err(error) => {
+                    self.cancel();
+                    self.finish(Err(error))?;
+                    if let Some(host) = self.host.take() {
+                        let _ = host.close().await;
+                    }
+                    self.ready = false;
+                    self.grant.take();
+                    continue;
+                }
+            };
             if let Some(event) = event {
                 if let Err(error) = self.process(event).await {
                     self.cancel();
@@ -1042,7 +1102,7 @@ impl Conversation {
                 if let Some(option) = automatic {
                     self.events.push_back(ConversationEvent::Message(value));
                     self.permission_response(&request, Some(option.clone()), false, true)?;
-                    let _ = reply.send(Some(option));
+                    self.deliver_permission(reply, Some(option))?;
                 } else if self.args.non_interactive {
                     self.events.push_back(ConversationEvent::Message(value));
                     let option = reject_once(&request);
@@ -1050,7 +1110,7 @@ impl Conversation {
                     if let Some(active) = &mut self.active {
                         active.denied = true;
                     }
-                    let _ = reply.send(option);
+                    self.deliver_permission(reply, option)?;
                 } else {
                     if self.pending_permissions.len() >= 32 {
                         return Err(Error::new(
@@ -1093,7 +1153,33 @@ impl Conversation {
         if !interactive && let Some(active) = &mut self.active {
             active.denied = true;
         }
-        let _ = pending.reply.send(selection);
+        self.deliver_permission(pending.reply, selection)?;
+        Ok(())
+    }
+    fn deliver_permission(
+        &self,
+        reply: oneshot::Sender<Option<String>>,
+        selection: Option<String>,
+    ) -> Result<()> {
+        let ready = self
+            .transcript
+            .as_ref()
+            .expect("active transcript")
+            .barrier()?;
+        let cancel = self
+            .active
+            .as_ref()
+            .expect("active permission")
+            .cancel
+            .clone();
+        tokio::spawn(async move {
+            let selection = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => None,
+                result = ready => if matches!(result, Ok(Ok(()))) { selection } else { None },
+            };
+            let _ = reply.send(selection);
+        });
         Ok(())
     }
     fn permission_response(
@@ -1116,111 +1202,10 @@ impl Conversation {
         self.events.push_back(ConversationEvent::Message(value));
         Ok(())
     }
-    fn finish(&mut self, mut result: Result<()>) -> Result<()> {
-        let Some(active) = self.active.take() else {
-            return Ok(());
-        };
-        if let Some(input) = self.pending_steering.take() {
-            self.message(json!({"type":"steering_result","id":input.id,"outcome":"unknown"}))?;
-        }
-        self.pending_permissions.clear();
-        let usage = self
-            .usage
-            .as_mut()
-            .map(|usage| usage.finish_turn())
-            .transpose();
-        let usage_result = usage.and_then(|records| {
-            for record in records.into_iter().flatten() {
-                self.message(record)?;
-            }
-            Ok(())
-        });
-        if let Err(error) = usage_result {
-            result = Err(Error::new(
-                "AGENT_ERROR",
-                "The turn's design-resource audit could not be completed",
-            )
-            .details(json!({"audit_error":error,"turn_error":result.err()})));
-        }
-        if self.host.is_none() {
-            self.usage.take();
-        }
-        let document = self.store.read();
-        if result.is_ok()
-            && let Err(error) = &document
-        {
-            result = Err(error.clone());
-        }
-        let actual = document
-            .map(|document| json!({"revision":document.revision()}))
-            .unwrap_or_else(|error| json!({"error":error}));
-        let consumed_draft = result.is_ok().then(|| {
-            (
-                self.session.state.draft.clone(),
-                self.session.state.pending_attachments.clone(),
-                self.session.state.continuity_pending,
-            )
-        });
-        if result.is_ok() {
-            self.session.state.draft.clear();
-            self.session.state.pending_attachments.clear();
-            self.session.state.continuity_pending = false;
-        }
-        if let Err(error) = self.session.save() {
-            result = Err(error);
-        }
-        let path = self
-            .transcript
-            .as_ref()
-            .map(|transcript| transcript.path.clone());
-        let mut value = match &result {
-            Ok(()) => {
-                json!({"type":"complete","session":self.id(),"turn":active.id,"native_session_id":self.session.state.native_session_id,"authentication":self.session.state.authentication,"document":actual,"before_revision":active.before,"transcript":path})
-            }
-            Err(error) => {
-                json!({"type":"failed","session":self.id(),"turn":active.id,"native_session_id":self.session.state.native_session_id,"authentication":self.session.state.authentication,"error":error,"document":actual,"before_revision":active.before,"transcript":path})
-            }
-        };
-        // Still expose the real document result if transcript storage itself fails.
-        let recorded = self.record(&value);
-        if let Ok(recorded) = &recorded {
-            value = recorded.clone();
-        }
-        if let Err(error) = recorded {
-            let error = Error::new("AGENT_ERROR", "The turn transcript could not be completed")
-                .details(json!({"transcript_error":error,"turn_error":result.err()}));
-            value["type"] = json!("failed");
-            value["error"] = json!(error);
-            result = Err(error);
-        }
-        if result.is_err()
-            && let Some((draft, attachments, continuity_pending)) = consumed_draft
-        {
-            self.session.state.draft = draft;
-            self.session.state.pending_attachments = attachments;
-            self.session.state.continuity_pending = continuity_pending;
-            if let Err(error) = self.session.save() {
-                let error = Error::new(
-                    "AGENT_ERROR",
-                    "The failed turn's draft could not be restored",
-                )
-                .details(json!({"draft_restore_error":error,"turn_error":result.err()}));
-                value["error"] = json!(error);
-                result = Err(error);
-            }
-        }
-        self.events.push_back(ConversationEvent::Message(value));
-        self.result = Some(result.map_err(|error| {
-            let cause = error.details.clone();
-            error.details(
-                json!({"session":self.id(),"document":actual,"transcript":path,"cause":cause}),
-            )
-        }));
-        Ok(())
-    }
     pub async fn close(&mut self) -> Result<()> {
         self.prepared_host.take();
         self.cancel();
+        self.submission.take();
         drop(self.preparation.take());
         let closed = if let Some(host) = self.host.take() {
             host.close().await
@@ -1230,15 +1215,32 @@ impl Conversation {
         self.ready = false;
         self.prepared_ready = None;
         self.grant.take();
-        if self.active() {
+        if self.active.is_some() {
             self.finish(Err(Error::new(
                 "CANCELLED",
                 "Conversation closed; committed edits were retained",
             )))?;
         }
+        self.settle_completion().await?;
         self.usage.take();
         self.pending_permissions.clear();
         self.session.save()?;
+        if let Some(transcript) = &self.transcript {
+            let durable = match transcript.barrier() {
+                Ok(receiver) => receiver.await.unwrap_or_else(|_| {
+                    Err(Error::new(
+                        "IO_ERROR",
+                        "Transcript durability worker stopped",
+                    ))
+                }),
+                Err(error) => Err(error),
+            };
+            // A reported failed turn must remain closable/selectable so the user
+            // can recover with another conversation or storage location.
+            if self.result.as_ref().is_none_or(|result| result.is_ok()) {
+                durable?;
+            }
+        }
         closed
     }
 }
@@ -1293,12 +1295,14 @@ mod tests {
             let mut conversation =
                 Conversation::open(args, Some(temp.path().join("data"))).unwrap();
             let document = conversation.store.read().unwrap();
-            let mut transcript = Transcript::create(conversation.directory()).unwrap();
+            let mut transcript = if full {
+                Transcript::create(conversation.directory()).unwrap()
+            } else {
+                Transcript::read_only(conversation.directory())
+            };
             let id = transcript.id.clone();
             if full {
                 transcript.bytes = 64 * 1024 * 1024;
-            } else {
-                transcript.file = std::fs::File::open(&transcript.path).unwrap();
             }
             conversation.transcript = Some(transcript);
             conversation.session.state.continuity_pending = true;
@@ -1310,8 +1314,13 @@ mod tests {
                 denied: false,
             });
             conversation.finish(Ok(())).unwrap();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let terminal = runtime.block_on(conversation.next_event()).unwrap();
             assert!(conversation.result().unwrap().is_err());
-            let Some(ConversationEvent::Message(terminal)) = conversation.events.pop_back() else {
+            let ConversationEvent::Message(terminal) = terminal else {
                 panic!("Missing terminal event")
             };
             assert_eq!(terminal["type"], "failed");
@@ -1323,6 +1332,7 @@ mod tests {
             .unwrap();
             assert_eq!(state["draft"], "retry this request");
             assert_eq!(state["continuity_pending"], true);
+            runtime.block_on(conversation.close()).unwrap();
             assert_eq!(
                 conversation.store.read().unwrap().revision(),
                 document.revision()

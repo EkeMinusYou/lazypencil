@@ -742,6 +742,7 @@ mod tests {
     fn turn(conversation: &Conversation) -> Transcript {
         let mut t = Transcript::create(conversation.directory()).unwrap();
         t.record(&json!({"type":"start","turn":t.id,"session":conversation.id(),"document":conversation.store().path()})).unwrap();
+        t.barrier().unwrap().blocking_recv().unwrap().unwrap();
         t
     }
     fn budget() -> Budget<'static> {
@@ -771,6 +772,7 @@ mod tests {
         ] {
             t.record(&record).unwrap();
         }
+        t.barrier().unwrap().blocking_recv().unwrap().unwrap();
         let before = std::fs::read(&t.path).unwrap();
         let metadata = std::fs::read(c.directory().join("session.json")).unwrap();
         let mut cursor = None;
@@ -905,6 +907,7 @@ mod tests {
         let mut t = turn(&c);
         t.record(&json!({"type":"user_prompt","text":"🙂".repeat(20_000)}))
             .unwrap();
+        t.barrier().unwrap().blocking_recv().unwrap().unwrap();
         let first = view(c.store(), c.id(), &t.id, None, MAX_PAGE_BYTES, None).unwrap();
         let next = first["next_cursor"].as_str().unwrap();
         let other = turn(&c);
@@ -927,10 +930,13 @@ mod tests {
         let mut changed = original.clone();
         let pos = changed.iter().rposition(|b| *b == 0x82).unwrap();
         changed[pos] = 0x83;
-        let modified = t.file.metadata().unwrap().modified().unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&t.path)
+            .unwrap();
+        let modified = file.metadata().unwrap().modified().unwrap();
         std::fs::write(&t.path, &changed).unwrap();
-        t.file
-            .set_times(std::fs::FileTimes::new().set_modified(modified))
+        file.set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
         assert_eq!(
             view(c.store(), c.id(), &t.id, Some(next), 64, None)

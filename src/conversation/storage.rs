@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -351,7 +351,7 @@ fn private_options() -> OpenOptions {
 
 pub(super) struct Transcript {
     pub(super) id: String,
-    pub(super) file: File,
+    writer: super::transcript::Writer,
     pub(super) path: PathBuf,
     pub(super) bytes: usize,
     started: std::time::Instant,
@@ -360,13 +360,10 @@ impl Transcript {
     pub(super) fn create(directory: &Path) -> Result<Self> {
         let id = uuid::Uuid::new_v4().to_string();
         let path = directory.join(format!("turn-{id}.jsonl"));
-        let file = private_options()
-            .create_new(true)
-            .open(&path)
-            .map_err(|e| Error::io(&path, e))?;
+        let writer = super::transcript::Writer::create(&path)?;
         Ok(Self {
             id,
-            file,
+            writer,
             path,
             bytes: 0,
             started: std::time::Instant::now(),
@@ -388,11 +385,31 @@ impl Transcript {
                 "The conversation turn transcript exceeded 64 MiB",
             ));
         }
-        self.file
-            .write_all(&bytes)
-            .and_then(|()| self.file.sync_data())
-            .map_err(|e| Error::io(&self.path, e))?;
+        self.writer.record(bytes)?;
         Ok(value)
+    }
+    pub(super) fn barrier(&self) -> Result<tokio::sync::oneshot::Receiver<Result<()>>> {
+        self.writer.barrier()
+    }
+    pub(super) fn check(&self) -> Result<()> {
+        self.writer.check()
+    }
+    pub(super) async fn failure(&self) -> Error {
+        self.writer.failure().await
+    }
+    #[cfg(test)]
+    pub(super) fn read_only(directory: &Path) -> Self {
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = directory.join(format!("turn-{id}.jsonl"));
+        std::fs::write(&path, "").unwrap();
+        let file = File::open(&path).unwrap();
+        Self {
+            id,
+            writer: super::transcript::Writer::from_file(path.clone(), file).unwrap(),
+            path,
+            bytes: 0,
+            started: std::time::Instant::now(),
+        }
     }
 }
 
@@ -455,6 +472,12 @@ mod tests {
             json!({"type":"complete"}),
         ] {
             let recorded = transcript.record(&value).unwrap();
+            transcript
+                .barrier()
+                .unwrap()
+                .blocking_recv()
+                .unwrap()
+                .unwrap();
             assert!(recorded["recorded_at_unix_ms"].as_u64().unwrap() > 0);
             let elapsed = recorded["elapsed_us"].as_u64().unwrap();
             assert!(elapsed >= 2_000_000 && elapsed >= last_elapsed);

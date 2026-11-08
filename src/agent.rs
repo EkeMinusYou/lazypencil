@@ -314,6 +314,17 @@ impl AgentHost {
         content: Vec<ContentBlock>,
         cancel: CancellationToken,
     ) -> Result<()> {
+        let (commands, turn) = self.prepare_turn(content, cancel)?;
+        commands
+            .send(turn)
+            .await
+            .map_err(|_| agent_error("Agent connection has closed"))
+    }
+    fn prepare_turn(
+        &self,
+        content: Vec<ContentBlock>,
+        cancel: CancellationToken,
+    ) -> Result<(mpsc::Sender<Turn>, Turn)> {
         if self.deferred_options.is_some() {
             return Err(agent_error("Choose a document before submitting a prompt"));
         }
@@ -323,16 +334,49 @@ impl AgentHost {
                 "A prompt must contain 1..32 content blocks",
             ));
         }
-        self.commands
+        let commands = self
+            .commands
             .as_ref()
             .ok_or_else(|| agent_error("Agent is closed"))?
-            .send(Turn {
+            .clone();
+        Ok((
+            commands,
+            Turn {
                 content,
                 cancel,
                 generation: self.generation.fetch_add(1, Ordering::Relaxed) + 1,
-            })
-            .await
-            .map_err(|_| agent_error("Agent connection has closed"))
+            },
+        ))
+    }
+
+    /// Retain submission across frontend select cancellation while waiting for
+    /// an external durability prerequisite. Cancellation still prevents delivery.
+    pub(crate) fn prompt_after(
+        &self,
+        content: Vec<ContentBlock>,
+        cancel: CancellationToken,
+        ready: oneshot::Receiver<Result<()>>,
+    ) -> Result<oneshot::Receiver<Result<()>>> {
+        let (commands, turn) = self.prepare_turn(content, cancel.clone())?;
+        let (reply, receiver) = oneshot::channel();
+        tokio::spawn(async move {
+            let sent = async {
+                ready
+                    .await
+                    .map_err(|_| agent_error("Prompt durability worker stopped"))??;
+                commands
+                    .send(turn)
+                    .await
+                    .map_err(|_| agent_error("Agent connection has closed"))
+            };
+            let result = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(Error::new("CANCELLED", "Prompt cancelled before delivery")),
+                result = sent => result,
+            };
+            let _ = reply.send(result);
+        });
+        Ok(receiver)
     }
 
     /// Whether this adapter supports steering with a host-owned idle fallback.

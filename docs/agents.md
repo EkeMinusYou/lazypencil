@@ -153,6 +153,14 @@ Lists accept `--limit 1..200` and `--cursor`, returning `next_cursor` and `previ
 
 Reads retain the existing 64 MiB per-turn bound, accept cancellation and have a 30 second cooperative deadline. Listings keep one page and one lookahead in memory; transcript hashing uses a 64 KiB buffer. Conversation metadata and first-record identity are checked against the selected document/session/turn. Recognized symlink directories, symlink file leaves, non-regular files and foreign headers are rejected. This does not make local logs tamper-proof against their filesystem owner. The [TUI's saved-log browser](tui.md#saved-conversation-logs) uses these shared APIs. Explicit TUI selection is described below; [reviewed deletion](#delete-local-conversation-data) and [user-owned aggregate retention](configuration.md#local-conversation-retention) are available.
 
+Transcript writes run on a dedicated worker with an 8 MiB queue. Streamed chunks
+share disk synchronization at intervals of at most 100 ms while storage responds.
+Initial prompt submissions and permission responses wait for preceding records to become durable
+before delivery; successful turn completion waits for its final record too. Slow or
+failed storage does not block terminal input. Queue exhaustion or a write/sync failure
+fails the turn and keeps its draft; it is never reported as a successful saved turn.
+An abrupt process or machine failure can lose the latest unsynchronized stream chunks.
+
 ### Select local conversation state
 
 CLI requests continue to choose a local UUID with `prompt --session UUID` or `tui --session UUID`. Library frontends can call `Conversation::select(Some(id))` while idle, or `select(None)` to create an empty local conversation. The TUI exposes these through the saved browser’s `u` and `N` keys and the **New empty conversation** palette action. Selecting the current ID is a no-op.
