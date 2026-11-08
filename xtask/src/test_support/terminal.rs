@@ -9,6 +9,8 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 pub struct Screen {
     parser: vt100::Parser,
+    synchronized: bool,
+    sync_prefix: usize,
 }
 impl Screen {
     pub fn new(width: u16, height: u16) -> Self {
@@ -18,6 +20,8 @@ impl Screen {
                 NonZeroU16::new(width).unwrap(),
                 0,
             ),
+            synchronized: false,
+            sync_prefix: 0,
         }
     }
     pub fn resize(&mut self, width: u16, height: u16) {
@@ -28,6 +32,26 @@ impl Screen {
     }
     pub fn feed(&mut self, bytes: &[u8]) {
         self.parser.process(bytes);
+        // PTY reads can split a synchronized update anywhere, including inside
+        // its control sequence. Observers must wait for the completed frame.
+        const PREFIX: &[u8] = b"\x1b[?2026";
+        for &byte in bytes {
+            if self.sync_prefix < PREFIX.len() && byte == PREFIX[self.sync_prefix] {
+                self.sync_prefix += 1;
+            } else {
+                if self.sync_prefix == PREFIX.len() {
+                    match byte {
+                        b'h' => self.synchronized = true,
+                        b'l' => self.synchronized = false,
+                        _ => {}
+                    }
+                }
+                self.sync_prefix = usize::from(byte == b'\x1b');
+            }
+        }
+    }
+    pub fn updating(&self) -> bool {
+        self.synchronized
     }
     pub fn text(&self) -> String {
         self.parser

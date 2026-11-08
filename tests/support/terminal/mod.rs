@@ -430,7 +430,7 @@ impl Harness {
         let end = Instant::now() + Duration::from_secs_f64(seconds);
         while Instant::now() < end {
             self.pump()?;
-            if predicate(self) {
+            if !self.screen.updating() && predicate(self) {
                 return Ok(());
             }
             if let Some(status) = self.child.try_wait()? {

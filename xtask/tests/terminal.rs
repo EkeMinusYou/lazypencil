@@ -6,6 +6,28 @@ use serde_json::Value;
 use terminal::{Frame, KittyFrames, Screen};
 
 #[test]
+fn screen_tracks_synchronized_updates_across_partial_terminal_reads() {
+    for chunk in 1..=8 {
+        let mut screen = Screen::new(80, 4);
+        for bytes in b"\x1b[?2026hPlayback 2.013s".chunks(chunk) {
+            screen.feed(bytes);
+        }
+        assert!(screen.updating());
+        // A partially written pause label is not a completed paused frame.
+        screen.feed(b"\x1b[1;16Hfinishing requested frame");
+        assert!(screen.updating());
+        for bytes in b"\x1b[?2026l".chunks(chunk) {
+            screen.feed(bytes);
+        }
+        assert!(!screen.updating());
+        screen.feed(b"\x1b[?2026h\x1b[1;1HPlayback 3.022s\x1b[K\x1b[?2026l");
+        assert!(!screen.updating());
+        assert!(screen.text().starts_with("Playback 3.022s"));
+        assert!(!screen.text().contains("finishing requested frame"));
+    }
+}
+
+#[test]
 fn screen_finds_text_across_undrawn_spaces_without_expanding_wide_continuations() {
     let mut screen = Screen::new(30, 4);
     screen.feed("\x1b[2;4HMouse\x1b[Crow\x1b[C0\x1b[3;5H日本語\x1b[Cready".as_bytes());
