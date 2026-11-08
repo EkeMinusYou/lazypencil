@@ -153,6 +153,7 @@ struct Client {
     input: Option<ChildStdin>,
     messages: Receiver<Value>,
     next_id: u64,
+    response_timeout: Duration,
 }
 
 #[test]
@@ -288,6 +289,18 @@ impl Client {
     fn start(file: &std::path::Path, data: &std::path::Path) -> Self {
         Self::start_with_chromium(file, data, None)
     }
+    fn start_with_response_timeout(
+        file: &std::path::Path,
+        data: &std::path::Path,
+        timeout: Duration,
+    ) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        command.arg("--data-dir").arg(data).arg("mcp");
+        let mut client = Self::from_command(command);
+        client.response_timeout = timeout;
+        client.open(file);
+        client
+    }
     fn start_with_chromium(
         file: &std::path::Path,
         data: &std::path::Path,
@@ -382,6 +395,7 @@ impl Client {
             input,
             messages,
             next_id: 1,
+            response_timeout: Duration::from_secs(10),
         };
         let initialized = client.request(
             "initialize",
@@ -422,7 +436,7 @@ impl Client {
         id
     }
     fn response(&mut self, id: u64) -> Value {
-        self.response_with_timeout(id, Duration::from_secs(10))
+        self.response_with_timeout(id, self.response_timeout)
     }
     fn response_with_timeout(&mut self, id: u64, timeout: Duration) -> Value {
         let deadline = Instant::now() + timeout;
@@ -448,7 +462,11 @@ impl Client {
     fn call(&mut self, name: &str, arguments: Value) -> Value {
         let id = self.start_request("tools/call", json!({"name":name,"arguments":arguments}));
         // Rendering has a 45-second shared budget plus bounded dispatch/cleanup.
-        let timeout = Duration::from_secs(if name == "render" { 60 } else { 10 });
+        let timeout = if name == "render" {
+            self.response_timeout.max(Duration::from_secs(60))
+        } else {
+            self.response_timeout
+        };
         let response = self.response_with_timeout(id, timeout);
         assert!(response.get("error").is_none(), "{response}");
         response["result"].clone()
@@ -1918,7 +1936,9 @@ fn large_diagnostic_sets_allow_small_layout_pages_and_png_responses() {
         .to_string(),
     )
     .unwrap();
-    let mut client = Client::start(&file, &data);
+    // Large identifiers intentionally exceed a normal response's byte budget.
+    // Allow bounded parsing and layout to finish on shared CI runners.
+    let mut client = Client::start_with_response_timeout(&file, &data, Duration::from_secs(60));
     let before = client.data("get_document", json!({}));
     let layout = client.data(
         "get_layout",
