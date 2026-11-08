@@ -289,6 +289,7 @@ impl Client {
     fn start(file: &std::path::Path, data: &std::path::Path) -> Self {
         Self::start_with_chromium(file, data, None)
     }
+    #[cfg(feature = "rendering")]
     fn start_with_response_timeout(
         file: &std::path::Path,
         data: &std::path::Path,
