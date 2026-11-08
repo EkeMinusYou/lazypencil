@@ -531,7 +531,7 @@ impl DocumentWorker {
                     project.dependency_revision()
                 );
                 let mut result = paginate(
-                    components,
+                    &components,
                     &identity,
                     args.limit,
                     args.cursor.as_deref(),
@@ -873,7 +873,6 @@ impl DocumentWorker {
             .records()
             .into_iter()
             .filter(|r| args.node_id.as_ref().is_none_or(|id| &r.id == id))
-            .map(|record| serde_json::to_value(record).expect("serializable layout record"))
             .collect::<Vec<_>>();
         if args.node_id.is_some() && records.is_empty() {
             return Err(Error::new(
@@ -887,7 +886,7 @@ impl DocumentWorker {
                 .as_bytes(),
         );
         let page = paginate(
-            records,
+            &records,
             &identity,
             args.limit,
             args.cursor.as_deref(),
@@ -967,8 +966,8 @@ fn structured(value: Value) -> Result<CallToolResult> {
     )?;
     Ok(CallToolResult::structured(value))
 }
-fn paginate(
-    values: Vec<Value>,
+fn paginate<T: serde::Serialize>(
+    values: &[T],
     identity: &str,
     limit: usize,
     cursor: Option<&str>,
@@ -976,11 +975,7 @@ fn paginate(
 ) -> Result<Value> {
     let offset = crate::query::page_offset(identity, cursor, limit, values.len())?;
     let total = values.len();
-    let page = values
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect::<Vec<_>>();
+    let page = &values[offset..offset.saturating_add(limit).min(total)];
     let next = (offset + page.len() < total).then(|| format!("{identity}:{}", offset + page.len()));
     let mut result = json!({"total_matches":total,"next_cursor":next});
     result[key] = json!(page);
@@ -990,6 +985,40 @@ fn paginate(
 #[cfg(all(test, feature = "rendering"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layout_pages_serialize_only_selected_records_and_reject_invalid_cursors_first() {
+        struct Row(usize);
+        impl serde::Serialize for Row {
+            fn serialize<S: serde::Serializer>(
+                &self,
+                serializer: S,
+            ) -> std::result::Result<S::Ok, S::Error> {
+                assert_eq!(self.0, 1, "Unselected records must never be serialized");
+                serializer.serialize_u64(self.0 as u64)
+            }
+        }
+        let rows = [Row(0), Row(1), Row(2)];
+        let page = paginate(&rows, "snapshot", 1, Some("snapshot:1"), "nodes").unwrap();
+        assert_eq!(
+            page,
+            json!({"nodes":[1],"total_matches":3,"next_cursor":"snapshot:2"})
+        );
+        for (cursor, code) in [
+            ("other:0", "REVISION_CONFLICT"),
+            ("snapshot:4", "INVALID_ARGUMENT"),
+        ] {
+            assert_eq!(
+                paginate(&rows, "snapshot", 1, Some(cursor), "nodes")
+                    .unwrap_err()
+                    .code,
+                code
+            );
+        }
+        let end = paginate(&rows, "snapshot", 1, Some("snapshot:3"), "nodes").unwrap();
+        assert_eq!(end["nodes"], json!([]));
+        assert!(end["next_cursor"].is_null());
+    }
 
     #[test]
     fn failed_code_expiry_releases_bytes_and_cancellation_does_not_poison_the_capture() {
