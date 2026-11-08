@@ -91,6 +91,7 @@ impl Project {
             revision: self.root_document().revision(),
             dependency_revision: self.dependency_revision(),
             dependencies: self.dependencies(),
+            runtime_dependencies: self.runtime_dependencies(),
             roots,
         })
     }

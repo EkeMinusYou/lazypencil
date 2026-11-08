@@ -459,6 +459,15 @@ pub fn document_metadata_with_cancellation(
     font_files: &[PathBuf],
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<Value> {
+    document_metadata_with_images(store, font_files, false, cancel)
+}
+
+pub fn document_metadata_with_images(
+    store: &Store,
+    font_files: &[PathBuf],
+    acquire_images: bool,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<Value> {
     crate::cancel::check(cancel)?;
     let document = store.read()?;
     let mut result = document.summary();
@@ -480,7 +489,7 @@ pub fn document_metadata_with_cancellation(
         "detach_instance":{"local_stored":true,"external":true,"inherited":true,"preserve_nested_refs":true,"external_scripts":true,"script_scope_metadata_version":1,"shader_sampler_variables":true,"checked_semantics":true},
         "import_component":{"modes":["link","copy"],"sources":["local","declared_library","local_file","bundled_style"],"dry_run_writes":false,"copy_scripts":true,"copy_string_sampler_variables":true,"copy_absolute_string_sampler_paths":true,"copy_http_string_sampler_urls":true,"sampler_copy_format":"imported_literal_variables","reuse_contained_definitions":true},
         "script_asset_bindings":{"local_paths":true,"local_file_urls":true,"http_images":true,"https_images":true,"embedded_images":"self_contained","remote_code":false,"uri_spelling":"preserved","redeclare_captured_without_refetch":true,"max_key_bytes":4096,"max_binding_bytes":4194304},
-        "image_sources":{"local":true,"local_file_url":true,"http":true,"https":true,"embedded_data_url":true,"network_policy":"runtime.browser","remote_dependency_kind":"remote_image","remote_snapshot":"captured_bytes","embedded_dependency_kind":"embedded_image"}
+        "image_sources":{"local":true,"local_file_url":true,"http":true,"https":true,"embedded_data_url":true,"network_policy":"runtime.browser","inspection_acquires_http":false,"explicit_acquisition":true,"remote_dependency_kind":"remote_image_reference","remote_runtime_dependency_kind":"remote_image","remote_snapshot":"captured_bytes","embedded_dependency_kind":"embedded_image"}
     });
     #[cfg(feature = "rendering")]
     {
@@ -495,10 +504,15 @@ pub fn document_metadata_with_cancellation(
         cancel,
     ) {
         Ok(mut project) => {
+            if acquire_images {
+                project.acquire_remote_images()?;
+            }
             project.add_font_files(font_files)?;
             result["configuration"] = project.configuration();
             result["dependency_revision"] = json!(project.dependency_revision());
             result["dependencies"] = json!(project.dependencies());
+            result["runtime_dependencies"] = json!(project.runtime_dependencies());
+            result["runtime_dependency_revision"] = json!(project.runtime_dependency_revision());
             asset_status(&mut result, &project);
             if let Some(error) = project.resolution_error() {
                 result["resolution_error"] = json!(error);
@@ -780,6 +794,7 @@ fn layout_snapshot_with_text_policy(
     if expected_dependency_revision.is_some() {
         project.require_dependencies(expected_dependency_revision)?;
     }
+    project.acquire_remote_images()?;
     crate::cancel::check(cancel.as_ref())?;
     let mut fonts = project.load_fonts()?;
     if preview_placeholders {
@@ -984,6 +999,16 @@ pub fn read_store_nodes_with_cancellation(
     request: &ReadNodesRequest,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<Value> {
+    read_store_nodes_with_images(store, fonts, request, false, cancel)
+}
+
+pub fn read_store_nodes_with_images(
+    store: &Store,
+    fonts: &[PathBuf],
+    request: &ReadNodesRequest,
+    acquire_images: bool,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<Value> {
     crate::cancel::check(cancel)?;
     if request.calculated || request.snapshot_id.is_some() {
         #[cfg(not(feature = "rendering"))]
@@ -1023,12 +1048,18 @@ pub fn read_store_nodes_with_cancellation(
             request.limit,
             request.cursor.as_deref(),
         )?;
-        let metadata = document_metadata_with_fonts(store, fonts)?;
+        let metadata = document_metadata_with_images(store, fonts, acquire_images, cancel)?;
         result["dependency_revision"] = metadata["dependency_revision"].clone();
         if let Some(error) = metadata.get("dependency_error") {
             result["dependency_error"] = error.clone();
         }
-        for key in ["assets_complete", "asset_diagnostics", "resolution_error"] {
+        for key in [
+            "assets_complete",
+            "asset_diagnostics",
+            "resolution_error",
+            "runtime_dependencies",
+            "runtime_dependency_revision",
+        ] {
             if let Some(value) = metadata.get(key) {
                 result[key] = value.clone();
             }
@@ -1036,7 +1067,10 @@ pub fn read_store_nodes_with_cancellation(
         result["view"] = json!("stored");
         result
     } else {
-        let project = project_with_fonts(store, document.clone(), fonts)?;
+        let mut project = project_with_fonts(store, document.clone(), fonts)?;
+        if acquire_images {
+            project.acquire_remote_images()?;
+        }
         let mut result = read_project_nodes(&project, request)?;
         asset_status(&mut result, &project);
         result

@@ -35,6 +35,7 @@ impl Project {
         if kind == "image" && (inline || crate::remote_images::is_http(uri)) {
             if !inline {
                 crate::remote_images::validate(uri)?;
+                self.declare_remote_image(origin, uri)?;
             }
             // Maintenance only discovers local retention roots. It must not
             // acquire the network while scanning documents or old history.
@@ -44,6 +45,9 @@ impl Project {
                     // maintenance keeps its conservative unresolved-input policy.
                     crate::inline_images::validate(uri)?;
                 }
+                return Ok(());
+            }
+            if !inline && !self.acquire_images {
                 return Ok(());
             }
             match self.capture_image(origin, uri) {
@@ -166,11 +170,17 @@ impl Project {
             .values()
             .map(MissingAsset::diagnostic)
             .chain(self.captured_image_failures.iter().map(|(path, error)| json!({"code":error.code,"message":error.message,"path":path,"kind":captured_image_kind(path),"origin":error.details.as_ref().and_then(|details| details.get("origin"))})))
+            .chain(self.remote_references.iter().filter(|(path, _)| !self.assets.contains_key(*path) && !self.captured_image_failures.contains_key(*path)).map(|(path, (origin, _))| json!({"code":"IMAGE_ACQUISITION_REQUIRED","message":"HTTP image bytes are deferred; explicitly acquire images or request layout/rendering","path":path,"kind":"remote_image_reference","origin":origin})))
             .collect()
     }
 
     pub fn assets_complete(&self) -> bool {
-        self.missing_assets.is_empty() && self.captured_image_failures.is_empty()
+        self.missing_assets.is_empty()
+            && self.captured_image_failures.is_empty()
+            && self
+                .remote_references
+                .keys()
+                .all(|path| self.assets.contains_key(path))
     }
 
     pub(crate) fn refresh_missing_assets(&mut self) -> Result<()> {
@@ -189,7 +199,7 @@ impl Project {
     }
 
     pub(crate) fn require_assets(&self) -> Result<()> {
-        if self.assets_complete()
+        if self.missing_assets.is_empty() && self.captured_image_failures.is_empty()
             || self.font_lock_capture
                 && self.captured_image_failures.is_empty()
                 && self

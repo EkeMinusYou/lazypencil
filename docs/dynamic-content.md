@@ -156,12 +156,23 @@ Payload contents are omitted from diagnostics.
 
 ### HTTP image acquisition
 
+Ordinary inspection declares HTTP image URLs without requesting them. `get_document`
+with `acquire_images: true`, CLI `inspect --acquire-images`, layout/rendering, and image
+copy/import explicitly acquire bytes. These operations can contact external services
+or local network addresses. Declared URL identities participate in document dependency
+preconditions as `remote_image_reference`; acquired byte hashes participate separately
+in runtime dependencies and calculation identity.
+
 A project captures remote image bytes in memory and reuses them during verification;
 a new project capture can fetch new bytes. Browser-profile cookies are not imported.
 Policy follows `runtime.browser.network_policy` and its timeout, capped at 30 seconds
 across one project's HTTP image acquisition, 20 MiB per encoded image, 4,096-byte URLs,
 and five redirects. Embedded credentials, protocol changes, and HTTPS-to-HTTP downgrade
 are rejected. A cancellation/owner-bound worker contains network work.
+`runtime.browser.image_origins` optionally restricts requests and every redirect to exact
+HTTP(S) scheme/host/port origins. Omit it to inherit; `[]` denies all HTTP images. A project
+can only narrow a user allowlist. This restriction applies to image acquisition, not
+Chromium page requests. `network_policy = "offline"` also denies all HTTP images.
 
 Missing remote images remain explicit incomplete assets for structural repair. Copies
 retain acquired bytes locally and remain renderable after source removal. This does not

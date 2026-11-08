@@ -120,7 +120,8 @@ fn http_sampler_copy_preserves_both_versions_themes_text_after_network_and_sourc
             captured
                 .dependencies()
                 .iter()
-                .any(|dependency| dependency.kind == "remote_image" && dependency.path == key)
+                .any(|dependency| dependency.kind == "remote_image_reference"
+                    && dependency.path == key)
         );
         assert!(
             captured.resolve_file(store.path(), &urls[0]).is_err(),
@@ -242,8 +243,52 @@ fn http_sampler_copy_preserves_both_versions_themes_text_after_network_and_sourc
             project
                 .dependencies()
                 .iter()
-                .any(|dependency| dependency.kind == "remote_image")
+                .any(|dependency| dependency.kind == "remote_image_reference")
         );
+    }
+}
+
+#[test]
+fn http_image_origins_guard_initial_requests_and_each_redirect() {
+    let server = reference::Server::new();
+    for (route, allowed, expected_requests, complete) in [
+        ("yellow.png", vec![], 0, false),
+        (
+            "redirect.png",
+            vec![format!("http://{}", server.address)],
+            2,
+            true,
+        ),
+        (
+            "other-origin.png",
+            vec![format!("http://{}", server.address)],
+            1,
+            false,
+        ),
+    ] {
+        let (temp, store) = fixture_image(format!(
+            "http://{}/network/http-image/{route}",
+            server.address
+        ));
+        fs::write(
+            temp.path().join("lazypencil.toml"),
+            format!(
+                "[runtime.browser]\nimage_origins={}\n",
+                serde_json::to_string(&allowed).unwrap()
+            ),
+        )
+        .unwrap();
+        let before = server.network_counts().0;
+        let project = load(&store).unwrap();
+        assert_eq!(project.assets_complete(), complete, "{route}");
+        assert_eq!(
+            server.network_counts().0 - before,
+            expected_requests,
+            "{route}"
+        );
+        if !complete {
+            assert!(!project.asset_diagnostics().is_empty());
+        }
     }
 }
 
@@ -388,10 +433,9 @@ fn http_image_cli_interrupt_reaps_the_worker_during_an_asset_read() {
             .arg("--json")
             .arg("--data-dir")
             .arg(store.data_dir())
-            .args(["assets", "read"])
+            .arg("inspect")
             .arg(store.path())
-            .arg("--hash")
-            .arg("0".repeat(64))
+            .arg("--acquire-images")
             .stdin(std::process::Stdio::null())
             .stdout(output.reopen().unwrap())
             .stderr(std::process::Stdio::null())
@@ -473,7 +517,14 @@ fn http_image_failures_remain_inspectable_and_structurally_repairable() {
         "http://{}/network/http-image/invalid.png?private-query-token",
         server.address
     ));
-    let metadata = cli(&store, &["inspect", store.path().to_str().unwrap()]);
+    let metadata = cli(
+        &store,
+        &[
+            "inspect",
+            store.path().to_str().unwrap(),
+            "--acquire-images",
+        ],
+    );
     assert_eq!(metadata["assets_complete"], false);
     assert!(
         metadata["asset_diagnostics"]

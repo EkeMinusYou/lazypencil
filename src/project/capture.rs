@@ -39,6 +39,7 @@ impl Project {
                 activity: store.asset_activity(),
                 remote_images: true,
                 remote_worker: Some(executable),
+                acquire_images: true,
             },
         )
     }
@@ -62,6 +63,7 @@ impl Project {
                 activity: store.asset_activity(),
                 remote_images: false,
                 remote_worker: None,
+                acquire_images: false,
             },
         )
     }
@@ -144,6 +146,7 @@ impl Project {
                 activity,
                 remote_images: true,
                 remote_worker: None,
+                acquire_images: false,
             },
         )
     }
@@ -168,6 +171,8 @@ impl Project {
         let mut project = Self {
             _asset_activity: Some(options.activity),
             remote_images_allowed: options.remote_images,
+            acquire_images: options.acquire_images,
+            remote_references: BTreeMap::new(),
             remote_worker: options.remote_worker.map(Path::to_owned),
             remote_deadline: None,
             captured_image_failures: BTreeMap::new(),

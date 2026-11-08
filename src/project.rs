@@ -73,7 +73,10 @@ pub struct Asset {
 
 impl Dependency {
     pub(crate) fn is_file(&self) -> bool {
-        !matches!(self.kind.as_str(), "remote_image" | "embedded_image")
+        !matches!(
+            self.kind.as_str(),
+            "remote_image" | "remote_image_reference" | "embedded_image"
+        )
     }
 }
 
@@ -96,6 +99,7 @@ struct CaptureOptions<'a> {
     activity: Arc<crate::store::AssetActivity>,
     remote_images: bool,
     remote_worker: Option<&'a Path>,
+    acquire_images: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -219,6 +223,7 @@ pub struct ResolvedScene {
     pub revision: String,
     pub dependency_revision: String,
     pub dependencies: Vec<Dependency>,
+    pub runtime_dependencies: Vec<Dependency>,
     pub roots: Vec<ResolvedNode>,
 }
 
@@ -249,6 +254,8 @@ pub struct Project {
     file_bindings: std::sync::Mutex<BTreeMap<PathBuf, PathBuf>>,
     cancel: Option<tokio_util::sync::CancellationToken>,
     remote_images_allowed: bool,
+    acquire_images: bool,
+    remote_references: BTreeMap<PathBuf, (PathBuf, String)>,
     remote_worker: Option<PathBuf>,
     remote_deadline: Option<std::time::Instant>,
     captured_image_failures: BTreeMap<PathBuf, Error>,
@@ -313,6 +320,8 @@ impl Project {
             overlay_published: true,
             cancel: None,
             remote_images_allowed: false,
+            acquire_images: false,
+            remote_references: BTreeMap::new(),
             remote_worker: None,
             remote_deadline: None,
             captured_image_failures: BTreeMap::new(),
@@ -714,19 +723,29 @@ impl Project {
                     }),
             )
             .chain(self.missing_assets.values().map(|asset| asset.dependency()))
-            .chain(self.captured_image_failures.iter().map(|(path, error)| {
-                Dependency {
-                    path: path.clone(),
-                    revision: hash(
-                        json!({"path":path,"availability":"missing","error":error})
-                            .to_string()
-                            .as_bytes(),
-                    ),
-                    kind: captured_image_kind(path).into(),
-                    version: None,
-                    availability: Some("missing"),
-                }
+            .chain(self.remote_references.keys().map(|path| Dependency {
+                path: path.clone(),
+                revision: hash(path.as_os_str().as_encoded_bytes()),
+                kind: "remote_image_reference".into(),
+                version: None,
+                availability: None,
             }))
+            .chain(
+                self.captured_image_failures
+                    .iter()
+                    .filter(|(path, _)| !crate::remote_images::is_key(path))
+                    .map(|(path, error)| Dependency {
+                        path: path.clone(),
+                        revision: hash(
+                            json!({"path":path,"availability":"missing","error":error})
+                                .to_string()
+                                .as_bytes(),
+                        ),
+                        kind: captured_image_kind(path).into(),
+                        version: None,
+                        availability: Some("missing"),
+                    }),
+            )
             .chain(self.font_sources.values().map(|font| Dependency {
                 path: font.path.clone(),
                 revision: font.revision.clone(),

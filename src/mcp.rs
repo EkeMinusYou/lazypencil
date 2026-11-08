@@ -253,6 +253,13 @@ pub(crate) fn tool_names() -> Vec<String> {
 struct Empty {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct DocumentArgs {
+    /// Explicitly acquire HTTP image bytes; false keeps inspection free of HTTP requests.
+    #[serde(default)]
+    acquire_images: bool,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct GuideArgs {
     #[serde(default)]
     id: Option<String>,
@@ -473,10 +480,11 @@ impl DocumentWorker {
                 service::project_style_with_cancellation(&self.store, &args.id, Some(cancel))?
             }
             ToolKind::GetDocument => {
-                let _: Empty = parse(arguments)?;
-                let mut value = service::document_metadata_with_cancellation(
+                let args: DocumentArgs = parse(arguments)?;
+                let mut value = service::document_metadata_with_images(
                     &self.store,
                     &self.fonts,
+                    args.acquire_images,
                     Some(cancel),
                 )?;
                 value["guidance"] = json!({"entry_tool":"get_guidance","entry_id":"start","language":"en","styles_tool":"list_styles"});

@@ -1,10 +1,7 @@
 use crate::{
     Error, Result,
     operations::{EditRequest, Operation},
-    service::{
-        apply_request_with_cancellation, document_metadata, document_metadata_with_fonts,
-        read_store_nodes_with_cancellation,
-    },
+    service::{apply_request_with_cancellation, document_metadata},
     store::{self, Store},
 };
 use clap::{Args, Parser, Subcommand};
@@ -276,6 +273,9 @@ pub enum ConfigCommand {
 #[derive(Debug, Args)]
 pub struct Inspect {
     pub file: PathBuf,
+    /// Explicitly acquire HTTP image bytes under the configured network policy.
+    #[arg(long)]
+    pub acquire_images: bool,
     /// Execute scripts and inspect the calculated tree used by layout/rendering.
     #[arg(long)]
     pub calculated: bool,
@@ -726,7 +726,7 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 || options.library_alias.is_some()
                 || options.expand_instances
             {
-                read_store_nodes_with_cancellation(
+                crate::service::read_store_nodes_with_images(
                     &store,
                     &options.fonts,
                     &crate::service::ReadNodesRequest {
@@ -742,10 +742,16 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                         limit: options.limit,
                         cursor: options.cursor.clone(),
                     },
+                    options.acquire_images,
                     Some(&crate::cancel::token()),
                 )
             } else {
-                document_metadata_with_fonts(&store, &options.fonts)
+                crate::service::document_metadata_with_images(
+                    &store,
+                    &options.fonts,
+                    options.acquire_images,
+                    Some(&crate::cancel::token()),
+                )
             }
         }
         Command::Validate(options) => {

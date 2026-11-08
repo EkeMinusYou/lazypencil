@@ -60,6 +60,31 @@ pub(crate) fn validate(uri: &str) -> Result<url::Url> {
     Ok(url)
 }
 
+pub(crate) fn origin(value: &str) -> Result<String> {
+    let url = validate(value)?;
+    if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+        return Err(failure(
+            "Expected an HTTP(S) origin without a path, query or fragment",
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+fn check_origin(url: &url::Url, allowed: Option<&[String]>) -> Result<()> {
+    if let Some(allowed) = allowed {
+        let current = url.origin().ascii_serialization();
+        if !allowed
+            .iter()
+            .any(|value| origin(value).is_ok_and(|origin| origin == current))
+        {
+            return Err(failure(
+                "HTTP image origin is not permitted by the configured policy",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn key(uri: &str) -> Result<PathBuf> {
     validate(uri)?;
     Ok(identity(uri))
@@ -82,18 +107,21 @@ pub(crate) fn is_key(path: &Path) -> bool {
 struct Request {
     url: String,
     timeout_ms: u64,
+    allowed_origins: Option<Vec<String>>,
 }
 
 pub(crate) fn fetch(
     uri: &str,
     executable: Option<&Path>,
     timeout: Duration,
+    allowed_origins: Option<&[String]>,
     cancel: Option<&CancellationToken>,
 ) -> Result<Arc<[u8]>> {
     let cli_cancel = crate::cancel::token();
     let cancel = cancel.or_else(|| crate::cancel::cli_handler_installed().then_some(&cli_cancel));
     crate::cancel::check(cancel)?;
     let mut url = validate(uri)?;
+    check_origin(&url, allowed_origins)?;
     url.set_fragment(None);
     let executable = match executable {
         Some(executable) => executable.to_owned(),
@@ -108,6 +136,7 @@ pub(crate) fn fetch(
     let request = serde_json::to_vec(&Request {
         url: url.into(),
         timeout_ms: timeout.as_millis() as u64,
+        allowed_origins: allowed_origins.map(<[String]>::to_vec),
     })
     .map_err(|_| failure("Cannot encode HTTP image acquisition"))?;
     let mut input = (request.len() as u32).to_le_bytes().to_vec();
@@ -145,7 +174,7 @@ pub fn serve_worker() -> Result<()> {
         .read_exact(&mut length)
         .map_err(|_| failure("Missing image request"))?;
     let length = u32::from_le_bytes(length) as usize;
-    if !(1..=8192).contains(&length) {
+    if !(1..=16384).contains(&length) {
         return Err(failure("Invalid image request length"));
     }
     let mut bytes = vec![0; length];
@@ -159,8 +188,16 @@ pub fn serve_worker() -> Result<()> {
     }
     crate::runtime::download::watch_owner()?;
     let mut url = validate(&request.url)?;
+    if let Some(origins) = &request.allowed_origins
+        && (origins.len() > 64
+            || origins.iter().map(String::len).sum::<usize>() > 4096
+            || origins.iter().any(|value| origin(value).is_err()))
+    {
+        return Err(failure("Invalid HTTP image origin policy"));
+    }
     let deadline = Instant::now() + Duration::from_millis(request.timeout_ms);
     for redirect in 0..=5 {
+        check_origin(&url, request.allowed_origins.as_deref())?;
         let remaining = deadline
             .checked_duration_since(Instant::now())
             .ok_or_else(|| failure("Image request deadline exceeded"))?;

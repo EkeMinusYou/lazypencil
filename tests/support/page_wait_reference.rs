@@ -225,11 +225,12 @@ fn serve(mut stream: TcpStream, stop: &AtomicBool, probe: &AtomicBool, network: 
         use base64::Engine;
         if matches!(
             route,
-            "redirect.png" | "loop.png" | "file.png" | "credentials.png"
+            "redirect.png" | "other-origin.png" | "loop.png" | "file.png" | "credentials.png"
         ) {
             let location = match route {
                 "redirect.png" => "/network/http-image/yellow.png",
                 "loop.png" => "/network/http-image/loop.png",
+                "other-origin.png" => "http://localhost:1/must-not-fetch.png",
                 "file.png" => "file:///must-not-open.png",
                 _ => "http://user:fixture-password@127.0.0.1/private",
             };

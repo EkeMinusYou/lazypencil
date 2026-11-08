@@ -96,7 +96,15 @@ impl ToolKind {
                 self.effect(),
                 Effect::CreateDocument | Effect::PreviewWrite
             ))
-            .open_world(false)
+            .open_world(match self {
+                Self::GetDocument
+                | Self::ReadNodes
+                | Self::ValidateDocument
+                | Self::ApplyOperations => true,
+                #[cfg(feature = "rendering")]
+                Self::GetLayout | Self::Render => true,
+                _ => false,
+            })
     }
 }
 
@@ -136,9 +144,9 @@ fn tools() -> Vec<Tool> {
             ToolKind::GetStyle,
             "Read style tokens, guidance references, font requirements and a read-only editable .pen example. Import or create elements through normal editing operations; never reuse example IDs as generated IDs.",
         ),
-        tool::<Empty>(
+        tool::<DocumentArgs>(
             ToolKind::GetDocument,
-            "Read the bound document, current revisions, roots, dependency hashes and diagnostics before editing.",
+            "Read the bound document, current revisions, roots, dependency hashes and diagnostics before editing. HTTP image bytes are deferred by default. Set acquire_images:true to explicitly fetch them under the network policy; requests can reach external and local services. Layout/rendering also acquire images.",
         ),
         tool::<service::ReadNodesRequest>(
             ToolKind::ReadNodes,

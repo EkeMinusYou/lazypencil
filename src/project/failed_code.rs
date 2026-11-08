@@ -62,6 +62,7 @@ impl Project {
                     | "shader"
                     | "image"
                     | "remote_image"
+                    | "remote_image_reference"
                     | "embedded_image"
                     | "icon_pack"
             )

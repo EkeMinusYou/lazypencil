@@ -2,6 +2,37 @@ use super::*;
 use std::time::{Duration, Instant};
 
 impl Project {
+    pub(super) fn declare_remote_image(&mut self, origin: &Path, uri: &str) -> Result<()> {
+        let path = crate::remote_images::key(uri)?;
+        if !self.remote_references.contains_key(&path) {
+            if self.remote_references.len() >= 1024 {
+                return Err(invalid("A project may declare at most 1024 HTTP images"));
+            }
+            self.byte_count = self
+                .byte_count
+                .saturating_add(uri.len())
+                .saturating_add(origin.as_os_str().len())
+                .saturating_add(path.as_os_str().len());
+            if self.byte_count > MAX_PROJECT_BYTES {
+                return Err(invalid("Project dependencies exceed 128 MiB"));
+            }
+            self.remote_references
+                .insert(path, (origin.to_owned(), uri.into()));
+        }
+        Ok(())
+    }
+
+    /// Explicitly acquire declared HTTP image bytes under the captured network policy.
+    /// Passive inspection keeps only declarations in the document dependency revision.
+    pub fn acquire_remote_images(&mut self) -> Result<()> {
+        self.acquire_images = true;
+        let references = self.remote_references.values().cloned().collect::<Vec<_>>();
+        for (origin, uri) in references {
+            self.capture_declared_asset(&origin, &uri, "image")?;
+        }
+        Ok(())
+    }
+
     /// Image-only resolution never extends the local/code/import read roots.
     pub fn resolve_image(&self, origin: &Path, uri: &str) -> Result<PathBuf> {
         if crate::inline_images::is_data(uri) {
@@ -71,9 +102,11 @@ impl Project {
             uri,
             self.remote_worker.as_deref(),
             remaining,
+            settings.image_origins.as_deref(),
             self.cancel.as_ref(),
         )?;
         self.capture_bytes(path.clone(), "remote_image", bytes)?;
+        self.runtime_assets.insert(path.clone());
         Ok(path)
     }
 }

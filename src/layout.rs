@@ -201,7 +201,14 @@ pub(crate) fn compute_checked(
         .reduce(Rect::union)
         .unwrap_or_default();
     check()?;
-    let id = snapshot_identity(&scene.revision, &scene.dependency_revision, &solver.items);
+    let mut id = snapshot_identity(&scene.revision, &scene.dependency_revision, &solver.items);
+    if !scene.runtime_dependencies.is_empty() {
+        id = hash(
+            serde_json::json!({"layout":id,"runtime_dependencies":scene.runtime_dependencies})
+                .to_string()
+                .as_bytes(),
+        );
+    }
     check()?;
     Ok(LayoutSnapshot {
         id,
@@ -212,7 +219,7 @@ pub(crate) fn compute_checked(
         roots: solver.roots,
         text_blocks: solver.blocks,
         bounds,
-        runtime_dependencies: Vec::new(),
+        runtime_dependencies: scene.runtime_dependencies,
         script_executions: Vec::new(),
     })
 }

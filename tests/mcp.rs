@@ -18,6 +18,87 @@ mod http_image_reference;
 
 #[cfg(unix)]
 #[test]
+fn passive_document_tools_never_fetch_http_images_and_explicit_acquisition_keeps_revision_preconditions()
+ {
+    let temp = TempDir::new().unwrap();
+    let server = http_image_reference::Server::new();
+    let file = temp.path().join("image.pen");
+    fs::write(&file, json!({"version":"2.22","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/yellow.png?private-query",server.address)}}]}).to_string()).unwrap();
+    let mut client = Client::start(&file, &temp.path().join("data"));
+    let metadata = client.data("get_document", json!({}));
+    assert_eq!(metadata["assets_complete"], false);
+    assert_eq!(
+        metadata["asset_diagnostics"][0]["code"],
+        "IMAGE_ACQUISITION_REQUIRED"
+    );
+    for (tool, arguments) in [
+        ("read_nodes", json!({})),
+        ("list_components", json!({})),
+        ("get_variables", json!({})),
+        ("get_guidance", json!({"id":"start"})),
+        ("list_styles", json!({"limit":1})),
+        ("get_style", json!({"id":"standard-ui"})),
+        ("validate_document", json!({})),
+    ] {
+        client.data(tool, arguments);
+    }
+    let _ = client.call("read_asset", json!({"hash":"0".repeat(64)}));
+    assert_eq!(
+        server.network_counts().0,
+        0,
+        "Passive tools must not contact even a localhost image URL"
+    );
+    let acquired = client.data("get_document", json!({"acquire_images":true}));
+    assert_eq!(server.network_counts().0, 1);
+    assert_eq!(acquired["assets_complete"], true);
+    assert_eq!(
+        acquired["dependency_revision"],
+        metadata["dependency_revision"]
+    );
+    assert_eq!(acquired["runtime_dependencies"][0]["kind"], "remote_image");
+    #[cfg(feature = "rendering")]
+    {
+        let layout = client.data("get_layout", json!({"expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"]}));
+        assert_eq!(
+            layout["dependency_revision"],
+            metadata["dependency_revision"]
+        );
+        assert_eq!(
+            layout["runtime_dependencies"][0]["revision"],
+            acquired["runtime_dependencies"][0]["revision"]
+        );
+        let requests = server.network_counts().0;
+        let rendered = client.call("render", json!({"expected_revision":layout["revision"],"expected_dependency_revision":layout["dependency_revision"],"snapshot_id":layout["snapshot_id"]}));
+        assert_ne!(rendered["isError"], true, "{rendered}");
+        assert_eq!(
+            server.network_counts().0,
+            requests,
+            "Rendering a retained capture must not fetch its images again"
+        );
+    }
+    let tools = client.request("tools/list", json!({}))["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .clone();
+    for tool in tools {
+        if [
+            "get_document",
+            "read_nodes",
+            "validate_document",
+            "apply_operations",
+            "get_layout",
+            "render",
+        ]
+        .contains(&tool["name"].as_str().unwrap())
+        {
+            assert_eq!(tool["annotations"]["openWorldHint"], true);
+        }
+    }
+    client.finish();
+}
+
+#[cfg(unix)]
+#[test]
 fn document_queue_waits_for_capacity_and_cancels_waiting_edits() {
     let temp = TempDir::new().unwrap();
     let server = http_image_reference::Server::new();
@@ -26,7 +107,10 @@ fn document_queue_waits_for_capacity_and_cancels_waiting_edits() {
     let repaired = json!({"version":"2.21","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":"#00ff00"}]}).to_string();
     fs::write(&file, original).unwrap();
     let mut client = Client::start(&file, &temp.path().join("data"));
-    let blocked = client.start_request("tools/call", json!({"name":"get_document","arguments":{}}));
+    let blocked = client.start_request(
+        "tools/call",
+        json!({"name":"get_document","arguments":{"acquire_images":true}}),
+    );
     let deadline = Instant::now() + Duration::from_secs(10);
     while server.network_counts().0 == 0 {
         assert!(
@@ -93,13 +177,7 @@ fn document_queue_waits_for_capacity_and_cancels_waiting_edits() {
 #[cfg(unix)]
 #[test]
 fn http_image_metadata_cancellation_reaps_worker_and_unblocks_document_access() {
-    for (tool, arguments) in [
-        ("get_document", json!({})),
-        ("get_guidance", json!({"id":"start"})),
-        ("list_styles", json!({"limit":1})),
-        ("get_style", json!({"id":"standard-ui"})),
-        ("read_asset", json!({"hash":"0".repeat(64)})),
-    ] {
+    for (tool, arguments) in [("get_document", json!({"acquire_images":true}))] {
         let temp = TempDir::new().unwrap();
         let server = http_image_reference::Server::new();
         let file = temp.path().join("image.pen");
@@ -229,7 +307,10 @@ fn tool_timing_separates_queue_waits_and_records_cancelled_execution() {
         lazypencil::guidance::usage::UsageGrant::create(&store, &directory, &conversation).unwrap();
     grant.begin_turn(&uuid::Uuid::new_v4().to_string()).unwrap();
     let mut client = Client::start_with_context(&file, &data, None, &[], Some(grant.path()));
-    let blocked = client.start_request("tools/call", json!({"name":"get_document","arguments":{}}));
+    let blocked = client.start_request(
+        "tools/call",
+        json!({"name":"get_document","arguments":{"acquire_images":true}}),
+    );
     let deadline = Instant::now() + Duration::from_secs(10);
     while server.network_counts().0 == 0 {
         assert!(

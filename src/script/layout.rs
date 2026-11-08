@@ -86,7 +86,7 @@ pub fn compute(
                 .values()
                 .map(|cached| cached.metadata.clone())
                 .collect();
-            if !snapshot.script_executions.is_empty() {
+            if !snapshot.script_executions.is_empty() || !snapshot.runtime_dependencies.is_empty() {
                 snapshot.id=hash(json!({"layout":snapshot.id,"script_engine":ENGINE,"executions":snapshot.script_executions,"runtime_dependencies":snapshot.runtime_dependencies}).to_string().as_bytes());
             }
             project.verify_unchanged()?;

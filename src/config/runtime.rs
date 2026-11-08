@@ -10,6 +10,7 @@ pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
     "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n# animation_policy = \"running\"\n# network_policy = \"online\"\n",
+    "# Restrict HTTP image requests (including redirects) to these exact origins.\n# image_origins = [\"https://assets.example.com\"]\n# An empty list denies HTTP image requests; omit to inherit.\n",
     "# User configuration only: profile = \"work\" selects dedicated authentication state.\n# profile = \"\"\n",
     "\n# [runtime.shader]\n# timeout_ms = 15000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n",
     "\n# [runtime.dynamic]\n# render_timeout_ms = 45000\n# cache_mib = 64\n# cache_entries = 32\n",
@@ -103,6 +104,8 @@ pub struct BrowserSettings {
     pub animation_policy: PageAnimationPolicy,
     /// Web requests and proxied WebRTC routes; broader egress controls are separate.
     pub network_policy: PageNetworkPolicy,
+    /// Optional ceiling for HTTP image origins; project settings may only restrict it.
+    pub image_origins: Option<Vec<String>>,
     /// Only user configuration may select a dedicated authentication profile.
     /// Never publish the name in acquisition metadata or serialized limits.
     #[serde(skip_serializing)]
@@ -154,6 +157,7 @@ impl Default for BrowserSettings {
             additional_wait_ms: 0,
             animation_policy: PageAnimationPolicy::Running,
             network_policy: PageNetworkPolicy::Online,
+            image_origins: None,
             profile: String::new(),
         }
     }
@@ -161,6 +165,16 @@ impl Default for BrowserSettings {
 
 impl BrowserSettings {
     pub fn validate(&self) -> Result<()> {
+        if let Some(origins) = &self.image_origins {
+            if origins.len() > 64 || origins.iter().map(String::len).sum::<usize>() > 4096 {
+                return Err(invalid(
+                    "runtime.browser.image_origins accepts at most 64 origins within 4096 bytes",
+                ));
+            }
+            for origin in origins {
+                crate::remote_images::origin(origin).map_err(|_| invalid("runtime.browser.image_origins requires HTTP(S) origins without credentials, paths, query or fragments"))?;
+            }
+        }
         if !self.profile.is_empty() && !crate::runtime::profiles::valid_name(&self.profile) {
             return Err(invalid(
                 "runtime.browser.profile must be empty or a dedicated profile name",
@@ -297,6 +311,7 @@ struct BrowserOverrides {
     additional_wait_ms: Option<u64>,
     animation_policy: Option<PageAnimationPolicy>,
     network_policy: Option<PageNetworkPolicy>,
+    image_origins: Option<Vec<String>>,
     profile: Option<String>,
 }
 
@@ -344,6 +359,7 @@ pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
         "browser.additional_wait_ms",
         "browser.animation_policy",
         "browser.network_policy",
+        "browser.image_origins",
         "browser.profile",
         "shader.timeout_ms",
         "shader.launch_timeout_ms",
@@ -412,6 +428,30 @@ impl RuntimeOverrides {
             apply!(browser, network_policy);
         }
         apply!(browser, profile);
+        if let Some(image_origins) = &self.browser.image_origins {
+            declared.browser.image_origins = Some(image_origins.clone());
+            declared.browser.validate()?;
+            let effective = if origin == "project"
+                && let Some(user) = &settings.browser.image_origins
+            {
+                let user = user
+                    .iter()
+                    .map(|origin| crate::remote_images::origin(origin))
+                    .collect::<Result<std::collections::BTreeSet<_>>>()?;
+                image_origins
+                    .iter()
+                    .filter(|origin| {
+                        crate::remote_images::origin(origin)
+                            .is_ok_and(|origin| user.contains(&origin))
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                image_origins.clone()
+            };
+            settings.browser.image_origins = Some(effective);
+            origins.insert("browser.image_origins", origin);
+        }
         apply!(shader, timeout_ms);
         apply!(shader, launch_timeout_ms);
         apply!(shader, idle_seconds);

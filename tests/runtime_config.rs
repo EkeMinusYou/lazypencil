@@ -21,6 +21,81 @@ struct Fixture {
 }
 
 #[test]
+fn image_origins_are_validated_and_projects_can_only_narrow_user_policy() {
+    let f = Fixture::new();
+    assert!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .image_origins
+            .is_none()
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nimage_origins=['HTTPS://Example.com:443','http://localhost:8080']\n",
+    )
+    .unwrap();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nimage_origins=['https://example.com','https://other.example']\n",
+    )
+    .unwrap();
+    let settings = f.snapshot().unwrap().settings.runtime.browser;
+    assert_eq!(settings.image_origins.unwrap(), ["https://example.com"]);
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nimage_origins=[]\n",
+    )
+    .unwrap();
+    assert!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .image_origins
+            .unwrap()
+            .is_empty()
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.browser]\nimage_origins=[]\n",
+    )
+    .unwrap();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.browser]\nimage_origins=['https://other.example']\n",
+    )
+    .unwrap();
+    assert!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .browser
+            .image_origins
+            .unwrap()
+            .is_empty()
+    );
+    for invalid in [
+        "file:///tmp",
+        "http://user:pass@example.com",
+        "https://example.com/path",
+        "https://example.com?q=1",
+        "https://example.com#fragment",
+    ] {
+        fs::write(
+            f.project.join("lazypencil.toml"),
+            format!("[runtime.browser]\nimage_origins=[{}]\n", json!(invalid)),
+        )
+        .unwrap();
+        assert!(f.snapshot().is_err(), "{invalid}");
+    }
+}
+
+#[test]
 fn dedicated_browser_profiles_are_user_selected_redacted_and_project_disable_only() {
     let f = Fixture::new();
     assert!(
@@ -536,7 +611,7 @@ fn user_offline_blocks_inspection_requests_even_when_the_project_requests_online
             Command::new(env!("CARGO_BIN_EXE_lazypencil"))
                 .env("LAZYPENCIL_CONFIG_DIR", &fixture.user)
                 .env("LAZYPENCIL_DATA_DIR", fixture.temp.path().join("data"))
-                .args(["--json", "inspect"])
+                .args(["--json", "inspect", "--acquire-images"])
                 .arg(&fixture.document),
             std::time::Duration::from_secs(5),
         );
