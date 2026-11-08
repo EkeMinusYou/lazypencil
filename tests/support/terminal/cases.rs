@@ -1587,6 +1587,10 @@ fn progressive_navigation(h: &mut Harness) -> Result {
     );
     h.key(b"\x1b[108;1:3u")?;
     h.pump_for(0.3)?;
+    // Fitting the document preserves selection. Clear its decoration before
+    // comparing the restored viewport with the original unselected pixels.
+    h.key(b"\x1b")?;
+    h.pump_for(0.15)?;
     h.key(b"0")?;
     h.wait("fit restores the complete scene", 15.0, |h| {
         h.frames.images.last() == Some(&initial)
