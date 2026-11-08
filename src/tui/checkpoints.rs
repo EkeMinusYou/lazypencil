@@ -426,41 +426,10 @@ impl super::App {
         if self.modal.is_none() {
             return;
         }
-        let items = super::commands::COMMANDS
-            .iter()
-            .filter(|_| matches!(self.modal, Some(Modal::Commands { .. })))
-            .map(|command| {
-                let unavailable = self.command_unavailable(command).is_some();
-                ListItem::new(Line::from(vec![
-                    super::Span::styled(
-                        format!("{} · ", command.category),
-                        Style::default().fg(super::theme::colors().secondary),
-                    ),
-                    super::Span::styled(
-                        command.label,
-                        Style::default().fg(if unavailable {
-                            super::theme::colors().secondary
-                        } else {
-                            super::theme::colors().text
-                        }),
-                    ),
-                ]))
-            })
-            .collect::<Vec<_>>();
-        let detail = if let Some(Modal::Commands { selected }) = self.modal.as_ref() {
-            let command = &super::commands::COMMANDS[*selected];
-            format!(
-                "{}\n{}\n{}",
-                command.usage(),
-                self.command_unavailable(command).map_or_else(
-                    || command.description.to_owned(),
-                    |reason| format!("Unavailable: {reason}")
-                ),
-                "↑/↓ select · Enter run · Esc closes"
-            )
-        } else {
-            String::new()
-        };
+        if matches!(self.modal, Some(Modal::Commands { .. })) {
+            self.draw_command_palette(frame);
+            return;
+        }
         let Some(modal) = &mut self.modal else {
             return;
         };
@@ -470,31 +439,7 @@ impl super::App {
         let highlight = super::theme::modal_selected();
         match modal {
             Modal::Saved(page) => super::saved::draw(page, frame, popup, &mut self.pointer),
-            Modal::Commands { selected } => {
-                let block = super::dialog("Commands");
-                let inner = block.inner(popup);
-                let footer = Paragraph::new(detail)
-                    .wrap(Wrap { trim: false })
-                    .style(Style::default().fg(super::theme::colors().secondary));
-                let footer_height = footer
-                    .line_count(inner.width)
-                    .min(usize::from(inner.height.saturating_sub(1)))
-                    as u16;
-                let sections =
-                    Layout::vertical([Constraint::Min(1), Constraint::Length(footer_height)])
-                        .split(inner);
-                frame.render_widget(block, popup);
-                self.pointer.modal_list(
-                    frame,
-                    List::new(items)
-                        .highlight_style(highlight)
-                        .highlight_symbol("› "),
-                    sections[0],
-                    *selected,
-                    super::mouse::ListTarget::Commands,
-                );
-                frame.render_widget(footer, sections[1]);
-            }
+            Modal::Commands { .. } => unreachable!("Command palettes are drawn separately"),
             Modal::CommandInput(input) => input.draw(frame, popup, self.permissions.is_empty()),
             Modal::Loading { message } => frame.render_widget(
                 Paragraph::new(*message)

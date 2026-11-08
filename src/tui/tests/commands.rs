@@ -263,7 +263,7 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
                 .iter()
                 .map(|cell| cell.symbol())
                 .collect::<String>();
-            assert!(rendered.contains("General · Quit"));
+            assert!(rendered.contains("GENERAL") && rendered.contains("Quit"));
             assert!(rendered.contains("/quit"));
             let rows = (0..height)
                 .map(|y| {
@@ -272,16 +272,22 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
                         .collect::<String>()
                 })
                 .collect::<Vec<_>>();
-            let selected = rows
-                .iter()
-                .position(|row| row.contains("General · Quit"))
-                .unwrap();
+            let selected = rows.iter().position(|row| row.contains("Quit")).unwrap();
             let usage = rows.iter().position(|row| row.contains("/quit")).unwrap();
-            assert_eq!(
-                usage,
-                selected + 1,
-                "Resizing must fill the command list without an empty gap above its details"
-            );
+            if width < 100 {
+                assert!(
+                    usage > selected,
+                    "Compact details must remain below the list"
+                );
+            }
+            let row = app
+                .pointer
+                .area(mouse::Target::Row(
+                    mouse::ListTarget::Commands,
+                    commands::COMMANDS.len() - 1,
+                ))
+                .unwrap();
+            assert!(row.y < height);
             crate::tui::test_artifacts::artifact(
                 terminal.backend().buffer(),
                 &format!("commands-{width}"),
@@ -383,5 +389,141 @@ fn theme_commands_share_the_palette_preserve_drafts_and_reject_invalid_values() 
         assert_eq!(app.editor.lines(), ["Keep this draft"]);
         assert!(!temp.path().join("sent-turn.txt").exists());
         app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn workspace_command_palette_layouts_keep_details_and_availability_readable() {
+    use crate::config::keys::Theme;
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        app.insert_text("Keep this draft");
+        for theme in [Theme::Dark, Theme::Light, Theme::Monochrome] {
+            let _theme = theme::activate(theme, None);
+            app.theme = theme;
+            for (width, height) in [
+                (180, 50),
+                (130, 34),
+                (120, 24),
+                (100, 16),
+                (80, 24),
+                (50, 16),
+            ] {
+                for action in [commands::Action::Theme, commands::Action::ResizeImage] {
+                    app.modal = Some(command_modal(action));
+                    let mut terminal =
+                        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+                            .unwrap();
+                    terminal
+                        .draw(|frame| {
+                            app.draw(frame);
+                        })
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let text = buffer
+                        .content
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>();
+                    assert!(text.contains("Commands"));
+                    assert!(text.contains(if action == commands::Action::Theme {
+                        "/theme"
+                    } else {
+                        "/resize-image"
+                    }));
+                    if action == commands::Action::Theme {
+                        assert!(text.contains("[Enter Continue]"));
+                        assert!(
+                            app.pointer
+                                .area(mouse::Target::Button(mouse::Action::Accept))
+                                .is_some()
+                        );
+                    } else {
+                        assert!(
+                            text.replace('│', " ")
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .contains("Attach an image before resizing it")
+                        );
+                        assert!(text.contains("[Unavailable]"));
+                        assert!(
+                            app.pointer
+                                .area(mouse::Target::Button(mouse::Action::Accept))
+                                .is_none()
+                        );
+                    }
+                    let index = command_index(action);
+                    let row = app
+                        .pointer
+                        .area(mouse::Target::Row(mouse::ListTarget::Commands, index))
+                        .unwrap();
+                    assert_eq!(
+                        app.pointer.at(ratatui::layout::Position::new(row.x, row.y)),
+                        Some(mouse::Target::Row(mouse::ListTarget::Commands, index))
+                    );
+                    crate::tui::test_artifacts::artifact(
+                        buffer,
+                        &format!("palette-{theme:?}-{action:?}-{width}x{height}"),
+                    );
+                    assert_eq!(app.editor.lines(), ["Keep this draft"]);
+                }
+            }
+        }
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn workspace_command_palette_headers_do_not_select_and_scrolling_reaches_last_action() {
+    use crossterm::event::{MouseButton, MouseEventKind as M};
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            176,
+        )
+        .unwrap();
+        let picker = Backend::halfblocks();
+        app.modal = Some(checkpoints::Modal::commands());
+        paint_mouse(&mut app, 130, 34);
+        let attach = app.pointer.area(mouse::Target::Row(
+            mouse::ListTarget::Commands,
+            command_index(commands::Action::Attach),
+        )).unwrap();
+        let heading = (attach.x + 3, attach.y - 1);
+        for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
+            app.mouse_event(
+                mouse_input(kind, heading, KeyModifiers::NONE),
+                &picker,
+                &worker,
+            ).await.unwrap();
+            paint_mouse(&mut app, 130, 34);
+        }
+        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected: 0 })));
+        for _ in 0..30 {
+            app.scroll_modal_list(mouse::ListTarget::Commands, false, 2);
+            paint_mouse(&mut app, 130, 34);
+        }
+        let quit = command_index(commands::Action::Quit);
+        assert!(app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, quit)).is_some());
+        assert!(
+            matches!(app.modal, Some(checkpoints::Modal::Commands { selected: 0 })),
+            "Wheel scrolling must not change the selected command"
+        );
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE, &worker).await;
+        paint_mouse(&mut app, 130, 34);
+        assert!(app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, 0)).is_some());
+        app.modal = Some(command_modal(commands::Action::ResizeImage));
+        paint_mouse(&mut app, 50, 16);
+        assert!(app.pointer.area(mouse::Target::Button(mouse::Action::Accept)).is_none());
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected }) if selected == command_index(commands::Action::ResizeImage)));
+        app.conversation.close().await.unwrap();
+        worker.cancel();
     });
 }

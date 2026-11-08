@@ -904,7 +904,8 @@ fn command_palette(h: &mut Harness) -> Result {
         h.visible("Commands")?;
         h.hidden("Arguments")?;
         h.key(b"\x1b[F")?;
-        h.visible("General · Quit")?;
+        h.visible("GENERAL")?;
+        h.visible("Quit")?;
         h.key(b"\x1b")?;
         h.hidden("Commands")?;
     }
@@ -2287,7 +2288,7 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     assert!(panned.has_color([255, 0, 0, 255]) && zoomed.has_color([255, 0, 0, 255]));
     h.key(b"\x1b[20~")?;
     h.wait("configured command palette", 15.0, |h| {
-        h.screen.text().contains("Commands") && h.screen.text().contains("Conversation")
+        h.screen.text().contains("Commands") && h.screen.text().contains("CONVERSATION")
     })?;
     h.key(b"x")?;
     h.wait("quit key remains search text", 15.0, |h| {

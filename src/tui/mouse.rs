@@ -266,6 +266,40 @@ impl Pointer {
             self.detached.push(target);
         }
     }
+    pub fn grouped_command_rows(&mut self, area: Rect, selected: usize) -> Vec<(usize, u16)> {
+        let target = ListTarget::Commands;
+        if self.modal_kind != Some(target) {
+            self.modal_state = ListState::default();
+        }
+        self.modal_kind = Some(target);
+        self.modal_count = commands::COMMANDS.len();
+        let maximum = commands::palette::maximum_start(area.height);
+        let mut first = self.modal_state.offset().min(maximum);
+        if !self.detached.contains(&target) {
+            first = first.min(selected);
+            while first < selected
+                && commands::palette::rows(first, area.height)
+                    .last()
+                    .is_none_or(|row| row.0 < selected)
+            {
+                first += 1;
+            }
+        }
+        *self.modal_state.offset_mut() = first;
+        *self.modal_state.selected_mut() = Some(selected);
+        let rows = commands::palette::rows(first, area.height)
+            .into_iter()
+            .map(|(index, y)| (index, area.y + y))
+            .collect::<Vec<_>>();
+        self.add(area, Target::List(target));
+        for &(index, y) in &rows {
+            self.add(
+                Rect::new(area.x, y, area.width, 1),
+                Target::Row(target, index),
+            );
+        }
+        rows
+    }
     pub fn modal_list(
         &mut self,
         frame: &mut Frame,
@@ -390,6 +424,23 @@ impl App {
     }
     pub(super) fn scroll_modal_list(&mut self, list: ListTarget, backwards: bool, step: u16) {
         if self.pointer.modal_kind == Some(list) {
+            if list == ListTarget::Commands {
+                let height = self
+                    .pointer
+                    .area(Target::List(list))
+                    .map_or(1, |area| area.height);
+                let maximum = commands::palette::maximum_start(height);
+                let first = self.pointer.modal_state.offset();
+                *self.pointer.modal_state.offset_mut() = if backwards {
+                    first.saturating_sub(usize::from(step))
+                } else {
+                    first.saturating_add(usize::from(step)).min(maximum)
+                };
+                if !self.pointer.detached.contains(&list) {
+                    self.pointer.detached.push(list);
+                }
+                return;
+            }
             let mut state = std::mem::take(&mut self.pointer.modal_state);
             self.pointer.scroll_list(
                 list,

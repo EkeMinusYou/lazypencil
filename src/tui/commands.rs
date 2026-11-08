@@ -1,6 +1,8 @@
 //! Shared workspace actions for the palette, slash commands and help.
 use super::*;
 
+pub(super) mod palette;
+
 #[derive(Clone, Copy, Debug)]
 enum Requirement {
     Always,
