@@ -488,3 +488,20 @@ anonymous rendering never adopts a personal browser profile.
 For regression checks use `cargo xtask test --lib --filter tui::` and
 `cargo xtask test --test tui`; see [development](development.md). PTY image/cursor
 assertions do not measure physical display latency or certify every IME.
+
+### Agent permissions
+
+`/permissions` (alias `/mode`) and **Agent permissions…** in the command palette
+open the native permission-mode picker. Use Up/Down to choose, Enter to continue,
+PgUp/PgDn to scroll explanations or reviewed settings, Backspace to go back, and
+Esc to close without approving a tool request. Clickable rows and controls support
+mouse operation. At smaller terminal sizes the list and explanation stack vertically.
+The header reports the effective mode, rather than a pending selection.
+
+Choose a temporary conversation mode or save a project/global default. Project
+settings require an explicit review and trust action; full access requires a separate
+confirmation. Tab switches the default Keep current/Apply decision on confirmation
+screens. While a turn is active, a confirmed change waits until it finishes; `c`
+cancels a change that has not been sent. Failed changes pause the send queue.
+An outstanding approval remains open beneath the settings dialog: `p` opens settings,
+and closing settings returns to the same approval. See [permission mode behavior](agents.md#change-permission-modes-in-the-tui).

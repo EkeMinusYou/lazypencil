@@ -14,6 +14,12 @@ impl Conversation {
     /// Native context is loaded only when the user next sends a request.
     pub async fn select(&mut self, id: Option<&str>) -> Result<bool> {
         self.require_idle()?;
+        if self.modes.pending().is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the pending permission change before selecting a conversation",
+            ));
+        }
         let id = id
             .map(|id| {
                 uuid::Uuid::parse_str(id)
@@ -39,6 +45,13 @@ impl Conversation {
         self.close().await?;
         self.session = session;
         self.args = args;
+        self.args.mode = self
+            .mode_overrides
+            .get(self.id())
+            .cloned()
+            .or_else(|| self.invocation_mode.clone());
+        self.mode_override = self.mode_overrides.contains_key(self.id());
+        self.modes = Default::default();
         self.transcript.take();
         self.events.clear();
         self.result = None;

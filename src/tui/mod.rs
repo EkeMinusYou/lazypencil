@@ -19,6 +19,7 @@ mod markdown;
 mod mouse;
 mod nodes;
 mod outbox;
+mod permissions;
 mod playback;
 mod preview;
 mod preview_search;
@@ -292,6 +293,7 @@ struct App {
     agent: agent_status::Status,
     connect_pending: bool,
     permissions: VecDeque<Permission>,
+    permission_ui: Option<permissions::Dialog>,
     input: Option<InputJob>,
     document_task: Option<checkpoints::Task>,
     modal: Option<checkpoints::Modal>,
@@ -376,6 +378,7 @@ impl App {
             agent,
             connect_pending: true,
             permissions: VecDeque::new(),
+            permission_ui: None,
             input: None,
             document_task: None,
             modal: None,
@@ -416,6 +419,7 @@ impl App {
         loop {
             let _pool = crate::native_memory::AutoreleasePool::new();
             self.sync_turn(worker);
+            self.permission_progress();
             if let Err(error) = self.send_queued().await {
                 self.outbox.paused = true;
                 self.error(error);
@@ -1036,6 +1040,38 @@ impl App {
                             .into()
                     });
             }
+            Some("mode_changed") => {
+                self.update_agent_configuration(&value["response"]["configOptions"])
+            }
+            Some("permissions_changed") => {
+                if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
+                    self.set_error_status(clean(
+                        error["message"]
+                            .as_str()
+                            .unwrap_or("Saving permission defaults failed"),
+                    ));
+                } else {
+                    self.set_status(format!(
+                        "Permissions changed to {}{}",
+                        clean(value["mode"].as_str().unwrap_or("not confirmed")),
+                        value["saved"]
+                            .as_str()
+                            .map(|saved| format!(" · {}", clean(saved)))
+                            .unwrap_or_default()
+                    ));
+                }
+            }
+            Some("mode_error") => {
+                self.outbox.paused = true;
+                if let Err(error) = self.outbox.save(self.conversation.directory()) {
+                    self.error(error);
+                }
+                self.set_error_status(clean(
+                    value["error"]["message"]
+                        .as_str()
+                        .unwrap_or("Permission mode change failed"),
+                ));
+            }
             Some("ready") => {
                 self.update_agent_configuration(&value["response"]["configOptions"]);
                 if let Some(report) = self.conversation.authentication() {
@@ -1239,6 +1275,7 @@ impl App {
         };
         let changed = self.conversation.select(id).await?;
         self.modal = None;
+        self.permission_ui = None;
         self.saved_return = None;
         self.restore_return = None;
         if !changed {
@@ -1763,8 +1800,10 @@ impl App {
                 sections[2],
             );
             frame.render_widget(
-                Paragraph::new("↑/↓ choose · Enter respond · Esc denies · PgUp/PgDn details")
-                    .style(Style::default().fg(theme::colors().secondary)),
+                Paragraph::new(
+                    "↑/↓ choose · Enter respond · Esc denies · p permissions · PgUp/PgDn details",
+                )
+                .style(Style::default().fg(theme::colors().secondary)),
                 sections[4],
             );
             // Match wrapped option labels rather than assuming one row each.
@@ -1783,6 +1822,16 @@ impl App {
                     .add(option_area, mouse::Target::PermissionChoice(index));
                 y = y.saturating_add(height);
             }
+            let permissions_button = Rect::new(popup.right().saturating_sub(27), popup.y, 16, 1);
+            frame.render_widget(
+                Paragraph::new("[Permissions…]")
+                    .style(Style::default().fg(theme::colors().preview)),
+                permissions_button,
+            );
+            self.pointer.add(
+                permissions_button,
+                mouse::Target::AgentPermissions(permissions::Hit::Continue),
+            );
             self.pointer.button(
                 frame,
                 Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
@@ -1801,9 +1850,13 @@ impl App {
                 mouse::Action::Accept,
             );
         }
+        self.draw_agent_permissions(frame);
         self.pointer.finish();
         self.native_input.retain_canvas(self.gesture_canvas());
-        let modal = self.help || self.modal.is_some() || !self.permissions.is_empty();
+        let modal = self.help
+            || self.modal.is_some()
+            || self.permission_ui.is_some()
+            || !self.permissions.is_empty();
         let overlay = self
             .pointer
             .more

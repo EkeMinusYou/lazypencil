@@ -144,6 +144,19 @@ impl App {
             separator(),
             Span::styled(
                 clean(
+                    self.conversation
+                        .modes()
+                        .current
+                        .as_deref()
+                        .unwrap_or("mode not confirmed"),
+                ),
+                Style::default().fg(theme::colors().preview),
+            ),
+        ]);
+        spans.extend([
+            separator(),
+            Span::styled(
+                clean(
                     &self
                         .conversation
                         .store()

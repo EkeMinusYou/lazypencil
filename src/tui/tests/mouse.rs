@@ -154,6 +154,8 @@ fn mouse_modal_rows_and_buttons_survive_redraw_and_block_the_workspace() {
         app.modal = Some(checkpoints::Modal::commands());
         paint_mouse(&mut app, 130, 34);
         let index = command_index(commands::Action::ToggleNodes);
+        app.scroll_modal_list(mouse::ListTarget::Commands,false,3);
+        paint_mouse(&mut app,130,34);
         let row = app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, index)).unwrap();
         let point = (row.x + 3, row.y);
         for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {

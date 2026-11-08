@@ -142,7 +142,11 @@ impl super::App {
         self.has_overlay() || self.preview_search.editing
     }
     pub(super) fn has_overlay(&self) -> bool {
-        self.help || self.modal.is_some() || !self.permissions.is_empty() || self.pointer.more
+        self.help
+            || self.modal.is_some()
+            || self.permission_ui.is_some()
+            || !self.permissions.is_empty()
+            || self.pointer.more
     }
     pub(super) fn open_history(&mut self, cursors: Vec<Option<u64>>) -> Result<()> {
         if self.conversation.active() || self.document_task.is_some() {

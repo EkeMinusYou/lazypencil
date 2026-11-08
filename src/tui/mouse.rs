@@ -46,6 +46,8 @@ pub(super) enum Target {
     DiagnosticDetails,
     SavedText,
     PermissionDetails,
+    AgentPermissions(super::permissions::Hit),
+    AgentPermissionDetails,
     PermissionChoice(usize),
     Button(Action),
 }
@@ -385,6 +387,18 @@ impl App {
         }
     }
     pub(super) fn pointer_scope(&self) -> String {
+        if let Some(ui) = &self.permission_ui {
+            return format!(
+                "{}:{:?}",
+                ui.identity(),
+                self.conversation
+                    .modes()
+                    .available
+                    .iter()
+                    .map(|mode| &mode.id)
+                    .collect::<Vec<_>>()
+            );
+        }
         if let Some(permission) = self.permissions.front() {
             return format!("permission:{}", permission.id);
         }
@@ -897,6 +911,22 @@ impl App {
                 }
                 Target::Help => scroll(&mut self.help_scroll),
                 Target::DiagnosticDetails => self.scroll_diagnostic_details(backwards, step),
+                Target::AgentPermissionDetails => {
+                    if let Some(ui) = self.permission_ui.as_mut() {
+                        scroll(&mut ui.scroll);
+                    }
+                }
+                Target::AgentPermissions(permissions::Hit::Row(_)) => {
+                    let key = KeyEvent::new(
+                        if backwards {
+                            KeyCode::Up
+                        } else {
+                            KeyCode::Down
+                        },
+                        KeyModifiers::NONE,
+                    );
+                    let _ = self.permission_key(key);
+                }
                 Target::PermissionDetails => {
                     if let Some(permission) = self.permissions.front_mut() {
                         scroll(&mut permission.scroll);
@@ -958,6 +988,13 @@ impl App {
                 self.nodes.select(Some(index));
                 self.pointer_focus(Focus::Nodes, worker);
                 self.toggle_pointer_branch(index);
+            }
+            Target::AgentPermissions(hit) => {
+                if self.permission_ui.is_none() {
+                    self.open_agent_permissions();
+                } else {
+                    self.permission_click(hit)?;
+                }
             }
             Target::PermissionChoice(index) => {
                 if let Some(permission) = self.permissions.front_mut() {

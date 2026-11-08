@@ -207,3 +207,5 @@ include!("tests/mouse.rs");
 include!("tests/saved.rs");
 
 include!("tests/commands.rs");
+
+include!("tests/permissions.rs");

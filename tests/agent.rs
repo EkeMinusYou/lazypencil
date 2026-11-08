@@ -2197,3 +2197,99 @@ mod agent_ownership;
 #[cfg(unix)]
 #[path = "support/unix_browser_ownership.rs"]
 mod browser_ownership;
+
+#[test]
+fn permission_mode_changes_are_confirmed_and_unknown_modes_are_rejected() {
+    for fixture_mode in [
+        "settings-check",
+        "settings-permissions",
+        "settings-permissions-reject",
+        "settings-permissions-unconfirmed",
+        "settings-permissions-selector",
+    ] {
+        let temp = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut host = AgentHost::spawn(options(fixture_mode, temp.path())).unwrap();
+            ready(&mut host).await;
+            host.set_mode("workspace-write".into()).unwrap();
+            let event = message(&mut host).await;
+            if matches!(
+                fixture_mode,
+                "settings-permissions-reject" | "settings-permissions-unconfirmed"
+            ) {
+                assert_eq!(event["type"], "mode_error");
+                assert!(!event.to_string().contains("PRIVATE_MODE_FAILURE"));
+            } else {
+                assert_eq!(event["type"], "mode_changed");
+                assert_eq!(
+                    event["response"]["modes"]["currentModeId"],
+                    "workspace-write"
+                );
+            }
+            host.set_mode("not-advertised".into()).unwrap();
+            assert_eq!(message(&mut host).await["type"], "mode_error");
+            assert!(!temp.path().join("sent-turn.txt").exists());
+            host.close().await.unwrap();
+        });
+    }
+}
+
+#[test]
+fn permission_mode_change_waits_for_pending_approval_and_turn_completion() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut host = AgentHost::spawn(options("settings-permissions-hold", temp.path())).unwrap();
+        ready(&mut host).await;
+        host.prompt(
+            vec![ContentBlock::Text(TextContent::new("Review this task"))],
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let reply = loop {
+            match host.next_event().await.unwrap() {
+                AgentEvent::Permission { reply, .. } => break reply,
+                AgentEvent::Message(_) => {}
+            }
+        };
+        host.set_mode("workspace-write".into()).unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(80), host.next_event())
+                .await
+                .is_err()
+        );
+        assert!(!temp.path().join("received-mode-changes.jsonl").exists());
+        reply.send(Some("deny".into())).unwrap();
+        loop {
+            if message(&mut host).await["type"] == "turn_complete" {
+                break;
+            }
+        }
+        let changed = message(&mut host).await;
+        assert_eq!(changed["type"], "mode_changed");
+        assert_eq!(changed["mode"], "workspace-write");
+        host.close().await.unwrap();
+    });
+}
+
+#[test]
+fn permission_mode_timeout_closes_the_connection_without_sending_a_prompt() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut opts = options("settings-permissions-timeout", temp.path());
+        opts.setup_timeout = Duration::from_millis(500);
+        let mut host = AgentHost::spawn(opts).unwrap();
+        ready(&mut host).await;
+        host.set_mode("workspace-write".into()).unwrap();
+        let event = message(&mut host).await;
+        assert_eq!(event["type"], "connection_error");
+        assert!(
+            event["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("mode change timed out")
+        );
+        assert!(host.close().await.is_err());
+        assert!(!temp.path().join("sent-turn.txt").exists());
+    });
+}

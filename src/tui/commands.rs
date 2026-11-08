@@ -48,6 +48,8 @@ macro_rules! commands {
 }
 
 commands! {
+    Permissions, "Conversation", "Agent permissions…", "Choose the connected agent's permission mode and optionally save its default.",
+        "permissions", ["mode"], "", 0, 0, Always;
     NewConversation, "Conversation", "New empty conversation…", "Save the current draft and start an empty local conversation.",
         "new-conversation", [], "", 0, 0, Idle;
     Logs, "Conversation", "Current conversation logs…", "Read saved turns of the current conversation without sending a request.",
@@ -257,7 +259,9 @@ impl Input {
 impl App {
     pub(super) fn command_unavailable(&self, command: &Command) -> Option<&'static str> {
         use Requirement::*;
-        let busy = self.conversation.active() || self.document_task.is_some();
+        let busy = self.conversation.active()
+            || self.conversation.modes().pending().is_some()
+            || self.document_task.is_some();
         match command.requirement {
             Idle if busy || self.input.is_some() => {
                 Some("Finish or cancel the active operation before selecting a conversation")
@@ -306,6 +310,7 @@ impl App {
             return Err(Error::new(code, reason));
         }
         match action {
+            Action::Permissions => self.open_agent_permissions(),
             Action::NewConversation => self.pending_session = Some(saved::SessionChange::New),
             Action::Logs => {
                 self.open_saved(saved::Page::current(self.conversation.id().into()), None)?

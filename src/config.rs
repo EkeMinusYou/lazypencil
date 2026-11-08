@@ -18,6 +18,7 @@ pub mod agents;
 pub mod attachments;
 pub mod conversations;
 pub mod keys;
+pub mod mode;
 pub mod runtime;
 pub(crate) mod trust;
 const TEMPLATE: &str = "version = 1\n\n[fonts]\n# Omitted fields inherit lower-priority settings.\n# Paths resolve relative to this configuration file.\n# files = []\n# search_paths = []\n# default_family = \"Noto Sans JP\"\n# locale = \"ja\"\n# Set fallbacks explicitly to replace the default glyph fallback chain.\n# fallbacks = [\"Noto Sans JP\"]\n";

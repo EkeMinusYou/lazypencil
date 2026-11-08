@@ -150,7 +150,7 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
             terminal.draw(|frame| { app.draw(frame); }).unwrap();
             let buffer = terminal.backend().buffer();
             assert!(buffer.content.iter().any(|cell| {
-                cell.symbol() == "›" && cell.fg == theme::colors().canvas && cell.bg == theme::colors().preview
+                cell.symbol() == "›" && cell.fg == theme::colors().preview && cell.bg == theme::colors().selected_background
             }));
             crate::tui::test_artifacts::artifact(buffer, "commands");
             press(&mut app, KeyCode::Char('n'), KeyModifiers::ALT, &worker).await;

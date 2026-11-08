@@ -277,6 +277,7 @@ impl App {
 
     pub(super) async fn send_queued(&mut self) -> Result<()> {
         if self.conversation.active()
+            || self.conversation.modes().pending().is_some()
             || self.outbox.in_flight.is_some()
             || self.outbox.steering.is_some()
             || self.outbox.paused

@@ -227,7 +227,9 @@ impl Harness {
                 .arg("--adapter")
                 .arg(crate::fixture_support::helper())
                 .arg("--adapter-arg=acp")
-                .arg(if case == "basic" {
+                .arg(if case == "permission-modes" {
+                    "--adapter-arg=settings-permissions"
+                } else if case == "basic" {
                     "--adapter-arg=image-inspect-audit"
                 } else if case == "queued-followups" {
                     "--adapter-arg=queued-followups"

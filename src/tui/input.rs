@@ -31,6 +31,10 @@ impl App {
         if key.code == KeyCode::Char('c') && ctrl {
             return self.cancel_input();
         }
+        if self.permission_ui.is_some() {
+            self.permission_key(key)?;
+            return Ok(false);
+        }
         if !self.permissions.is_empty() {
             self.permission_input(key)?;
             return Ok(false);
@@ -162,6 +166,10 @@ impl App {
         Ok(false)
     }
     fn permission_input(&mut self, key: KeyEvent) -> Result<()> {
+        if key.code == KeyCode::Char('p') {
+            self.open_agent_permissions();
+            return Ok(());
+        }
         if key.code == KeyCode::Enter {
             return self.respond_permission();
         }

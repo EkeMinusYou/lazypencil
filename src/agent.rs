@@ -29,6 +29,7 @@ pub mod permissions;
 mod preparation;
 mod process;
 mod settings;
+pub(crate) use settings::normalize_modes;
 mod steering;
 use auth::{AuthPolicy, AuthReport};
 use process::AgentProcess;
@@ -117,6 +118,7 @@ struct Turn {
 
 struct Commands {
     turns: mpsc::Receiver<Turn>,
+    modes: mpsc::Receiver<String>,
     steering: mpsc::Receiver<steering::Request>,
     steering_supported: Arc<AtomicBool>,
     steering_turn: Arc<Mutex<Option<u64>>>,
@@ -125,6 +127,7 @@ struct Commands {
 /// Owns one adapter connection and one session. Sequential prompts reuse both.
 pub struct AgentHost {
     commands: Option<mpsc::Sender<Turn>>,
+    modes: mpsc::Sender<String>,
     steering: mpsc::Sender<steering::Request>,
     steering_supported: Arc<AtomicBool>,
     steering_turn: Arc<Mutex<Option<u64>>>,
@@ -181,11 +184,13 @@ impl AgentHost {
             ));
         }
         let (commands, receiver) = mpsc::channel(1);
+        let (modes, mode_receiver) = mpsc::channel(1);
         let (steering, steering_receiver) = mpsc::channel(1);
         let steering_supported = Arc::new(AtomicBool::new(false));
         let steering_turn = Arc::new(Mutex::new(None));
         let controls = Commands {
             turns: receiver,
+            modes: mode_receiver,
             steering: steering_receiver,
             steering_supported: steering_supported.clone(),
             steering_turn: steering_turn.clone(),
@@ -220,6 +225,7 @@ impl AgentHost {
         });
         Ok(Self {
             commands: Some(commands),
+            modes,
             steering,
             steering_supported,
             steering_turn,
@@ -294,6 +300,13 @@ impl AgentHost {
 
     pub async fn next_event(&mut self) -> Option<AgentEvent> {
         self.events.recv().await
+    }
+
+    /// Changes are consumed only between prompts, never inside an active turn.
+    pub fn set_mode(&self, mode: String) -> Result<()> {
+        self.modes
+            .try_send(mode)
+            .map_err(|_| agent_error("A mode change is pending or the agent is closed"))
     }
 
     pub async fn prompt(
@@ -427,6 +440,8 @@ async fn run(
     let permission_cancel = current_cancel.clone();
     let permission_events = events.clone();
     let notification_events = events.clone();
+    let mode_updates = Arc::new(Mutex::new(Value::Null));
+    let notification_modes = mode_updates.clone();
     let permission_shutdown = shutdown.clone();
     let auth_receiver = auth_sender.subscribe();
     // Host errors cross the SDK boundary out of band. Adapter-controlled error
@@ -443,6 +458,13 @@ async fn run(
                 // live watch channel; credentials and vendor extras are discarded.
                 json!({"type":"auth_status","authentication":report})
             } else if notification.method == "session/update" {
+                let update=&notification.params["update"];
+                if matches!(update["sessionUpdate"].as_str(),Some("config_option_update"|"current_mode_update")) {
+                    let mut snapshot=notification_modes.lock().expect("mode updates");
+                    if snapshot["sessionId"]!=notification.params["sessionId"] { *snapshot=json!({"sessionId":notification.params["sessionId"]}); }
+                    if update["sessionUpdate"]=="config_option_update" {snapshot["configOptions"]=update["configOptions"].clone();}
+                    else {snapshot["currentModeId"]=update["currentModeId"].clone();}
+                }
                 json!({"type":"update","notification":notification.params})
             } else {
                 json!({"type":"agent_notification","method":notification.method,"params":notification.params})
@@ -482,6 +504,7 @@ async fn run(
                     shutdown: &shutdown,
                     current_cancel,
                     authentication: auth_receiver,
+                    mode_updates,
                 }, purpose).await
             }.await;
             result.map_err(|error| {
@@ -519,6 +542,7 @@ struct ConversationChannels<'a> {
     shutdown: &'a CancellationToken,
     current_cancel: Arc<Mutex<Option<CancellationToken>>>,
     authentication: watch::Receiver<Option<AuthReport>>,
+    mode_updates: Arc<Mutex<Value>>,
 }
 
 async fn conversation(
@@ -533,9 +557,11 @@ async fn conversation(
         shutdown,
         current_cancel,
         mut authentication,
+        mode_updates,
     } = channels;
     let Commands {
         mut turns,
+        mut modes,
         mut steering,
         steering_supported,
         steering_turn,
@@ -643,7 +669,7 @@ async fn conversation(
             (response.session_id.clone(), serde_json::to_value(response))
         };
         let mut response = response.map_err(|e| agent_error(e.to_string()))?;
-        settings::apply(
+        if let Err(error) = settings::apply(
             connection,
             &session,
             &mut response,
@@ -651,7 +677,11 @@ async fn conversation(
             options.model.as_deref(),
             options.fast,
         )
-        .await?;
+        .await
+        {
+            emit(events, json!({"type":"session_modes","response":response})).await?;
+            return Err(error);
+        }
         if (auth_supported || options.require_auth_status) && authentication.borrow().is_none() {
             let _ = tokio::time::timeout(options.auth_status_timeout, async {
                 while authentication.borrow().is_none() {
@@ -675,6 +705,7 @@ async fn conversation(
             session,
             initialized.agent_capabilities.prompt_capabilities.image,
             policy,
+            response,
         )))
     };
     let outcome = tokio::select! {
@@ -682,13 +713,33 @@ async fn conversation(
         _ = shutdown.cancelled() => return Ok(()),
         result = tokio::time::timeout(options.setup_timeout, setup) => result.map_err(|_| agent_error("ACP initialization or session setup timed out"))??,
     };
-    let Some((session, images, auth_policy)) = outcome else {
+    let Some((session, images, auth_policy, mut configuration)) = outcome else {
         return Ok(());
     };
     loop {
         let mut turn = tokio::select! {
             biased;
             _ = shutdown.cancelled() => return Ok(()),
+            mode = modes.recv() => {
+                let Some(mode) = mode else { return Ok(()); };
+                settings::merge_updates(&mut configuration,&session,&mode_updates);
+                let result = tokio::select! {
+                    _ = shutdown.cancelled() => return Ok(()),
+                    result = tokio::time::timeout(options.setup_timeout,
+                        settings::apply(connection, &session, &mut configuration, Some(&mode), None, None)) => result,
+                };
+                match result {
+                    Ok(Ok(())) => {
+                        settings::merge_updates(&mut configuration,&session,&mode_updates);
+                        if configuration["modes"]["currentModeId"]!=mode {
+                            emit(events,json!({"type":"mode_error","mode":mode,"response":configuration,"error":agent_error("The adapter reported a different permission mode")})).await?;
+                        } else {emit(events, json!({"type":"mode_changed","mode":mode,"response":configuration})).await?;}
+                    },
+                    Ok(Err(error)) => emit(events, json!({"type":"mode_error","mode":mode,"error":error,"response":configuration})).await?,
+                    Err(_) => return Err(agent_error("Permission mode change timed out; reconnect before sending another prompt")),
+                }
+                continue;
+            },
             input = steering.recv() => {
                 if let Some(input) = input {
                     emit(events, json!({"type":"steering_result", "id":input.id, "outcome":"promptRequired"})).await?;

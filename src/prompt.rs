@@ -52,6 +52,8 @@ pub enum DocumentTools {
 #[derive(Debug, Clone, Args)]
 pub struct PromptArgs {
     #[arg(skip)]
+    pub mode_origin: Option<String>,
+    #[arg(skip)]
     pub project_execution: Option<crate::config::agent_execution::Selection>,
     pub file: PathBuf,
     /// User request, in the language intended for the design.

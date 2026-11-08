@@ -211,6 +211,9 @@ impl<'a> Peer<'a> {
                 options.as_array_mut().unwrap().push(fast);
             }
         }
+        if self.mode.starts_with("settings-permissions") {
+            options.as_array_mut().unwrap().push(json!({"id":if self.mode=="settings-permissions-selector" {"permissions"}else{"mode"},"name":"Permissions","category":"mode","type":"select","currentValue":self.selection,"options":[{"value":"read-only","name":"Read-only"},{"value":"workspace-write","name":"Workspace access"},{"value":"agent-full-access","name":"Full access"}]}));
+        }
         options
     }
     fn call(&mut self, name: &str, args: Value) -> Result<Value> {
@@ -408,6 +411,9 @@ impl<'a> Peer<'a> {
                 };
                 if mode.starts_with("settings-") || mode.starts_with("protocol-error-") {
                     result["modes"] = json!({"currentModeId":self.selection,"availableModes":[{"id":"read-only","name":"Read only"},{"id":"workspace-write","name":"Workspace"}]});
+                    if mode.starts_with("settings-permissions") {
+                        result["modes"]["availableModes"].as_array_mut().unwrap().push(json!({"id":"agent-full-access","name":"Full access","description":"Unrestricted computer access"}));
+                    }
                     result["configOptions"] = self.config();
                 }
                 self.response(&message, result)?;
@@ -467,6 +473,7 @@ impl<'a> Peer<'a> {
                 self.response(&message, json!({"outcome":if mode == "steering-idle" {"promptRequired"} else if mode == "steering-unowned" {"startedNewTurn"} else {"injected"}}))?;
             }
             "session/set_mode" => {
+                append_json("received-mode-changes.jsonl",params)?;
                 self.selection = params["modeId"]
                     .as_str()
                     .ok_or("Missing selected mode")?
@@ -478,6 +485,19 @@ impl<'a> Peer<'a> {
                     append_json("received-settings.jsonl", params)?;
                 }
                 match params["configId"].as_str() {
+                    Some("mode"|"permissions") => {
+                        append_json("received-mode-changes.jsonl",params)?;
+                        if mode=="settings-permissions-timeout" {
+                            return Ok(());
+                        }
+                        if mode=="settings-permissions-reject" {
+                            self.send(json!({"id":message["id"],"error":{"code":-32603,"message":"PRIVATE_MODE_FAILURE"}}))?;
+                            return Ok(());
+                        }
+                        if mode!="settings-permissions-unconfirmed" {
+                            self.selection=params["value"].as_str().ok_or("Missing mode")?.into();
+                        }
+                    },
                     Some("model") => {
                         self.model = params["value"]
                             .as_str()
@@ -806,6 +826,7 @@ impl<'a> Peer<'a> {
             "correlated-document",
             "configured-document-ask",
             "spoofed-permission",
+            "settings-permissions-hold",
         ]
         .contains(&mode)
         {

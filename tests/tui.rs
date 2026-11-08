@@ -174,6 +174,11 @@ fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
 }
 
 #[test]
+fn real_pty_permission_modes_preserve_draft_confirm_full_access_and_save_reviewed_project() {
+    run_pty_case("permission-modes");
+}
+
+#[test]
 fn real_pty_command_palette_inputs_preserve_drafts_validate_and_keep_unicode_cursor() {
     run_pty_case("command-palette");
 }
@@ -215,6 +220,7 @@ fn run_pty_case(case: &str) {
                 case,
                 "ime-commit"
                     | "command-palette"
+                    | "permission-modes"
                     | "node-references"
                     | "user-navigation-config"
                     | "saved-history"

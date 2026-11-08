@@ -630,6 +630,10 @@ pub fn run(
             Value::Null
         }
         "user-navigation-config" => navigation(&mut h)?,
+        "permission-modes" => {
+            permission_modes(&mut h)?;
+            Value::Null
+        }
         "command-palette" => {
             command_palette(&mut h)?;
             Value::Null
@@ -902,7 +906,7 @@ fn command_palette(h: &mut Harness) -> Result {
     let document = fs::read(&h.document)?;
     h.paste(draft)?;
     h.draft(draft)?;
-    command(h, "Commands", 14)?;
+    command(h, "Commands", 15)?;
     h.visible("Seek shader time")?;
     h.paste("NaN")?;
     h.key(b"\r")?;
@@ -914,7 +918,7 @@ fn command_palette(h: &mut Harness) -> Result {
 
     for (width, height) in [(130, 34), (50, 16)] {
         h.resize(width, height)?;
-        command(h, "Commands", 6)?;
+        command(h, "Commands", 7)?;
         h.visible("Arguments")?;
         h.paste("画像.png")?;
         h.wait("Unicode command input cursor", 15.0, |h| {
@@ -2036,7 +2040,7 @@ fn basic(h: &mut Harness) -> Result {
 fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.paste("復元しても保持する下書き")?;
     h.draft("復元しても保持する下書き")?;
-    command(h, "Commands", 20)?;
+    command(h, "Commands", 21)?;
     h.wait("checkpoint candidates", 15.0, |h| {
         h.screen.text().contains("first-checkpoint")
             && h.screen.text().contains("second-checkpoint")
@@ -2349,4 +2353,49 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     Ok(
         json!({"source_commit":source_commit(),"case":h.case,"frames":frames,"draft_sha256":hash(format!("{text} 続き")),"help_end_reached":true,"startup_keys_retained":true,"feedback":{"pan":pan_feedback,"zoom":zoom_feedback},"turns":h.turns().len()}),
     )
+}
+
+fn permission_modes(h: &mut Harness) -> Result {
+    let before = fs::read(&h.document)?;
+    let draft = "権限を変更しても下書きを保持";
+    h.visible("read-only")?;
+    h.paste(draft)?;
+    h.draft(draft)?;
+    command(h, "Commands", 0)?;
+    h.visible("Agent permissions")?;
+    h.key(b"\x1b[B\r")?;
+    h.visible("Apply permissions")?;
+    h.key(b"\r")?;
+    h.visible("Permissions changed to workspace-write")?;
+    h.draft(draft)?;
+    h.save_screen("permission-mode-applied-screen.txt")?;
+    command(h, "Commands", 0)?;
+    h.visible("Agent permissions")?;
+    h.key(b"\x1b[B\r\r")?;
+    h.visible("Allow full access?")?;
+    h.key(b"\r")?;
+    h.visible("Apply permissions")?;
+    h.key(b"\x1b")?;
+    h.visible("workspace-write")?;
+    h.resize(80, 24)?;
+    command(h, "Commands", 0)?;
+    h.visible("Agent permissions")?;
+    h.save_screen("permission-mode-compact-screen.txt")?;
+    h.key(b"\x1b")?;
+    h.resize(130, 34)?;
+    command(h, "Commands", 0)?;
+    h.visible("Agent permissions")?;
+    h.key(b"\r")?;
+    h.visible("Apply permissions")?;
+    h.key(b"\x1b[B\r")?;
+    h.visible("Review permission defaults")?;
+    h.visible("Trust & apply")?;
+    assert!(!h.root.join("lazypencil.toml").exists());
+    h.key(b"\r")?;
+    h.visible("Permissions changed to workspace-write")?;
+    assert!(fs::read_to_string(h.root.join("lazypencil.toml"))?.contains("workspace-write"));
+    h.draft(draft)?;
+    assert_eq!(fs::read(&h.document)?, before);
+    no_agent(h);
+    Ok(())
 }

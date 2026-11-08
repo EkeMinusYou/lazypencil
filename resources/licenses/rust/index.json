@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "4ea1e7bbd0b3fedfd28f8ca8b33f6923f3f7af78823bf56b0c2c9de298932c08",
+  "cargo_lock_sha256": "deefd0add746a1a9788f877a44786041733d3a1136f51b259d7ac9f02bceecb6",
   "format_version": 1,
   "license_references": [
     {
@@ -6803,7 +6803,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "cc0453549aee07e79267fd4b626a37aba5921321c9975ac5bcd9c5e55b089e7a",
+      "manifest_sha256": "b6bf9c78875bbe6b893c4ef583d9a0c2db21a8aec0705104d455710b3d01854b",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.2.1",
@@ -30692,7 +30692,7 @@
       "version": "1.1.8+spec-1.1.0"
     },
     {
-      "archive_sha256": "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053",
+      "archive_sha256": "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49",
       "attribution_comments": [],
       "authors": [],
       "files": [
@@ -30711,17 +30711,49 @@
       ],
       "license": "MIT OR Apache-2.0",
       "license_file": null,
-      "manifest_sha256": "02085053b825e43bde98e113bdf869c2a1317a865e5808d276ed3daeb5da9cf8",
+      "manifest_sha256": "6ccf973c519f51e72ef63307118837143f3cdc1d382f298b9faea12ee7c749fc",
       "name": "toml_datetime",
       "repository": "https://github.com/toml-rs/toml",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "f72038c2508112dfaaedb227a511f91bf9b2015c"
+          "sha1": "563cb1a5d133e39d1008d4d4148ef35d3bba379f"
         },
         "path_in_vcs": "crates/toml_datetime"
       },
-      "version": "1.1.2+spec-1.1.0"
+      "version": "1.1.3+spec-1.1.0"
+    },
+    {
+      "archive_sha256": "dd43688c4858d7264ae1cf9a9f874a67c3feb74a883b1cd7bebd6a4ea8307218",
+      "attribution_comments": [],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/249fdb6694467dd615b259f7ddde07be3f8ae5a72cecebb0e24f6629af4215fe.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "249fdb6694467dd615b259f7ddde07be3f8ae5a72cecebb0e24f6629af4215fe"
+        },
+        {
+          "blob": "texts/6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "6efb0476a1cc085077ed49357026d8c173bf33017278ef440f222fb9cbcb66e6"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "9ac455519f5c9692619e579068ce58fad1fa31ca306d9eddb1db69a667711d82",
+      "name": "toml_edit",
+      "repository": "https://github.com/toml-rs/toml",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "563cb1a5d133e39d1008d4d4148ef35d3bba379f"
+        },
+        "path_in_vcs": "crates/toml_edit"
+      },
+      "version": "0.25.19+spec-1.1.0"
     },
     {
       "archive_sha256": "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c",
@@ -30756,7 +30788,7 @@
       "version": "1.1.5+spec-1.1.0"
     },
     {
-      "archive_sha256": "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770",
+      "archive_sha256": "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a",
       "attribution_comments": [],
       "authors": [],
       "files": [
@@ -30775,17 +30807,17 @@
       ],
       "license": "MIT OR Apache-2.0",
       "license_file": null,
-      "manifest_sha256": "996dbddfe3e93e03a0173c12b2ec72293fa48db08bb46f3982bc1af57ac31d37",
+      "manifest_sha256": "4361019efd07a9f150de107772582244e528b20756178ee464b1a1617da3ada6",
       "name": "toml_writer",
       "repository": "https://github.com/toml-rs/toml",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "f72038c2508112dfaaedb227a511f91bf9b2015c"
+          "sha1": "8ffe3c590d69fab440fedb2ebb396ae1596c3e34"
         },
         "path_in_vcs": "crates/toml_writer"
       },
-      "version": "1.1.3+spec-1.1.0"
+      "version": "1.2.0+spec-1.1.0"
     },
     {
       "archive_sha256": "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100",

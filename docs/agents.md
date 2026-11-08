@@ -235,3 +235,37 @@ isolated settings and the native helper. Direct invocations can set
 tests are opt-in; the latter send real prompts and consume account usage. See their
 filters/options in `tests/agent.rs` and `tests/agent_workflow.rs` and the
 [development guide](development.md).
+
+### Change permission modes in the TUI
+
+Open **Agent permissions…** from the command palette or `/permissions` (`/mode`).
+The header shows the adapter-reported effective mode; the picker shows its source,
+reported modes and descriptions, and the current working directory. Codex commonly
+advertises `read-only`, `workspace-write`, `agent` (automatic review), and
+`agent-full-access`. Claude commonly advertises `default`, `acceptEdits`, `plan`,
+and conditional `auto` and `bypassPermissions`. Only the connected adapter's
+advertised modes can be selected. These modes are provider-specific, not a shared
+sandbox contract. `dontAsk`, when not advertised, cannot be selected through ACP.
+
+Choose **This conversation only**, **Save as project default**, or **Save as global
+default**. Temporary choices override the current invocation and are remembered
+while switching conversations in the same TUI; they expire when the TUI closes.
+Saved defaults still follow explicit CLI > project > user > built-in precedence on
+future launches. Saving changes only the selected agent's `mode`, preserving other
+settings and comments, and follows an existing user configuration symlink to its
+physical file. A concurrent edit requires a fresh review instead of being overwritten.
+
+Project saving displays the destination and the complete resulting agent settings.
+**Trust & apply** explicitly grants the existing project execution trust scope for
+those reviewed settings. Design-instruction trust stays separate. Full access and
+Claude's bypass mode require an additional explicit confirmation. No setting changes
+an outstanding tool approval: use the original approval choices to respond. Press
+`p` or click **Permissions…** on that approval to change later turns' permissions.
+
+During an active turn, confirm **Apply after turn** to schedule a change. The current
+turn keeps its permissions, and queued prompts wait for the adapter's confirmation.
+Press `c` in the permission picker to cancel an unsent change. Mode application does
+not resend a prompt or clear a draft. A failed or unconfirmed change pauses queued
+prompts and reports the actual mode separately from the requested one. A timeout
+closes the connection; reconnect before sending again. If the adapter applies the
+mode but saving defaults fails, the UI reports that distinction explicitly.

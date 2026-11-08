@@ -248,6 +248,16 @@ fn same_preferences(a: &PromptArgs, b: &PromptArgs) -> bool {
 pub fn resolve_user(args: &mut PromptArgs, matches: &ArgMatches) -> Result<()> {
     let source = UserSource::load(Some(user_config_path()?), true)?;
     source.settings.agents.apply(args, matches, source.base());
+    args.mode_origin = Some(
+        if matches.value_source("mode") == Some(ValueSource::CommandLine) {
+            "launch option"
+        } else if args.mode.is_some() {
+            "global settings"
+        } else {
+            "built-in default"
+        }
+        .into(),
+    );
     source.verify()
 }
 
@@ -283,6 +293,22 @@ pub fn resolve_arguments(
     } else {
         source.settings.agents.apply(args, matches, source.base());
     }
+    let selected = |settings: &AgentSettings| match args.agent {
+        AgentName::Codex => settings.codex.mode.is_some(),
+        AgentName::Claude => settings.claude.mode.is_some(),
+    };
+    args.mode_origin = Some(
+        if matches.value_source("mode") == Some(ValueSource::CommandLine) {
+            "launch option"
+        } else if project.settings.as_ref().is_some_and(selected) {
+            "project settings"
+        } else if selected(&source.settings.agents) {
+            "global settings"
+        } else {
+            "built-in default"
+        }
+        .into(),
+    );
     project.verify_unchanged()?;
     source.verify()
 }

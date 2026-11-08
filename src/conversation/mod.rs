@@ -25,6 +25,7 @@ pub mod history;
 #[cfg(unix)]
 pub(crate) mod lease;
 pub mod management;
+pub mod modes;
 mod preparation;
 pub(crate) mod references;
 mod storage;
@@ -76,6 +77,10 @@ pub struct Conversation {
     events: VecDeque<ConversationEvent>,
     result: Option<Result<()>>,
     pending_steering: Option<PendingSteering>,
+    modes: modes::Modes,
+    mode_override: bool,
+    invocation_mode: Option<String>,
+    mode_overrides: HashMap<String, String>,
 }
 
 impl Conversation {
@@ -131,6 +136,7 @@ impl Conversation {
             *font = crate::paths::canonical(&*font)?;
         }
         let session = Session::open(&store, &args, &command)?;
+        let invocation_mode = args.mode.clone();
         let mut conversation = Self {
             store,
             args,
@@ -155,6 +161,10 @@ impl Conversation {
             events: VecDeque::new(),
             result: None,
             pending_steering: None,
+            modes: modes::Modes::default(),
+            mode_override: false,
+            invocation_mode,
+            mode_overrides: HashMap::new(),
         };
         if !conversation.args.prompt.is_empty() {
             conversation.set_draft(conversation.args.prompt.clone())?;
@@ -499,6 +509,12 @@ impl Conversation {
         result
     }
     fn validate_send(&self) -> Result<()> {
+        if self.modes.pending.is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the pending permission change before sending",
+            ));
+        }
         self.require_project_agent()?;
         if self.draft().trim().is_empty() && self.images().is_empty() {
             return Err(Error::new(
@@ -768,6 +784,15 @@ impl Conversation {
             if let Some(event) = self.events.pop_front() {
                 return Ok(event);
             }
+            if let Some(job) = self.modes.saving.as_mut() {
+                // Keep the save receiver owned across select cancellation, like prompt preparation.
+                let result = (&mut job.receiver).await.unwrap_or_else(|_| {
+                    Err(Error::new("IO_ERROR", "Permission settings worker stopped"))
+                });
+                let job = self.modes.saving.take().expect("permission save");
+                self.complete_mode_save(job, result)?;
+                continue;
+            }
             if let Some(preparation) = self.preparation.as_mut() {
                 // Keep the receiver in self across select cancellation. Dropping
                 // next_event must neither detach nor restart document capture.
@@ -793,6 +818,14 @@ impl Conversation {
                     })));
                     self.result = Some(Err(error));
                 }
+                continue;
+            }
+            if let Err(error) = self.drive_mode_change() {
+                if let Some(change) = self.modes.pending.take() {
+                    self.args.mode = change.old_mode;
+                }
+                self.modes.error = Some(error.clone());
+                self.message(json!({"type":"mode_error","error":error}))?;
                 continue;
             }
             let Some(host) = self.host.as_mut() else {
@@ -883,13 +916,39 @@ impl Conversation {
         match event {
             AgentEvent::Message(value) => {
                 match value["type"].as_str() {
-                    Some("update") => self.permissions.observe(&value["notification"]),
+                    Some("update") => {
+                        self.permissions.observe(&value["notification"]);
+                        let update = &value["notification"]["update"];
+                        if update["sessionUpdate"] == "current_mode_update" {
+                            self.modes.current =
+                                update["currentModeId"].as_str().map(str::to_owned);
+                        }
+                        if update["sessionUpdate"] == "config_option_update" {
+                            self.modes
+                                .observe(&json!({"configOptions":update["configOptions"]}));
+                        }
+                    }
+                    Some("session_modes") => self.modes.observe(&value["response"]),
+                    Some("mode_changed") => {
+                        if let Some(ready) = self.prepared_ready.as_mut() {
+                            ready["response"] = value["response"].clone();
+                        }
+                        self.finish_mode_change(&value["response"])?;
+                    }
+                    Some("mode_error") => {
+                        self.modes.observe(&value["response"]);
+                        if let Some(change) = self.modes.pending.take() {
+                            self.args.mode = change.old_mode;
+                        }
+                        self.modes.error = Some(error_from_value(&value["error"]));
+                    }
                     Some("auth_status") => {
                         self.session.state.authentication =
                             serde_json::from_value(value["authentication"].clone()).ok();
                         self.session.save()?;
                     }
                     Some("ready") => {
+                        self.finish_mode_change(&value["response"])?;
                         if self.active.is_none() {
                             // An empty prepared session stays transient until an explicit turn.
                             self.ready = true;
@@ -950,8 +1009,13 @@ impl Conversation {
                         };
                         let fatal = value["type"] == "connection_error";
                         self.message(value)?;
-                        self.finish(Err(error))?;
+                        self.finish(Err(error.clone()))?;
                         if fatal {
+                            if let Some(change) = self.modes.pending.take() {
+                                self.args.mode = change.old_mode;
+                            }
+                            self.modes.error = Some(error.clone());
+                            self.modes.current = None;
                             if let Some(host) = self.host.take() {
                                 let _ = host.close().await;
                             }
