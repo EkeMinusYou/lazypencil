@@ -219,7 +219,7 @@ impl App {
     }
     fn search_input(&mut self, key: KeyEvent) {
         let selected = self.selected_node().map(|node| node.id.clone());
-        match search::edit(&mut self.filter, key) {
+        match self.search_editor.edit(&mut self.filter, key) {
             search::Edit::Clear | search::Edit::Keep => self.searching = false,
             search::Edit::Changed => {}
             search::Edit::Ignored => return,

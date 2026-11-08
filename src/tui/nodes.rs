@@ -307,7 +307,10 @@ impl App {
         let inner = block.inner(area);
         frame.render_widget(block, area);
         if self.searching && focused && !self.diagnostics.active {
-            self.search_cursor(frame, area, search_title_width);
+            let cursor = self
+                .search_editor
+                .title_cursor(&self.filter, search_title_width);
+            self.search_cursor(frame, area, cursor);
         }
         if self.mouse.enabled
             && self.mouse.show_controls

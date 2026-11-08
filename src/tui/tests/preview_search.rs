@@ -9,6 +9,88 @@ fn preview_search_screen(app: &mut App) -> (String, Option<ratatui::layout::Posi
 }
 
 #[test]
+fn emacs_search_keys_edit_both_panes_without_changing_the_prompt() {
+    runtime().block_on(async {
+        for focus in [Focus::Nodes, Focus::Preview] {
+            let temp = TempDir::new().unwrap();
+            let mut app = app(&temp, "echo");
+            std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[
+                {"id":"first","name":"日本語 abc suffix","type":"rectangle","width":80,"height":40},
+                {"id":"second","name":"日本語 xyz suffix","type":"rectangle","x":100,"width":80,"height":40}
+            ]}).to_string()).unwrap();
+            let picker = Backend::halfblocks();
+            let worker = Worker::start(app.conversation.store().clone(), vec![], picker.clone(), 220).unwrap();
+            app.cells = Size::new(80, 30);
+            app.request(&worker, false, false);
+            app.accept_preview(tokio::time::timeout(Duration::from_secs(15), worker.next()).await.unwrap());
+            app.insert_text("保持するプロンプト");
+            app.focus = focus;
+            press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
+            for c in "日本語 abc suffix".chars() {
+                press(&mut app, KeyCode::Char(c), KeyModifiers::NONE, &worker).await;
+            }
+            let query = |app: &App| if focus == Focus::Nodes { app.filter.clone() } else { app.preview_search.query.clone() };
+            assert_eq!(app.selected_node().unwrap().id, "first");
+            press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL, &worker).await;
+            let start = preview_search_screen(&mut app).1.unwrap();
+            for _ in 0..3 {
+                press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL, &worker).await;
+            }
+            let cursor = preview_search_screen(&mut app).1.unwrap();
+            assert_eq!(cursor.x, start.x + 6, "{focus:?}: wide characters move the visible cursor");
+            assert_eq!(query(&app), "日本語 abc suffix");
+            press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本 abc suffix");
+            if focus == Focus::Nodes {
+                assert!(app.node_tree.rows().is_empty());
+            } else {
+                assert_eq!(app.preview_search.summary().as_deref(), Some("No matches"));
+            }
+            press(&mut app, KeyCode::Char('_'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(app.selected_node().unwrap().id, "first");
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本語abc suffix");
+            press(&mut app, KeyCode::Char('/'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "abc suffix");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本語 abc suffix");
+            press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本語 abc ");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('b'), KeyModifiers::ALT, &worker).await;
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT, &worker).await;
+            assert_eq!(query(&app), "日本語 abc ");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('b'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本語 abc suffi");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Home, KeyModifiers::NONE, &worker).await;
+            press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(query(&app), "日本語 abc suffix", "Backspace at the start is harmless");
+            if focus == Focus::Nodes {
+                app.search_editor.paste(&mut app.filter, "X\n\t");
+                app.search_nodes(None);
+            } else {
+                app.paste_preview_search("X\n\t", &picker, &worker).unwrap();
+            }
+            assert_eq!(query(&app), "X日本語 abc suffix", "Pastes insert at the cursor and stay on one line");
+            press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+            assert!(!app.searching && !app.preview_search.editing);
+            assert_eq!(query(&app), "日本語 abc suffix");
+            press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
+            press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+            assert!(query(&app).is_empty());
+            assert_eq!(app.editor.lines(), ["保持するプロンプト"]);
+            app.conversation.close().await.unwrap();
+        }
+    });
+}
+
+#[test]
 fn preview_search_and_nodes_share_themed_titles_input_hints_and_cursor_positions() {
     use crate::config::keys::Theme;
     let temp = TempDir::new().unwrap();

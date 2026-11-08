@@ -320,6 +320,8 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `/` | Search text, names and IDs (case-insensitive); select and fit the first matching element while typing |
 | Nodes / Preview search: Enter / Esc | Keep the filter and return to navigation / clear the search. Both panes show the query in their title; Preview uses `n` / `N` to select and fit the next / previous result after Enter |
+| Nodes / Preview search: `Ctrl+H` / `Ctrl+D`, `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Delete backward/forward, move to the start/end, or move one character backward/forward. Left/Right, Home/End and Backspace/Delete also edit the query |
+| Nodes / Preview search: `Alt+B` / `Alt+F`, `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D`, `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Move by word, kill to the start/end, kill the previous/next word, yank, or undo; pasted text inserts at the cursor |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
 | Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |

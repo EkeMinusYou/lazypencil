@@ -5,6 +5,7 @@ use super::*;
 pub(super) struct Search {
     pub query: String,
     pub editing: bool,
+    pub editor: search::Editor,
     matches: Vec<String>,
     current: Option<usize>,
 }
@@ -78,7 +79,11 @@ impl App {
         picker: &graphics::Backend,
         worker: &Worker,
     ) -> Result<()> {
-        match search::edit(&mut self.preview_search.query, key) {
+        match self
+            .preview_search
+            .editor
+            .edit(&mut self.preview_search.query, key)
+        {
             search::Edit::Clear => self.preview_search = Default::default(),
             search::Edit::Keep => self.preview_search.editing = false,
             search::Edit::Changed => self.update_preview_search(picker, worker)?,
@@ -93,7 +98,9 @@ impl App {
         picker: &graphics::Backend,
         worker: &Worker,
     ) -> Result<()> {
-        search::paste(&mut self.preview_search.query, text);
+        self.preview_search
+            .editor
+            .paste(&mut self.preview_search.query, text);
         self.update_preview_search(picker, worker)
     }
 

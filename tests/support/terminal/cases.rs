@@ -827,6 +827,27 @@ fn preview_search(h: &mut Harness) -> Result {
             .find_text("/日本語")
             .is_some_and(|(x, y)| h.screen.cursor() == (x + 7, y))
     })?;
+    h.key(b"\x08")?;
+    h.hidden("/日本語")?;
+    h.visible("/日本")?;
+    h.key("語".as_bytes())?;
+    h.visible("/日本語")?;
+    h.key(b"\x01\x06")?;
+    h.wait(
+        "search cursor follows Emacs character movement",
+        15.0,
+        |h| {
+            h.screen
+                .find_text("/日本語")
+                .is_some_and(|(x, y)| h.screen.cursor() == (x + 3, y))
+        },
+    )?;
+    h.key(b"\x04")?;
+    h.visible("/日語")?;
+    h.visible("No matches")?;
+    h.key(b"\x1b[95;5u")?;
+    h.visible("/日本語")?;
+    h.visible("1/2")?;
     h.key(b"\x1b[B")?;
     h.key(b"\r")?;
     h.visible("Esc clear search")?;
@@ -851,6 +872,13 @@ fn preview_search(h: &mut Harness) -> Result {
     h.visible("Nodes /")?;
     h.visible("Enter keep filter")?;
     h.paste("first")?;
+    h.visible("Nodes /first")?;
+    h.key(b"\x1b[104;5u")?;
+    h.hidden("Nodes /first")?;
+    h.visible("Nodes /firs")?;
+    h.key(b"\x01\x0b")?;
+    h.hidden("Nodes /firs")?;
+    h.key(b"\x19t")?;
     h.visible("Nodes /first")?;
     h.key(b"\r")?;
     h.hidden("Enter keep filter")?;

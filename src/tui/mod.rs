@@ -277,6 +277,7 @@ struct App {
     attachments: ListState,
     reference_rows: ListState,
     filter: String,
+    search_editor: search::Editor,
     searching: bool,
     preview_search: preview_search::Search,
     log: String,
@@ -360,6 +361,7 @@ impl App {
             attachments: ListState::default(),
             reference_rows: ListState::default(),
             filter: String::new(),
+            search_editor: Default::default(),
             searching: false,
             preview_search: Default::default(),
             log: String::new(),
@@ -693,7 +695,7 @@ impl App {
                     self.paste_preview_search(&text, &screen.picker, worker)?;
                 } else {
                     let selected = self.selected_node().map(|node| node.id.clone());
-                    search::paste(&mut self.filter, &text);
+                    self.search_editor.paste(&mut self.filter, &text);
                     self.search_nodes(selected.as_deref());
                 }
                 self.dirty = true;
@@ -1589,7 +1591,11 @@ impl App {
         self.pointer.add(inner, mouse::Target::Canvas);
         frame.render_widget(block, panes[1]);
         if self.preview_search.editing && self.focus == Focus::Preview {
-            self.search_cursor(frame, panes[1], title_width);
+            let cursor = self
+                .preview_search
+                .editor
+                .title_cursor(&self.preview_search.query, title_width);
+            self.search_cursor(frame, panes[1], cursor);
         }
         if let Some(camera) = self
             .camera
