@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
+
+- Format mid-turn user messages consistently with ordinary prompts and separate streamed replies from the injected text.
+- Keep selection outlines visible across camera updates, preserve native antialiasing when cropping previews to exact viewport dimensions, and retain precise trackpad scrolling and macOS pinch ownership.
+- Support image drafts and explicitly queued image follow-ups during active turns; distinguish clipboard image validation errors and allow static images up to 32 megapixels within configured budgets.
+- Add reviewed ACP permission mode controls, contextual command palette details, and Emacs editing in node and preview searches.
+- Keep footer height stable when notifications change and use a consistent lowercase fast-mode label.
 
 - Bound shared component cycle checks and honor cancellation without recursive stack growth.
 - Escape control characters in human-readable errors while preserving structured messages.
