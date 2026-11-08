@@ -36,13 +36,75 @@ pub(super) fn apply(
             sources: Vec::new(),
         },
     };
-    for (index, operation) in operations.iter().enumerate() {
-        batch.apply_one(index, operation)?;
+    let mut index = 0;
+    while index < operations.len() {
+        let mut edits = Vec::new();
+        let mut ids = HashSet::new();
+        while let Some(operation) = operations.get(index) {
+            let Some((id, edit)) = batch.plain_update(operation)? else {
+                break;
+            };
+            if !ids.insert(id.clone()) {
+                break;
+            }
+            batch.changed.insert(id);
+            edits.push(edit);
+            index += 1;
+        }
+        if !edits.is_empty() {
+            batch.edited.edit_properties(&edits)?;
+        } else {
+            batch.apply_one(index, &operations[index])?;
+            index += 1;
+        }
     }
     batch.finish()
 }
 
 impl Batch<'_> {
+    fn plain_update(
+        &self,
+        operation: &Operation,
+    ) -> Result<Option<(String, crate::document::PropertyEdit)>> {
+        crate::cancel::check(self.context.cancel)?;
+        let Operation::Update { target, set, unset } = operation else {
+            return Ok(None);
+        };
+        if !resolve_address(target, &self.bindings)?
+            .instance_path
+            .is_empty()
+        {
+            return Ok(None);
+        }
+        let id = resolve_target(target, &self.bindings)?;
+        let node = self.edited.known_node(&id)?;
+        if node.pointer("/metadata/lazypencil").is_some() {
+            return Ok(None);
+        }
+        if set
+            .keys()
+            .chain(unset.iter())
+            .any(|key| matches!(key.as_str(), "id" | "type" | "children" | "descendants"))
+        {
+            return Err(invalid(
+                "Update cannot change identity, children, or descendant overrides; use explicit structural operations",
+            ));
+        }
+        Ok(Some((
+            id.clone(),
+            crate::document::PropertyEdit {
+                pointer: self.edited.location(&id)?.pointer.clone(),
+                set: set
+                    .iter()
+                    .map(|(key, value)| {
+                        resolve_bindings(value, &self.bindings).map(|value| (key.clone(), value))
+                    })
+                    .collect::<Result<_>>()?,
+                unset: unset.clone(),
+            },
+        )))
+    }
+
     fn apply_one(&mut self, index: usize, operation: &Operation) -> Result<()> {
         crate::cancel::check(self.context.cancel)?;
         match operation {

@@ -534,19 +534,19 @@ fn apply_property_changes(
         .collect::<Vec<_>>();
     crate::project::revoke_copied_script_context(document, pointer, keys.iter().copied())?;
     crate::project::revoke_copied_browser_context(document, pointer, keys)?;
-    for key in unset
-        .iter()
-        .filter(|key| !preserved_metadata || key.as_str() != "metadata")
-    {
-        document.remove_property(pointer, key)?;
-    }
-    for (key, value) in set
-        .iter()
-        .filter(|(key, _)| !preserved_metadata || key.as_str() != "metadata")
-    {
-        document.set_property(pointer, key, &resolve_bindings(value, bindings)?)?;
-    }
-    Ok(())
+    document.edit_properties(&[crate::document::PropertyEdit {
+        pointer: pointer.into(),
+        set: set
+            .iter()
+            .filter(|(key, _)| !preserved_metadata || key.as_str() != "metadata")
+            .map(|(key, value)| resolve_bindings(value, bindings).map(|value| (key.clone(), value)))
+            .collect::<Result<_>>()?,
+        unset: unset
+            .iter()
+            .filter(|key| !preserved_metadata || key.as_str() != "metadata")
+            .cloned()
+            .collect(),
+    }])
 }
 
 fn update_override(

@@ -9,7 +9,9 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 
 mod codec;
+mod properties;
 pub use codec::{Codec, SUPPORTED_DOCUMENT_VERSIONS};
+pub(crate) use properties::PropertyEdit;
 
 pub const DOCUMENT_VERSION: &str = Codec::DEFAULT.version();
 pub const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
@@ -310,7 +312,8 @@ impl Document {
     }
 
     fn replace_ranges(&mut self, mut changes: Vec<(std::ops::Range<usize>, String)>) -> Result<()> {
-        changes.sort_by_key(|change| std::cmp::Reverse(change.0.start));
+        // Remove or replace original bytes before inserting at the same offset.
+        changes.sort_by_key(|change| std::cmp::Reverse((change.0.start, change.0.end)));
         let mut text = self.text.clone();
         for (range, replacement) in changes {
             text.replace_range(range, &replacement);

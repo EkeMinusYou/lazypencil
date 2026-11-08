@@ -9,6 +9,56 @@ use std::{
     process::{Command, Output},
 };
 use tempfile::TempDir;
+
+#[test]
+fn bulk_updates_finish_within_the_cli_deadline_and_keep_following_structural_edits_ordered() {
+    let temp = TempDir::new().unwrap();
+    let file = temp.path().join("bulk.pen");
+    let children = (0..1000).map(|i| json!({"id":format!("n{i}"),"type":"rectangle","width":10,"height":10,"x":i,"metadata":{"keep":1.25}})).collect::<Vec<_>>();
+    let source = json!({"version":"2.22","children":children}).to_string();
+    fs::write(&file, &source).unwrap();
+    let mut operations = (0..1000).map(|i| json!({"op":"update","target":format!("n{i}"),"set":{"width":20,"height":30,"x":i*2,"y":2,"name":"変更"},"unset":["metadata"]})).collect::<Vec<_>>();
+    operations.extend([
+        json!({"op":"update","target":"n0","set":{"width":45}}),
+        json!({"op":"copy","target":"n0","client_ref":"copy"}),
+        json!({"op":"update","target":{"result_of":"copy"},"set":{"width":60,"height":70}}),
+        json!({"op":"delete","target":"n1"}),
+        json!({"op":"update","target":"n2","set":{"height":80}}),
+    ]);
+    // Stay within the public batch limit while retaining a thousand-node source.
+    operations.drain(995..1000);
+    let request = temp.path().join("operations.json");
+    fs::write(&request, json!(operations).to_string()).unwrap();
+    let output = fixture_support::output(
+        std::process::Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .env("LAZYPENCIL_CONFIG_DIR", temp.path().join("config"))
+            .args(["--json", "--data-dir"])
+            .arg(temp.path().join("data"))
+            .arg("apply")
+            .arg(&file)
+            .arg("--operations")
+            .arg(request)
+            .arg("--expected-revision")
+            .arg(lazypencil::document::hash(source.as_bytes())),
+        std::time::Duration::from_secs(15),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = Document::parse(fs::read_to_string(file).unwrap()).unwrap();
+    assert_eq!(document.node("n0").unwrap()["width"], 45);
+    assert!(document.node("n1").is_err());
+    assert_eq!(document.node("n2").unwrap()["height"], 80);
+    assert_eq!(document.node("n994").unwrap()["width"], 20);
+    assert!(document.node("n994").unwrap().get("metadata").is_none());
+    assert_eq!(document.node("n999").unwrap()["width"], 10);
+    let copied = result["bindings"]["copy"].as_str().unwrap();
+    assert_eq!(document.node(copied).unwrap()["width"], 60);
+    assert_eq!(document.node(copied).unwrap()["height"], 70);
+}
 #[cfg(unix)]
 #[path = "support/lock_wait.rs"]
 mod lock_wait;
