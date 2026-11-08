@@ -41,6 +41,12 @@ and send dimensions and retains order. Image-only prompts are allowed. Conversio
 immutable storage run outside the input loop; Ctrl+C cancels without losing adopted
 images or the draft. Submission/image edits wait while an image operation is active.
 
+Images can be pasted, attached, resized and removed while an agent is working or the
+send queue is paused. They belong to the next draft. Submitting captures its text,
+references and images together; later draft edits cannot change a queued request.
+Image-bearing follow-ups run as subsequent turns, even when the adapter supports
+text steering. Reopening retains draft and queued images without submitting them.
+
 Clipboard priority is bitmap, recognized image-file list, then text. Ordinary bracketed
 text paste stays text. Cmd+V belongs to the terminal and does not guarantee bitmap data.
 SSH uses the remote host's clipboard, not automatic access to the local PC. Terminal

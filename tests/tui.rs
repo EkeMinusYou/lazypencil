@@ -539,3 +539,121 @@ fn tui_rejects_machine_and_nonterminal_use_before_creating_a_document() {
         }
     }
 }
+
+#[test]
+fn real_pty_queues_image_follow_ups_while_working_and_keeps_unsent_images_separate()
+-> terminal::Result {
+    use base64::Engine;
+    use serde_json::{Value, json};
+    use std::{collections::BTreeMap, fs};
+    let temp = TempDir::new()?;
+    let root = temp.path();
+    let document = root.join("design.pen");
+    fs::write(&document, json!({"version":"2.21","children":[{"id":"box","type":"rectangle","width":40,"height":20,"fill":"#ff0000"}]}).to_string())?;
+    fs::write(root.join("lazypencil.toml"), "version=1\n")?;
+    for (name, pixel) in [
+        ("red", [255, 0, 0, 255]),
+        ("blue", [0, 0, 255, 255]),
+        ("green", [0, 255, 0, 255]),
+    ] {
+        fs::write(
+            root.join(format!("{name}.png")),
+            lazypencil::image_input::from_rgba8(2, 2, &pixel.repeat(4))?.png,
+        )?;
+    }
+    let mut environment = std::env::vars_os().collect::<BTreeMap<_, _>>();
+    environment.insert(
+        "LAZYPENCIL_CONFIG_DIR".into(),
+        root.join("user").into_os_string(),
+    );
+    let mut h = terminal::Harness::start(
+        Path::new(env!("CARGO_BIN_EXE_lazypencil")),
+        root,
+        &document,
+        environment,
+        "queued-followups",
+        None,
+    )?;
+    h.visible("✎ Prompt")?;
+    h.key(b"\t")?;
+    fn outbox(h: &terminal::Harness) -> Option<Value> {
+        terminal::files(&h.root.join("data"), |name| name == "prompt-outbox.json")
+            .first()
+            .and_then(|path| terminal::read_json(path))
+    }
+    fn attach(h: &mut terminal::Harness, name: &str) -> terminal::Result {
+        h.paste(&format!(
+            "/attach '{}'",
+            h.root.join(format!("{name}.png")).display()
+        ))?;
+        h.key(b"\r")?;
+        h.wait("image adopted into the next draft", 15.0, |h| {
+            outbox(h).is_some_and(|state| {
+                state["draft_images"].as_array().is_some_and(|images| {
+                    images.len() == 1 && images[0]["display_name"] == format!("{name}.png")
+                })
+            })
+        })
+    }
+    attach(&mut h, "red")?;
+    h.paste("First red request")?;
+    h.key(b"\r")?;
+    h.wait("first image request is working", 15.0, |h| {
+        h.root.join("started-turn-1").exists()
+    })?;
+    attach(&mut h, "blue")?;
+    h.visible("Attachments")?;
+    h.paste("Second blue request")?;
+    h.key(b"\r")?;
+    h.wait("image follow-up captured in the queue", 15.0, |h| {
+        outbox(h).is_some_and(|state| state["queued"][0]["images"][0]["display_name"] == "blue.png")
+    })?;
+    attach(&mut h, "green")?;
+    h.paste("Unsent green draft")?;
+    h.wait("next image draft saved during work", 15.0, |h| {
+        outbox(h).is_some_and(|state| state["draft"] == "Unsent green draft")
+    })?;
+    fs::write(root.join("release-turn-1"), "release")?;
+    h.wait("queued image request starts", 15.0, |h| {
+        h.root.join("started-turn-2").exists()
+    })?;
+    fs::write(root.join("release-turn-2"), "release")?;
+    h.wait("image queue finishes", 15.0, |h| {
+        h.count("complete") == 2 && h.screen.text().contains("Idle")
+    })?;
+    h.draft("Unsent green draft")?;
+    assert_eq!(
+        h.session().unwrap()["pending_attachments"][0]["display_name"],
+        "green.png"
+    );
+    let received = fs::read_to_string(root.join("received-prompts.jsonl"))?;
+    let turns = received
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    assert_eq!(turns.len(), 2);
+    for (turn, pixel, text) in [
+        (&turns[0], [255, 0, 0, 255], "First red request"),
+        (&turns[1], [0, 0, 255, 255], "Second blue request"),
+    ] {
+        let blocks = turn["prompt"].as_array().unwrap();
+        let images = blocks
+            .iter()
+            .filter(|block| block["type"] == "image")
+            .collect::<Vec<_>>();
+        assert_eq!(images.len(), 1);
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(images[0]["data"].as_str().unwrap())?;
+        assert_eq!(
+            image::load_from_memory(&png)?.to_rgba8().get_pixel(0, 0).0,
+            pixel
+        );
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block["type"] == "text" && block["text"] == text)
+        );
+    }
+    h.finish()?;
+    Ok(())
+}

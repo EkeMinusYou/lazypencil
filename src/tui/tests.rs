@@ -127,6 +127,7 @@ async fn complete(app: &mut App) -> Vec<Value> {
                     let done = matches!(value["type"].as_str(), Some("complete" | "failed"));
                     events.push(value);
                     if done {
+                        app.finish_turn();
                         return events;
                     }
                 }

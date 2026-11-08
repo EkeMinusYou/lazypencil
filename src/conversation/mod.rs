@@ -225,6 +225,10 @@ impl Conversation {
     pub fn settings(&self) -> &PromptArgs {
         &self.args
     }
+    #[cfg(feature = "tui")]
+    pub(crate) fn executable(&self) -> &Path {
+        &self.executable
+    }
     pub fn attachment_limits(&self) -> Result<crate::config::attachments::AttachmentSettings> {
         crate::config::attachments::load()
     }
@@ -235,6 +239,28 @@ impl Conversation {
         }
         self.session.state.draft = text;
         self.session.save()
+    }
+
+    /// Synchronize a frontend's captured input without reclaiming other queued images.
+    #[cfg(feature = "tui")]
+    pub(crate) fn set_pending_input(
+        &mut self,
+        text: String,
+        images: Vec<Attachment>,
+    ) -> Result<()> {
+        self.require_idle()?;
+        if text.len() > 1024 * 1024 {
+            return Err(Error::new("INVALID_ARGUMENT", "Prompt text exceeds 1 MiB"));
+        }
+        let previous_text = std::mem::replace(&mut self.session.state.draft, text);
+        let previous_images =
+            std::mem::replace(&mut self.session.state.pending_attachments, images);
+        if let Err(error) = self.session.save() {
+            self.session.state.draft = previous_text;
+            self.session.state.pending_attachments = previous_images;
+            return Err(error);
+        }
+        Ok(())
     }
     pub fn add_image(&mut self, image: Attachment) -> Result<()> {
         self.add_images(vec![image])

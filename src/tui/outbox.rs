@@ -1,5 +1,6 @@
 //! Durable queued prompts and delivery tracking for mid-turn input.
 use super::*;
+use crate::attachments::Attachment;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -10,6 +11,8 @@ pub(super) struct Prompt {
     pub references: Vec<crate::conversation::references::Reference>,
     #[serde(default)]
     pub image_ids: Vec<String>,
+    #[serde(default)]
+    pub images: Vec<Attachment>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -22,6 +25,8 @@ pub(super) struct SteeringPrompt {
 #[serde(default)]
 pub(super) struct Outbox {
     pub draft: Option<String>,
+    // None migrates older outboxes from the conversation's pending attachments.
+    pub draft_images: Option<Vec<Attachment>>,
     pub queued: VecDeque<Prompt>,
     pub paused: bool,
     pub references: Vec<crate::conversation::references::Reference>,
@@ -47,6 +52,7 @@ impl Outbox {
                         selection: None,
                         references: vec![],
                         image_ids: vec![],
+                        images: vec![],
                     });
                     outbox.paused = true;
                 }
@@ -64,7 +70,7 @@ impl Outbox {
     }
 
     pub fn push(&mut self, prompt: Prompt) -> Result<()> {
-        if prompt.text.trim().is_empty() {
+        if prompt.text.trim().is_empty() && prompt.images.is_empty() {
             return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));
         }
         if self.queued.len() >= 32
@@ -104,23 +110,50 @@ impl App {
     }
 
     pub(super) fn enqueue_prompt(&mut self, text: String) -> Result<()> {
+        // The separate queue dialog preserves the prompt's draft attachments.
+        self.enqueue_input(text, vec![])
+    }
+
+    fn enqueue_input(&mut self, text: String, images: Vec<Attachment>) -> Result<()> {
+        if self.input.is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for image input before queueing",
+            ));
+        }
         self.outbox.push(Prompt {
             text,
             selection: None,
             references: self.outbox.references.clone(),
-            image_ids: vec![],
+            image_ids: images.iter().map(|image| image.id.clone()).collect(),
+            images,
         })?;
         self.outbox.references.clear();
         self.reference_rows.select(None);
+        self.draft_changed = true;
         Ok(())
     }
 
     pub(super) fn queue_prompt(&mut self, text: String) -> Result<()> {
-        self.enqueue_prompt(text)?;
+        self.enqueue_input(text, self.pending_images().to_vec())?;
+        self.outbox.draft_images = Some(vec![]);
         self.editor = editor("");
-        self.outbox.draft = Some(String::new());
-        self.outbox.save(self.conversation.directory())?;
-        self.draft_changed = false;
+        self.save_draft()
+    }
+
+    pub(super) fn clear_queued_prompts(&mut self) -> Result<()> {
+        let prompts = std::mem::take(&mut self.outbox.queued);
+        let paused = self.outbox.paused;
+        self.outbox.paused = false;
+        if let Err(error) = self.outbox.save(self.conversation.directory()) {
+            self.outbox.queued = prompts;
+            self.outbox.paused = paused;
+            return Err(error);
+        }
+        let retained = self.image_references();
+        for image in prompts.iter().flat_map(|prompt| &prompt.images) {
+            image.reclaim_files(self.conversation.directory(), retained.iter())?;
+        }
         Ok(())
     }
 
@@ -162,6 +195,7 @@ impl App {
                 selection: None,
                 references: vec![],
                 image_ids: vec![],
+                images: vec![],
             });
             if value["outcome"] == "promptRequired" {
                 self.set_status("The turn could not accept input; queued for the next turn".into());
@@ -179,7 +213,43 @@ impl App {
 
     pub(super) fn restore_outbox(&mut self) {
         match Outbox::load(self.conversation.directory()) {
-            Ok(outbox) => {
+            Ok(mut outbox) => {
+                let retained = self.conversation.image_references();
+                for prompt in outbox.queued.iter_mut().chain(outbox.in_flight.iter_mut()) {
+                    if prompt.images.is_empty() && !prompt.image_ids.is_empty() {
+                        for id in &prompt.image_ids {
+                            let Some(image) = retained.iter().find(|image| &image.id == id) else {
+                                self.error(Error::new(
+                                    "ATTACHMENT_INVALID",
+                                    "A saved queued image is unavailable",
+                                ));
+                                return;
+                            };
+                            prompt.images.push(image.clone());
+                        }
+                    }
+                }
+                if outbox.draft_images.is_none()
+                    && (outbox.in_flight.is_some()
+                        || outbox.queued.iter().any(|prompt| !prompt.images.is_empty()))
+                {
+                    outbox.draft_images = Some(
+                        self.conversation
+                            .images()
+                            .iter()
+                            .filter(|image| {
+                                !outbox
+                                    .queued
+                                    .iter()
+                                    .chain(outbox.in_flight.iter())
+                                    .any(|prompt| {
+                                        prompt.images.iter().any(|captured| captured.id == image.id)
+                                    })
+                            })
+                            .cloned()
+                            .collect(),
+                    );
+                }
                 if let Some(draft) = &outbox.draft
                     && (outbox.in_flight.is_some()
                         || !draft.is_empty()
@@ -194,9 +264,9 @@ impl App {
                 }
                 self.outbox = outbox;
                 if self.outbox.in_flight.is_some() {
-                    self.finish_reference_prompt(true);
+                    self.finish_prompt(true);
                     self.set_attention_status(
-                        "Interrupted reference prompt restored; sends only on submit".into(),
+                        "Interrupted prompt restored; review saved logs before resubmitting".into(),
                     );
                     self.draft_changed = true;
                 }
@@ -207,6 +277,7 @@ impl App {
 
     pub(super) async fn send_queued(&mut self) -> Result<()> {
         if self.conversation.active()
+            || self.outbox.in_flight.is_some()
             || self.outbox.steering.is_some()
             || self.outbox.paused
             || self.has_modal()
@@ -218,30 +289,27 @@ impl App {
         let Some(prompt) = self.outbox.queued.front().cloned() else {
             return Ok(());
         };
-        // New follow-ups never inherit the active turn's images. An explicitly
-        // retried failed reference request may retain its exact pending images.
-        let image_ids = self
-            .conversation
-            .images()
-            .iter()
-            .map(|image| image.id.clone())
-            .collect::<Vec<_>>();
-        if prompt.image_ids != image_ids {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "Review pending images before retrying: they must match the queued request; text-only follow-ups require no images",
-            ));
-        }
         let selection = crate::conversation::references::selection(&prompt.references)
             .or(prompt.selection.clone());
-        self.conversation.set_draft(prompt.text.clone())?;
+        self.conversation
+            .set_pending_input(prompt.text.clone(), prompt.images.clone())?;
+        self.outbox.queued.pop_front();
+        self.outbox.in_flight = Some(prompt.clone());
+        self.outbox.draft = Some(self.editor.lines().join("\n"));
+        if let Err(error) = self.outbox.save(self.conversation.directory()) {
+            self.outbox.in_flight = None;
+            self.outbox.queued.push_front(prompt);
+            self.outbox.paused = true;
+            return Err(error);
+        }
         if let Err(error) = self.conversation.start_send(selection).await {
             self.outbox.paused = true;
+            self.finish_prompt(true);
+            self.draft_changed = true;
+            self.save_draft()?;
             self.outbox.save(self.conversation.directory())?;
             return Err(error);
         }
-        self.outbox.queued.pop_front();
-        self.outbox.in_flight = (!prompt.references.is_empty()).then(|| prompt.clone());
         self.turn_pending = true;
         self.turn_sequence = self.turn_sequence.wrapping_add(1);
         self.turn_started = Some(Instant::now());
@@ -251,7 +319,7 @@ impl App {
             "\nYou: {}{}\n[{} images]\n\n{:?}:\n",
             prompt.text,
             references::history(&prompt.references),
-            prompt.image_ids.len(),
+            prompt.images.len(),
             self.conversation.settings().agent
         ));
         self.scroll = 0;

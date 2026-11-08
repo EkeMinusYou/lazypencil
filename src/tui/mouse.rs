@@ -384,7 +384,7 @@ impl App {
                 .and_then(|preview| preview.summary["revision"].as_str())
                 .unwrap_or(""),
             self.filter,
-            self.conversation.images().len(),
+            self.pending_images().len(),
             self.outbox.references.len()
         )
     }
@@ -809,11 +809,10 @@ impl App {
             _ => None,
         };
         if let Some(list) = list {
+            let attachment_count = self.pending_images().len();
             let (state, count, row_height) = match list {
                 ListTarget::Nodes => (&mut self.nodes, self.node_tree.rows().len(), 1),
-                ListTarget::Attachments => {
-                    (&mut self.attachments, self.conversation.images().len(), 1)
-                }
+                ListTarget::Attachments => (&mut self.attachments, attachment_count, 1),
                 ListTarget::References => {
                     (&mut self.reference_rows, self.outbox.references.len(), 1)
                 }

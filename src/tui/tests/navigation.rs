@@ -27,7 +27,9 @@ fn http_prompt_preparation_keeps_navigation_and_control_c_responsive() {
         assert!(!app.key(KeyEvent::new(KeyCode::Char('c'),KeyModifiers::CONTROL), &picker, &worker).await.unwrap());
         let events = complete(&mut app).await;
         assert_eq!(events.last().unwrap()["error"]["code"], "CANCELLED");
-        assert_eq!(app.conversation.draft(), draft);
+        assert_eq!(app.outbox.queued[0].text, draft);
+        assert_eq!(app.editor.lines(), ["x"]);
+        assert_eq!(app.conversation.draft(), "x");
         assert!(!temp.path().join("sent-turn.txt").exists());
         app.conversation.close().await.unwrap();
         worker.cancel();

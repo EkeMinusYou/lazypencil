@@ -492,3 +492,43 @@ fn retention_never_follows_symlink_or_foreign_namespaces_and_preserves_unknown_d
         .is_err()
     );
 }
+
+#[test]
+fn retention_preserves_outbox_images_queues_and_unconfirmed_delivery_after_the_frontend_closes() {
+    let temp = TempDir::new().unwrap();
+    let mut protected = vec![];
+    for (index, outbox) in [
+        json!({"draft_images":[{"id":"pending-image"}]}),
+        json!({"queued":[{"text":"","images":[{"id":"queued-image"}]}]}),
+        json!({"in_flight":{"text":"Unconfirmed image request","images":[{"id":"sent-image"}]}}),
+        json!({"draft":"Unsent next draft"}),
+        json!({"steering":{"id":"pending","text":"Unconfirmed steering"}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (_, conversation) = session(&temp, &format!("outbox-{index}.pen"));
+        let (_, directory) = inactive(conversation, 10);
+        fs::write(directory.join("prompt-outbox.json"), outbox.to_string()).unwrap();
+        write_time(&directory, DAY - 10 * 86400);
+        protected.push(directory);
+    }
+    let (store, conversation) = session(&temp, "empty-outbox.pen");
+    let (empty, empty_path) = inactive(conversation, 10);
+    fs::write(empty_path.join("prompt-outbox.json"), json!({"draft":"","draft_images":[],"queued":[],"references":[],"in_flight":null,"steering":null}).to_string()).unwrap();
+    write_time(&empty_path, DAY - 10 * 86400);
+    let settings = policy(Some(1), Some(1), 0);
+    let review = plan(store.data_dir(), &settings);
+    assert_eq!(selected(&review), BTreeSet::from([empty]));
+    assert_eq!(
+        review
+            .entries
+            .iter()
+            .filter(|entry| entry.protected_reason.as_deref() == Some("unsent prompt outbox"))
+            .count(),
+        protected.len()
+    );
+    apply_plan(store.data_dir(), &settings, &review);
+    assert!(!empty_path.exists());
+    assert!(protected.iter().all(|path| path.exists()));
+}

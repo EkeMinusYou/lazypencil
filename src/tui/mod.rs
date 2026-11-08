@@ -179,15 +179,8 @@ pub fn run_with_selection(
     if let Some(host) = prepared {
         conversation.set_prepared_agent(host);
     }
-    conversation.attachment_limits()?.check_count(
-        conversation
-            .images()
-            .len()
-            .saturating_add(args.prompt.images.len()),
-    )?;
-    for image in &args.prompt.images {
-        conversation.attach_file(image)?;
-    }
+    let mut app = App::new(conversation);
+    app.attach_startup_images(&args.prompt.images)?;
     // Reserve two slots each for exact and temporary camera frames. The low
     // bit selects the slot; the high bit identifies temporary feedback.
     let id = (uuid::Uuid::new_v4().as_u128() as u32 & 0x7fff_fffe).max(2);
@@ -201,7 +194,7 @@ pub fn run_with_selection(
         )?,
     };
     let worker = Worker::start(
-        conversation.store().clone(),
+        app.conversation.store().clone(),
         args.prompt.fonts.clone(),
         screen.picker.clone(),
         id,
@@ -212,7 +205,6 @@ pub fn run_with_selection(
         .build()
         .map_err(terminal::io)?;
     let (result, session_id) = runtime.block_on(async {
-        let mut app = App::new(conversation);
         app.theme = args.theme.unwrap_or(settings.theme);
         app.terminal_background = screen.picker.terminal_background();
         app.keys = settings.keys;
@@ -237,6 +229,7 @@ pub fn run_with_selection(
         drop(app.input.take());
         (result.and(closed), session_id)
     });
+    drop(app);
     drop(worker);
     drop(screen);
     runtime.shutdown_timeout(Duration::from_secs(1));
@@ -739,7 +732,7 @@ impl App {
         let attachment = if self.focus == Focus::Attachments {
             self.attachments
                 .selected()
-                .and_then(|index| self.conversation.images().get(index))
+                .and_then(|index| self.pending_images().get(index))
                 .map(|image| (image.clone(), self.conversation.directory().to_path_buf()))
         } else {
             None
@@ -912,24 +905,23 @@ impl App {
     fn save_draft(&mut self) -> Result<()> {
         if self.draft_changed {
             let text = self.editor.lines().join("\n");
-            if !self.conversation.active() {
-                self.conversation.set_draft(text.clone())?;
-            }
-            self.outbox.draft = if self.conversation.active()
-                || self.turn_pending
-                || !self.outbox.queued.is_empty()
-            {
-                Some(text)
-            } else {
-                None
-            };
+            self.outbox.draft = Some(text.clone());
             self.outbox.save(self.conversation.directory())?;
+            if !self.conversation.active() {
+                self.conversation
+                    .set_pending_input(text, self.pending_images().to_vec())?;
+            }
             self.draft_changed = false;
             self.last_draft_save = std::time::Instant::now();
         }
         Ok(())
     }
     fn sync_turn(&mut self, worker: &Worker) {
+        if self.finish_turn() {
+            self.request(worker, false, false);
+        }
+    }
+    fn finish_turn(&mut self) -> bool {
         // Completion is recorded before the final frontend message is dequeued.
         // Synchronize once on the actual state transition, preserving any next draft.
         if self.turn_pending && !self.conversation.active() {
@@ -938,9 +930,9 @@ impl App {
             self.turn_started = None;
             let failed = self.conversation.result().is_some_and(Result::is_err);
             self.outbox.paused |= failed;
-            let reference_failure = failed && self.outbox.in_flight.is_some();
-            self.finish_reference_prompt(failed);
-            if failed && !reference_failure && self.editor.lines().iter().all(String::is_empty) {
+            let recovered_failure = failed && self.outbox.in_flight.is_some();
+            self.finish_prompt(failed);
+            if failed && !recovered_failure && self.editor.lines().iter().all(String::is_empty) {
                 self.editor = editor(self.conversation.draft());
             }
             if self.focus.in_conversation() {
@@ -951,8 +943,9 @@ impl App {
                 self.error(error);
             }
             self.dirty = true;
-            self.request(worker, false, false);
+            return true;
         }
+        false
     }
     fn insert_text(&mut self, text: &str) -> bool {
         let text = clean(text);
@@ -1274,6 +1267,7 @@ impl App {
     }
 
     async fn submit(&mut self) -> Result<()> {
+        self.finish_turn();
         if self.document_task.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -1289,18 +1283,24 @@ impl App {
         if self.queue_command()? {
             return Ok(());
         }
-        if self.outbox.steering.is_some() && self.outbox.references.is_empty() {
+        if self.outbox.steering.is_some()
+            && self.outbox.references.is_empty()
+            && self.pending_images().is_empty()
+        {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
                 "Wait for the previous mid-turn input's delivery receipt; your draft is retained",
             ));
         }
-        if self.conversation.can_steer() && self.outbox.references.is_empty() {
+        if self.conversation.can_steer()
+            && self.outbox.references.is_empty()
+            && self.pending_images().is_empty()
+        {
             return self.steer_prompt(self.editor.lines().join("\n"));
         }
         if self.conversation.active() || !self.outbox.queued.is_empty() {
             let text = self.editor.lines().join("\n");
-            if !text.trim().is_empty() {
+            if !text.trim().is_empty() || !self.pending_images().is_empty() {
                 self.queue_prompt(text)?;
             } else if self.conversation.active() {
                 return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));
@@ -1314,41 +1314,15 @@ impl App {
             self.clear_status();
             return self.send_queued().await;
         }
-        self.save_draft()?;
-        let target = crate::conversation::references::selection(&self.outbox.references);
-        let text = self.conversation.draft().to_string();
-        self.conversation.start_send(target).await?;
-        let references = std::mem::take(&mut self.outbox.references);
-        self.reference_rows.select(None);
-        self.outbox.in_flight = (!references.is_empty()).then(|| outbox::Prompt {
-            text: text.clone(),
-            selection: None,
-            references: references.clone(),
-            image_ids: self
-                .conversation
-                .images()
-                .iter()
-                .map(|image| image.id.clone())
-                .collect(),
-        });
+        self.queue_prompt(self.editor.lines().join("\n"))?;
         self.outbox.paused = false;
-        self.turn_pending = true;
-        self.turn_sequence = self.turn_sequence.wrapping_add(1);
-        self.turn_started = Some(Instant::now());
-        self.append(&format!(
-            "\nYou: {text}{}\n[{} images]\n\n{:?}:\n",
-            references::history(&references),
-            self.conversation.images().len(),
-            self.conversation.settings().agent,
-        ));
-        self.scroll = 0;
-        self.clear_status();
-        self.editor = editor("");
-        self.outbox.draft = Some(String::new());
         self.outbox.save(self.conversation.directory())?;
-        Ok(())
+        self.send_queued().await
     }
     async fn command(&mut self, worker: &Worker) -> Result<bool> {
+        if self.queue_command()? {
+            return Ok(false);
+        }
         let line = self.editor.lines().join("\n");
         let (command, args) = commands::parse(&line)?;
         let exit = self.execute_command(command.action, &args, worker)?;

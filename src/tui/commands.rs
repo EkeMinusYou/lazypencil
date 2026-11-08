@@ -269,13 +269,7 @@ impl App {
             ImageInput | ClipboardInput | PendingImages | ClearImages if self.input.is_some() => {
                 Some("Finish or cancel the active image operation first")
             }
-            ImageInput if self.conversation.active() || !self.outbox.queued.is_empty() => {
-                Some("Image attachments can be added after the queued prompts finish")
-            }
-            PendingImages | ClearImages if self.conversation.active() => {
-                Some("Wait for the active turn or cancel it before changing attachments")
-            }
-            PendingImages if self.conversation.images().is_empty() => {
+            PendingImages if self.pending_images().is_empty() => {
                 Some("Attach an image before resizing it")
             }
             CompletePreview => self.export_unavailable().map(|(_, reason)| reason),
@@ -286,7 +280,9 @@ impl App {
             NativeInput if !self.mouse.native_pinch && !self.mouse.native_scroll => {
                 Some("Native gestures are disabled in user settings")
             }
-            NativeInput if !cfg!(target_os = "macos") || std::env::var_os("SSH_CONNECTION").is_some() => {
+            NativeInput
+                if !cfg!(target_os = "macos") || std::env::var_os("SSH_CONNECTION").is_some() =>
+            {
                 Some("Native gestures require a local macOS session")
             }
             _ => None,
@@ -321,8 +317,7 @@ impl App {
             }
             Action::ResumeQueue => self.outbox.paused = false,
             Action::ClearQueue => {
-                self.outbox.queued.clear();
-                self.outbox.paused = false;
+                self.clear_queued_prompts()?;
                 self.set_status("Prompt queue cleared".into());
             }
             Action::Attach => self.start_input_with_bounds(
@@ -353,7 +348,7 @@ impl App {
                 self.start_resize(index, images::input_bounds(Some(&args[1]), None)?)?;
             }
             Action::ClearImages => {
-                self.conversation.clear_images()?;
+                self.clear_pending_images()?;
                 self.request(worker, false, false);
             }
             Action::Refresh => self.request(worker, false, true),

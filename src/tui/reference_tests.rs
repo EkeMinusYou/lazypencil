@@ -153,7 +153,7 @@ fn explicit_references_preserve_drafts_instances_cursor_and_saved_history() {
             .collect::<String>();
         assert!(screen.contains("References"));
         assert!(screen.contains("Button"));
-        app.conversation.clear_images().unwrap();
+        app.clear_pending_images().unwrap();
         let mut args = app.conversation.settings().clone();
         args.create = false;
         args.session = Some(app.conversation.id().into());

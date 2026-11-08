@@ -598,7 +598,9 @@ fn steering_idle_race_queues_once_and_delivery_failure_pauses_without_erasing_dr
                 for value in complete(&mut app).await { app.message(&value); }
                 app.sync_turn(&worker);
             }
-            assert_eq!(app.outbox.queued.len(), 1);
+            let recovered = usize::from(mode == "steering-unowned");
+            assert_eq!(app.outbox.queued.len(), 1 + recovered, "{mode}");
+            if recovered > 0 { assert_eq!(app.outbox.queued[1].text, "First request"); }
             assert_eq!(app.outbox.queued[0].text, "Mid-turn request");
             assert_eq!(app.outbox.paused, mode != "steering-idle");
             assert_eq!(app.editor.lines().join("\n"), "Newer draft");
@@ -652,11 +654,13 @@ fn cancelling_a_turn_pauses_follow_ups_and_restores_input_focus() {
         assert_eq!(complete(&mut app).await.last().unwrap()["type"], "failed");
         app.sync_turn(&worker);
         assert_eq!(app.focus, Focus::Prompt);
-        assert_eq!(app.editor.lines(), &["Cancelled request"]);
+        assert_eq!(app.editor.lines(), &[""]);
+        assert_eq!(app.outbox.queued[0].text, "Cancelled request");
+        assert_eq!(app.outbox.queued[1].text, "Queued follow-up");
         assert!(app.outbox.paused);
         app.send_queued().await.unwrap();
         assert!(!app.conversation.active());
-        assert_eq!(app.outbox.queued.len(), 1);
+        assert_eq!(app.outbox.queued.len(), 2);
         app.editor = editor("/clear-queue");
         app.command(&worker).await.unwrap();
         assert!(app.outbox.queued.is_empty());

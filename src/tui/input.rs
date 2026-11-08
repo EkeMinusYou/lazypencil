@@ -104,7 +104,7 @@ impl App {
             } else if section {
                 self.focus.next_section(
                     global(Nav::PreviousSection),
-                    !self.conversation.active() && !self.conversation.images().is_empty(),
+                    !self.pending_images().is_empty(),
                     !self.outbox.references.is_empty(),
                 )
             } else {
@@ -115,7 +115,7 @@ impl App {
                 )
             };
             if self.focus == Focus::Attachments
-                && !self.conversation.images().is_empty()
+                && !self.pending_images().is_empty()
                 && self.attachments.selected().is_none()
             {
                 self.attachments.select(Some(0));
@@ -432,7 +432,7 @@ impl App {
             }
             Focus::References => self.reference_key(key)?,
             Focus::Attachments => {
-                let count = self.conversation.images().len();
+                let count = self.pending_images().len();
                 if action(Nav::PreviousItem) {
                     self.attachments.select(Some(
                         self.attachments.selected().unwrap_or(0).saturating_sub(1),
@@ -450,7 +450,7 @@ impl App {
                         ));
                     }
                     if let Some(index) = self.attachments.selected() {
-                        self.conversation.remove_image(index)?;
+                        self.remove_pending_image(index)?;
                         self.attachments.select(if count > 1 {
                             Some(index.min(count - 2))
                         } else {

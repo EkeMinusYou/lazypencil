@@ -5,7 +5,7 @@ use crate::conversation::{history, storage};
 use crate::{
     Error, Result, config::conversations::RetentionSettings, document::hash, store::Store,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -17,6 +17,37 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_RECORDS: usize = 10_000;
 const MAX_DIRECTORY_ENTRIES: usize = 100_000;
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct PendingOutbox {
+    draft: Option<String>,
+    draft_images: Option<Vec<Value>>,
+    queued: Vec<Value>,
+    references: Vec<Value>,
+    in_flight: Option<Value>,
+    steering: Option<Value>,
+}
+
+fn has_pending_outbox(directory: &Path, budget: &Budget<'_>) -> Result<bool> {
+    let path = directory.join("prompt-outbox.json");
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(Error::io(&path, error)),
+        Ok(_) => {}
+    }
+    budget.check()?;
+    let bytes = crate::store::read_bounded_regular_file(&path, 8 * 1024 * 1024, budget.cancel)?;
+    let outbox: PendingOutbox = serde_json::from_slice(&bytes)
+        .map_err(|_| Error::new("INVALID_ARGUMENT", "Cannot inspect saved prompt outbox"))?;
+    budget.check()?;
+    Ok(outbox.draft.is_some_and(|text| !text.is_empty())
+        || outbox.draft_images.is_some_and(|images| !images.is_empty())
+        || !outbox.queued.is_empty()
+        || !outbox.references.is_empty()
+        || outbox.in_flight.is_some()
+        || outbox.steering.is_some())
+}
 
 #[derive(Serialize)]
 struct Entry {
@@ -189,6 +220,8 @@ fn conversation(
             Some("pending images".into())
         } else if state.continuity_pending {
             Some("incomplete native continuity".into())
+        } else if has_pending_outbox(&directory, budget)? {
+            Some("unsent prompt outbox".into())
         } else if entry.last_write_unix_seconds.is_none() {
             Some("unavailable write time".into())
         } else {

@@ -107,6 +107,156 @@ fn prepare(
 }
 
 impl App {
+    pub(super) fn attach_startup_images(&mut self, paths: &[PathBuf]) -> Result<()> {
+        let limits = self.conversation.attachment_limits()?;
+        limits.check_count(self.pending_images().len().saturating_add(paths.len()))?;
+        for path in paths {
+            let options = AttachmentOptions {
+                bounds: self.conversation.settings().image_bounds,
+                limits,
+            };
+            let cancel = CancellationToken::new();
+            let retained = self.image_references();
+            let content = clipboard::read_image_with_options(
+                self.conversation.executable(),
+                path,
+                options,
+                &cancel,
+            )?;
+            let prepared = prepare(
+                content,
+                self.conversation.directory(),
+                options,
+                self.pending_images(),
+                &retained,
+                &cancel,
+            )?;
+            let PreparedInput::Images(images) = &prepared else {
+                return Err(Error::new(
+                    "ATTACHMENT_INVALID",
+                    "Image file input did not return images",
+                ));
+            };
+            let pending = self
+                .pending_images()
+                .iter()
+                .cloned()
+                .chain(images.iter().cloned())
+                .collect();
+            if let Err(error) = self.set_pending_images(pending) {
+                if error.code != "IO_ERROR" {
+                    prepared.discard(self.conversation.directory(), &retained);
+                }
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn pending_images(&self) -> &[Attachment] {
+        self.outbox
+            .draft_images
+            .as_deref()
+            .unwrap_or_else(|| self.conversation.images())
+    }
+
+    pub(super) fn image_references(&self) -> Vec<Attachment> {
+        self.conversation
+            .image_references()
+            .into_iter()
+            .chain(self.pending_images().iter().cloned())
+            .chain(
+                self.outbox
+                    .queued
+                    .iter()
+                    .chain(self.outbox.in_flight.iter())
+                    .flat_map(|prompt| prompt.images.iter().cloned()),
+            )
+            .collect()
+    }
+
+    fn set_pending_images(&mut self, images: Vec<Attachment>) -> Result<()> {
+        let previous = self.outbox.draft_images.replace(images);
+        self.draft_changed = true;
+        if let Err(error) = self.save_draft() {
+            self.outbox.draft_images = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub(super) fn remove_pending_image(&mut self, index: usize) -> Result<()> {
+        let mut images = self.pending_images().to_vec();
+        if index >= images.len() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "No attachment at this index",
+            ));
+        }
+        let image = images.remove(index);
+        self.set_pending_images(images)?;
+        image.reclaim_files(
+            self.conversation.directory(),
+            self.image_references().iter(),
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn clear_pending_images(&mut self) -> Result<()> {
+        let images = self.pending_images().to_vec();
+        self.set_pending_images(vec![])?;
+        let retained = self.image_references();
+        for image in images {
+            image.reclaim_files(self.conversation.directory(), retained.iter())?;
+        }
+        Ok(())
+    }
+
+    fn replace_pending_image(
+        &mut self,
+        index: usize,
+        expected_id: &str,
+        image: Attachment,
+    ) -> Result<()> {
+        let mut images = self.pending_images().to_vec();
+        let previous = images
+            .get(index)
+            .filter(|image| image.id == expected_id)
+            .ok_or_else(|| {
+                Error::new(
+                    "REVISION_CONFLICT",
+                    "The pending image changed during conversion",
+                )
+            })?;
+        if previous.original.is_none()
+            || previous.original != image.original
+            || previous.source_bytes != image.source_bytes
+        {
+            return Err(Error::new(
+                "ATTACHMENT_INVALID",
+                "A resize must retain the same captured original",
+            ));
+        }
+        image.read(self.conversation.directory())?;
+        let limits = self.conversation.attachment_limits()?;
+        limits.check_request([&image])?;
+        if image.bytes > previous.bytes {
+            limits.check_request(
+                images
+                    .iter()
+                    .enumerate()
+                    .map(|(position, previous)| if position == index { &image } else { previous }),
+            )?;
+        }
+        let previous = std::mem::replace(&mut images[index], image);
+        self.set_pending_images(images)?;
+        previous.reclaim_files(
+            self.conversation.directory(),
+            self.image_references().iter(),
+        )?;
+        Ok(())
+    }
+
     fn start_image_job(
         &mut self,
         status: &str,
@@ -121,7 +271,7 @@ impl App {
             ));
         }
         let directory = self.conversation.directory().to_owned();
-        let retained = self.conversation.image_references();
+        let retained = self.image_references();
         let cancel = CancellationToken::new();
         let token = cancel.clone();
         let owned = directory.clone();
@@ -163,13 +313,13 @@ impl App {
         path: Option<PathBuf>,
         bounds: Option<ImageBounds>,
     ) -> Result<()> {
-        let executable = std::env::current_exe().map_err(terminal::io)?;
+        let executable = self.conversation.executable().to_owned();
         let reader = self.input_reader;
         let options = AttachmentOptions {
             bounds,
             limits: self.conversation.attachment_limits()?,
         };
-        let pending = self.conversation.images().to_vec();
+        let pending = self.pending_images().to_vec();
         self.start_image_job(
             "Reading image input…",
             move |directory, retained, token| {
@@ -187,8 +337,7 @@ impl App {
 
     pub(super) fn start_resize(&mut self, index: usize, bounds: Option<ImageBounds>) -> Result<()> {
         let image = self
-            .conversation
-            .images()
+            .pending_images()
             .get(index)
             .cloned()
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "No pending image at this index"))?;
@@ -229,31 +378,25 @@ impl App {
                 }
                 return false;
             }
-            PreparedInput::Images(_)
-                if self.conversation.active() || !self.outbox.queued.is_empty() =>
-            {
-                Err(Error::new(
-                    "INVALID_ARGUMENT",
-                    "Image attachments can be added after the queued prompts finish",
-                ))
+            PreparedInput::Images(images) => {
+                let mut pending = self.pending_images().to_vec();
+                pending.extend(images.iter().cloned());
+                self.conversation
+                    .attachment_limits()
+                    .and_then(|limits| limits.check_request(&pending))
+                    .and_then(|()| self.set_pending_images(pending))
             }
-            PreparedInput::Images(images) => self.conversation.add_images(images.clone()),
             PreparedInput::Resized {
                 index,
                 expected_id,
                 image,
-            } => self
-                .conversation
-                .replace_image(*index, expected_id, image.clone()),
+            } => self.replace_pending_image(*index, expected_id, image.clone()),
         };
         if let Err(error) = result {
             // An IO error can follow an atomic rename. Preserve candidate files
             // rather than delete data that a durable session may already reference.
             if error.code != "IO_ERROR" {
-                content.discard(
-                    self.conversation.directory(),
-                    &self.conversation.image_references(),
-                );
+                content.discard(self.conversation.directory(), &self.image_references());
             }
             self.error(error);
             return false;
@@ -264,7 +407,7 @@ impl App {
                 image.width, image.height
             ),
             _ => {
-                let message = format!("{} images attached", self.conversation.images().len());
+                let message = format!("{} images attached", self.pending_images().len());
                 match self.navigation.preferred_label(Nav::PreviousSection, true) {
                     Some(key) => format!("{message} · {key} to review or remove"),
                     None => message,
@@ -284,8 +427,8 @@ impl App {
                     bounds: self.conversation.settings().image_bounds,
                     limits: self.conversation.attachment_limits()?,
                 },
-                self.conversation.images(),
-                &self.conversation.image_references(),
+                self.pending_images(),
+                &self.image_references(),
                 &CancellationToken::new(),
             )
         });

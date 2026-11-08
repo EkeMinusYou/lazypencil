@@ -43,6 +43,10 @@ without waiting for completion or reattaching its images. The footer labels this
 `steer`, and delivery is confirmed separately. Use `/queue <text>` to explicitly defer
 a follow-up until the current turn finishes. Unsupported adapters, input submitted
 before the active prompt is ready, and node references retain the queued behavior.
+Images remain editable in the next draft during work and while the queue is paused.
+Submitting an image-bearing draft captures text, references and images as one queued
+request; later attachments belong only to the next draft. Image-bearing follow-ups
+are queued rather than steered into the running turn, including image-only prompts.
 If the turn ends before it can accept the input, the input moves to the normal queue.
 Unconfirmed delivery pauses the queue for review; check saved logs before resuming
 because the agent may already have received the input. Failure/cancellation pauses the queue;

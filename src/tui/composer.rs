@@ -177,11 +177,7 @@ impl App {
         }
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        let count = if self.conversation.active() {
-            0
-        } else {
-            self.conversation.images().len()
-        };
+        let count = self.pending_images().len();
         let attachment_rows = if count == 0 {
             0
         } else {
@@ -275,8 +271,7 @@ impl App {
         }
         if count > 0 {
             let attachments = self
-                .conversation
-                .images()
+                .pending_images()
                 .iter()
                 .enumerate()
                 .map(|(index, image)| {
@@ -349,7 +344,16 @@ impl App {
                     .enumerate()
                     .map(|(index, prompt)| {
                         Line::styled(
-                            format!("{}. {}", index + 1, prompt.text.replace('\n', " ")),
+                            format!(
+                                "{}. {}{}",
+                                index + 1,
+                                if prompt.images.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("[{} images] ", prompt.images.len())
+                                },
+                                prompt.text.replace('\n', " ")
+                            ),
                             Style::default().fg(theme::colors().secondary),
                         )
                     }),
