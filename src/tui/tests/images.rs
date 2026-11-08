@@ -95,9 +95,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 30));
-        assert_eq!(terminal.backend().buffer()[(74, 30)].symbol(), "D");
-        assert_eq!(terminal.backend().buffer()[(75, 30)].symbol(), "e");
+        assert_eq!(terminal.backend().cursor_position(), Position::new(74, 29));
+        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(75, 29)].symbol(), "e");
         app.focus = Focus::Nodes;
         terminal
             .draw(|frame| {
@@ -105,17 +105,17 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
             })
             .unwrap();
         assert!(!terminal.backend().cursor_visible());
-        assert_eq!(terminal.backend().buffer()[(74, 30)].symbol(), "D");
+        assert_eq!(terminal.backend().buffer()[(74, 29)].symbol(), "D");
         app.focus = Focus::Prompt;
         for (text, expected) in [
-            ("ちょっと".to_owned(), Position::new(82, 30)),
-            ("か\u{3099} 😀".to_owned(), Position::new(79, 30)),
-            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 30)),
-            ("🇯🇵".to_owned(), Position::new(76, 30)),
-            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 30)),
-            ("日\tA".to_owned(), Position::new(79, 30)),
-            ("日".repeat(80), Position::new(80, 32)),
-            ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 32)),
+            ("ちょっと".to_owned(), Position::new(82, 29)),
+            ("か\u{3099} 😀".to_owned(), Position::new(79, 29)),
+            ("か\u{3099} 👩‍💻".to_owned(), Position::new(79, 29)),
+            ("🇯🇵".to_owned(), Position::new(76, 29)),
+            ("👨‍👩‍👧‍👦".to_owned(), Position::new(76, 29)),
+            ("日\tA".to_owned(), Position::new(79, 29)),
+            ("日".repeat(80), Position::new(80, 31)),
+            ("一\n二\n三\n四\n五".to_owned(), Position::new(76, 31)),
         ] {
             app.editor = editor(&text);
             terminal
@@ -151,9 +151,9 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 30));
-        assert_eq!(terminal.backend().buffer()[(74, 30)].bg, Color::LightBlue);
-        assert_eq!(terminal.backend().buffer()[(75, 30)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().cursor_position(), Position::new(76, 29));
+        assert_eq!(terminal.backend().buffer()[(74, 29)].bg, Color::LightBlue);
+        assert_eq!(terminal.backend().buffer()[(75, 29)].bg, Color::LightBlue);
         assert!(
             terminal
                 .backend()
@@ -169,14 +169,14 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 12));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 11));
         app.editor = editor(&"日".repeat(80));
         terminal
             .draw(|frame| {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(43, 12));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(43, 11));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal

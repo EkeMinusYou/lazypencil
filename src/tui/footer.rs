@@ -90,7 +90,7 @@ impl App {
     }
 
     pub(super) fn footer_height(&self) -> u16 {
-        1 + u16::from(!self.status.is_empty() || self.agent_collapsed && self.conversation.active())
+        2
     }
 
     fn hint(&self, action: Nav, description: &'static str) -> Option<Hint> {
@@ -254,7 +254,9 @@ impl App {
     }
 
     pub(super) fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        if area.height > 1 {
+        if area.height > 1
+            && (!self.status.is_empty() || self.agent_collapsed && self.conversation.active())
+        {
             let (text, color) = if !self.status.is_empty() {
                 (
                     if self.status_kind.is_error() {

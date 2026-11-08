@@ -44,12 +44,13 @@ fn footer_shows_only_contextual_actions_and_prefers_non_function_bindings() {
         ] {
             app.focus = focus;
             let rendered = rows(&app, 100);
-            assert_eq!(rendered.len(), 1);
+            assert_eq!(rendered.len(), 2);
+            assert!(rendered[0].trim().is_empty());
             for hint in expected {
                 assert!(
-                    rendered[0].contains(hint),
+                    rendered[1].contains(hint),
                     "{focus:?}: {hint}: {}",
-                    rendered[0]
+                    rendered[1]
                 );
             }
             for omitted in [
@@ -61,7 +62,7 @@ fn footer_shows_only_contextual_actions_and_prefers_non_function_bindings() {
                 "exits",
                 "unbound",
             ] {
-                assert!(!rendered[0].contains(omitted), "{focus:?}: {omitted}");
+                assert!(!rendered[1].contains(omitted), "{focus:?}: {omitted}");
             }
         }
         app.focus = Focus::Prompt;
@@ -72,17 +73,17 @@ fn footer_shows_only_contextual_actions_and_prefers_non_function_bindings() {
         assert!(text.contains("Ctrl+S send") && text.contains("Alt+H help"));
         assert!(!text.contains("F1") && !text.contains("F5"));
         app.keys.submit = vec!["Alt+Enter".into(), "Ctrl+s".into()];
-        assert!(rows(&app, 100)[0].contains("Shift+Enter newline"));
+        assert!(rows(&app, 100)[1].contains("Shift+Enter newline"));
         app.focus = Focus::Nodes;
         app.searching = true;
-        assert!(rows(&app, 100)[0].contains("Enter keep filter · Esc clear"));
+        assert!(rows(&app, 100)[1].contains("Enter keep filter · Esc clear"));
         app.searching = false;
         app.navigation.help.clear();
-        assert!(!rows(&app, 100)[0].contains("help"));
+        assert!(!rows(&app, 100)[1].contains("help"));
         app.navigation.search_nodes.clear();
-        assert!(!rows(&app, 100)[0].contains("search"));
+        assert!(!rows(&app, 100)[1].contains("search"));
         app.help = true;
-        assert_eq!(rows(&app, 100)[0].trim(), "Esc close");
+        assert_eq!(rows(&app, 100)[1].trim(), "Esc close");
     });
 }
 
@@ -94,17 +95,17 @@ fn footer_drops_whole_hints_preserves_help_and_recovers_collapsed_panels() {
         app.focus = Focus::Preview;
         app.agent_collapsed = true;
         app.nodes_collapsed = true;
-        let line = &rows(&app, 50)[0];
+        let line = &rows(&app, 50)[1];
         assert!(line.contains("Alt+A show Agent"));
         assert!(line.ends_with("? help"));
         assert!(!line.contains("F3") && !line.contains("zoom"));
         app.agent_collapsed = false;
-        assert!(rows(&app, 50)[0].contains("Alt+N show Nodes"));
+        assert!(rows(&app, 50)[1].contains("Alt+N show Nodes"));
         app.nodes_collapsed = false;
         app.keys.submit = vec!["Ctrl+Alt+Shift+Enter".into()];
         app.navigation.help = vec!["F1".into(), "Ctrl+Alt+Shift+F24".into()];
         app.focus = Focus::Prompt;
-        let line = &rows(&app, 50)[0];
+        let line = &rows(&app, 50)[1];
         assert!(line.ends_with("F1 help"));
         assert!(line.contains("Ctrl+Alt+Shift+Enter send"));
         assert!(
@@ -119,7 +120,56 @@ fn footer_drops_whole_hints_preserves_help_and_recovers_collapsed_panels() {
                 cells = app.draw(frame);
             })
             .unwrap();
-        assert_eq!(cells.height, 12, "No blank notification row is reserved");
+        assert_eq!(cells.height, 11, "The notification row is always reserved");
+    });
+}
+
+#[test]
+fn footer_notifications_leave_workspace_geometry_and_content_unchanged() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.editor = editor("Keep this draft");
+        for (width, height) in [(50, 16), (120, 36)] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+            let mut viewport = Size::default();
+            terminal.draw(|frame| viewport = app.draw(frame)).unwrap();
+            let baseline = terminal.backend().buffer().clone();
+            let notice_start = usize::from(width) * usize::from(height - 2);
+            let hints_start = notice_start + usize::from(width);
+
+            for message in ["Selection cleared", "1 node selected"] {
+                app.set_status(message.into());
+                let deadline = app.status_deadline.unwrap();
+                for showing in [true, false] {
+                    if !showing {
+                        app.expire_status(deadline);
+                    }
+                    let mut cells = Size::default();
+                    terminal.draw(|frame| cells = app.draw(frame)).unwrap();
+                    let buffer = terminal.backend().buffer();
+                    assert_eq!(cells, viewport, "Notices must not resize the preview");
+                    assert_eq!(
+                        buffer.content[..notice_start],
+                        baseline.content[..notice_start],
+                        "Notices must not move workspace content"
+                    );
+                    assert_eq!(
+                        buffer.content[hints_start..],
+                        baseline.content[hints_start..]
+                    );
+                    let notice = (0..width)
+                        .map(|x| buffer[(x, height - 2)].symbol())
+                        .collect::<String>();
+                    if showing {
+                        assert!(notice.contains(message));
+                    } else {
+                        assert!(notice.trim().is_empty());
+                    }
+                }
+            }
+        }
     });
 }
 
@@ -180,7 +230,7 @@ fn footer_notifications_expire_but_errors_survive_background_frames_until_recove
         app.expire_status(deadline - Duration::from_millis(1));
         assert_eq!(app.footer_height(), 2);
         app.expire_status(deadline);
-        assert_eq!(app.footer_height(), 1);
+        assert_eq!(app.footer_height(), 2);
         app.error(Error::new(
             "CLIPBOARD_UNAVAILABLE",
             "日本語の長いエラー詳細と復旧に必要な説明を下部に表示します",

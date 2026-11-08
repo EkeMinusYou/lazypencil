@@ -236,7 +236,7 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
                     cells = app.draw(frame);
                 })
                 .unwrap();
-            assert_eq!(cells, Size::new(preview_width, 32));
+            assert_eq!(cells, Size::new(preview_width, 31));
             let buffer = terminal.backend().buffer();
             let heading = (0..100)
                 .map(|x| buffer[(x, 1)].symbol())
@@ -380,19 +380,19 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
             );
         }
         assert!(!header.contains("Idle"));
-        let nodes = region(Rect::new(0, 1, 32, 38));
+        let nodes = region(Rect::new(0, 1, 32, 37));
         assert!(nodes.contains("1node") && nodes.contains("1diagnostic"));
-        let preview = region(Rect::new(32, 1, 80, 38));
+        let preview = region(Rect::new(32, 1, 80, 37));
         assert!(preview.contains("Preview"));
         let preview_heading = region(Rect::new(32, 1, 80, 1));
         assert!(!preview_heading.contains('%'));
-        assert!(region(Rect::new(32, 38, 80, 1)).contains("100%"));
-        let zoom_cell = &terminal.backend().buffer()[(109, 38)];
+        assert!(region(Rect::new(32, 37, 80, 1)).contains("100%"));
+        let zoom_cell = &terminal.backend().buffer()[(109, 37)];
         assert_eq!(zoom_cell.symbol(), "%");
         assert_eq!(zoom_cell.fg, theme::colors().secondary);
         assert!(!zoom_cell.modifier.contains(Modifier::BOLD));
         assert!(!preview.contains("Playback"));
-        let agent = region(Rect::new(112, 1, 48, 38));
+        let agent = region(Rect::new(112, 1, 48, 37));
         assert!(agent.contains("Agent") && agent.contains("Idle"));
         assert!(!agent.contains("Codex"));
         for value in ["fixture@example.test", "subscription", &app.conversation.id()[..8]] {
@@ -437,9 +437,9 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(32, 14)].symbol(), "%");
+        assert_eq!(terminal.backend().buffer()[(32, 13)].symbol(), "%");
         assert_eq!(
-            terminal.backend().buffer()[(32, 14)].fg,
+            terminal.backend().buffer()[(32, 13)].fg,
             theme::colors().secondary
         );
         app.preview.as_mut().unwrap().time_dependent = false;

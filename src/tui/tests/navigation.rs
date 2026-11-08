@@ -171,7 +171,7 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
                 cells = app.draw(frame);
             })
             .unwrap();
-        assert_eq!(cells, Size::new(48, 12));
+        assert_eq!(cells, Size::new(48, 11));
         let buffer = terminal.backend().buffer();
         let footer = (0..50)
             .map(|x| buffer[(x, 15)].symbol())

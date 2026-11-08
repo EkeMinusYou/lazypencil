@@ -281,9 +281,10 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
         app.submit().await.unwrap();
         app.nodes_collapsed = true;
         let footer = footer_tests::rows(&app, 80);
-        assert_eq!(footer.len(), 1);
-        assert!(footer[0].contains("Enter queue") && footer[0].contains("Ctrl+C cancel"));
-        assert!(!footer[0].contains("show Nodes"));
+        assert_eq!(footer.len(), 2);
+        assert!(footer[0].trim().is_empty());
+        assert!(footer[1].contains("Enter queue") && footer[1].contains("Ctrl+C cancel"));
+        assert!(!footer[1].contains("show Nodes"));
         app.nodes_collapsed = false;
         app.agent_collapsed = true;
         app.focus = Focus::Preview;
