@@ -196,15 +196,25 @@ fn apply_prepared_request(
         cancel,
         fingerprint: edit_fingerprint(request, font_files),
     };
-    save_project(store, &conditions, font_files, |document| {
-        operations::prepare_in_project(
-            document,
-            &request.operations,
-            store.path(),
-            store.data_dir(),
-            cancel,
-        )
-    })
+    if let Some(result) = store.replay_result_with_cancellation(
+        &request.request_id,
+        &conditions.fingerprint,
+        cancel,
+    )? {
+        return Ok(result);
+    }
+    let document = store.read()?;
+    store::require_revision(&document, &request.expected_revision)?;
+    // Copies/imports may acquire HTTP images. Prepare immutable inputs before
+    // holding the save lock; the transaction rechecks revisions and read sets.
+    let prepared = operations::prepare_in_project(
+        &document,
+        &request.operations,
+        store.path(),
+        store.data_dir(),
+        cancel,
+    )?;
+    save_project(store, &conditions, font_files, |_| Ok(prepared))
 }
 
 pub struct RestoreRequest<'a> {

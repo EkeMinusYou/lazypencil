@@ -540,7 +540,10 @@ fn inactive_sampler_variables_do_not_open_missing_or_nonlocal_images() {
             write(&library, definitions);
             assert!(
                 Project::load(&store)
-                    .and_then(|project| project.resolve())
+                    .and_then(|mut project| {
+                        project.acquire_remote_images()?;
+                        project.resolve()
+                    })
                     .is_err()
             );
         }

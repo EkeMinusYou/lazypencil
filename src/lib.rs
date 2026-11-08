@@ -46,6 +46,8 @@ mod query;
 pub mod remote_images;
 #[cfg(feature = "rendering")]
 pub mod render;
+#[cfg(feature = "rendering")]
+mod retained;
 pub mod runtime;
 pub mod script;
 pub mod service;

@@ -64,6 +64,32 @@ pub struct LayoutSnapshot {
 }
 
 impl LayoutSnapshot {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.items
+            .iter()
+            .map(|item| {
+                std::mem::size_of::<LayoutItem>()
+                    + crate::query::serialized_size(&item.node) * 4
+                    + item.node.retained_context_bytes()
+                    + item
+                        .node
+                        .properties
+                        .iter()
+                        .map(|(key, value)| {
+                            key.capacity() + 96 + crate::retained::json_bytes(value)
+                        })
+                        .sum::<usize>()
+                    + crate::query::serialized_size(&item.record) * 4
+                    + item.children.capacity() * std::mem::size_of::<usize>()
+            })
+            .sum::<usize>()
+            + self
+                .text_blocks
+                .values()
+                .map(TextBlock::retained_bytes)
+                .sum::<usize>()
+    }
+
     pub fn metadata(&self) -> Value {
         json!({"snapshot_id":self.id,"revision":self.revision,
             "dependency_revision":self.dependency_revision,"dependencies":self.dependencies,

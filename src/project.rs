@@ -147,6 +147,32 @@ pub struct ResolvedNode {
 }
 
 impl ResolvedNode {
+    #[cfg(feature = "rendering")]
+    pub(crate) fn retained_context_bytes(&self) -> usize {
+        let bindings = self.script_bindings.as_ref().map_or(0, |bound| {
+            crate::query::serialized_size(&bound.values) * 4
+                + bound
+                    .captured
+                    .as_ref()
+                    .map_or(0, |captured| crate::query::serialized_size(captured) * 4)
+                + bound.origin.as_os_str().len()
+        });
+        bindings
+            + self
+                .input_context
+                .as_ref()
+                .map_or(0, |context| crate::query::serialized_size(context) * 4)
+            + self.component_source.as_os_str().len()
+            + self
+                .script_scope
+                .as_ref()
+                .map_or(0, |path| path.as_os_str().len())
+            + self
+                .script_input_scope
+                .as_ref()
+                .map_or(0, |path| path.as_os_str().len())
+    }
+
     pub fn id(&self) -> String {
         if self.address.instance_path.is_empty() {
             self.address.node_id.clone()
@@ -1074,6 +1100,20 @@ impl Project {
             .lock()
             .map_err(|_| invalid("Cannot access project file bindings"))?;
         Ok(hash(json!({"dependencies":self.dependency_revision(),"bindings":bindings.iter().collect::<Vec<_>>(),"configuration_candidates":self.configuration_lock_paths()}).to_string().as_bytes()))
+    }
+
+    #[cfg(feature = "rendering")]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        // Captured byte buffers include fonts, assets and browser resources.
+        // Add parsed document/index payloads; shared buffers are charged per owner.
+        self.byte_count
+            .saturating_add(self.icons.retained_bytes())
+            .saturating_add(
+                self.documents
+                    .values()
+                    .map(Document::retained_bytes)
+                    .sum::<usize>(),
+            )
     }
 
     pub(crate) fn captured_bytes(&self) -> usize {

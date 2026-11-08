@@ -346,6 +346,18 @@ pub(crate) struct Registry {
     bindings: BTreeMap<PathBuf, PathBuf>,
 }
 impl Registry {
+    #[cfg(feature = "rendering")]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.packs
+            .values()
+            .filter_map(|pack| pack.as_ref().ok())
+            .map(|pack| {
+                crate::query::serialized_size(&pack.data) * 4
+                    + pack.font_bytes.as_ref().map_or(0, |bytes| bytes.len())
+            })
+            .sum()
+    }
+
     pub fn prepare(libraries: BTreeSet<String>, data: Option<&Path>) -> (Self, CapturedFiles) {
         let mut registry = Self::default();
         let mut files = vec![];

@@ -337,3 +337,19 @@ generic replacement terms. Source-dependent native/toolchain/link-map evidence i
 and checked by the release workflow. Asset licences and runtime installation are described
 in [icons](icons.md), [fonts](fonts.md), and [runtimes](runtimes.md). Dependency changes
 must update the corresponding source pins and inventories before distribution.
+
+## State ownership boundaries
+
+MCP uses a connection dispatcher (`mcp/workspace.rs`), document owners
+(`mcp/actor.rs`), and shared resource leases (`mcp/resources.rs`). The dispatcher owns
+paths, grants and discovery; a document owner alone creates, uses and drops native
+layout/text objects. Queue admission and execution capacity are independent of retained
+payload and persistent runtime capacity. Keep network preparation outside save locks,
+then recheck captured inputs during transaction publication. Do not mark native Skia
+paragraphs `Send` to move caches between threads.
+
+Conversation transcript I/O lives in `conversation/transcript.rs`; durable completion
+and draft consumption live in `conversation/completion.rs`. Property source edits live
+in `document/properties.rs`. CI contract assessment and its human-readable evidence
+share `xtask/src/ci/verification/outcome.rs`. Extend these boundaries when changing the
+corresponding behavior rather than duplicating their policy in callers.

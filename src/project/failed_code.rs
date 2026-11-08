@@ -138,6 +138,21 @@ fn bounded_dependencies(dependencies: impl Iterator<Item = Dependency>) -> Optio
 }
 
 impl FailedCodeCapture {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.asset.bytes.len()
+            + crate::query::serialized_size(&self.dependencies) * 4
+            + self
+                .bindings
+                .iter()
+                .map(|(a, b)| a.as_os_str().len() + b.as_os_str().len() + 96)
+                .sum::<usize>()
+            + self
+                .missing_icons
+                .iter()
+                .map(|path| path.as_os_str().len() + 48)
+                .sum::<usize>()
+    }
+
     pub(crate) fn hash(&self) -> &str {
         &self.asset.revision
     }

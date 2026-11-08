@@ -247,6 +247,7 @@ impl Fonts {
         let mut used = Vec::new();
         let mut used_ids = std::collections::BTreeSet::new();
         let mut native_color = false;
+        let mut glyph_count = 0usize;
         let mut unknown_font = false;
         let horizontal = paragraph
             .get_line_metrics()
@@ -267,6 +268,7 @@ impl Fonts {
                 return;
             }
             if let Some(info) = info {
+                glyph_count = glyph_count.saturating_add(info.count());
                 let font = info.font();
                 let color_font = [*b"COLR", *b"sbix", *b"CBDT", *b"SVG "].iter().any(|tag| {
                     font.typeface()
@@ -449,6 +451,7 @@ impl Fonts {
             };
         check()?;
         Ok(TextBlock {
+            paragraph_bytes: 4096 + glyph_count.saturating_mul(128) + spec.content.len(),
             preview_warning,
             paragraph,
             metrics,
@@ -513,6 +516,7 @@ pub struct TextMetrics {
 }
 
 pub struct TextBlock {
+    paragraph_bytes: usize,
     pub(crate) preview_warning: Option<Error>,
     pub paragraph: Paragraph,
     pub metrics: TextMetrics,
@@ -570,6 +574,29 @@ impl NativeGlyphRun {
 }
 
 impl TextBlock {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        // Paragraph internals are opaque. Charge a per-glyph allowance in
+        // addition to the owned glyph arrays and Skia path estimates.
+        self.paragraph_bytes
+            + self
+                .native_runs
+                .iter()
+                .map(|run| {
+                    run.glyphs.capacity() * std::mem::size_of::<skia_safe::GlyphId>()
+                        + run.positions.capacity() * std::mem::size_of::<skia_safe::Point>()
+                })
+                .sum::<usize>()
+            + self
+                .outline
+                .as_ref()
+                .map_or(0, Path::approximate_bytes_used)
+            + self
+                .native_decoration
+                .as_ref()
+                .map_or(0, Path::approximate_bytes_used)
+            + crate::query::serialized_size(&self.metrics) * 4
+    }
+
     /// Reuse the shaped glyphs; drawing native glyphs preserves their color palettes.
     pub(crate) fn paint_native(
         &self,

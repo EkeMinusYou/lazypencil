@@ -17,6 +17,10 @@ mod fixture_support;
 mod http_image_reference;
 
 #[cfg(unix)]
+#[path = "support/mcp_scheduling.rs"]
+mod scheduling;
+
+#[cfg(unix)]
 #[test]
 fn passive_document_tools_never_fetch_http_images_and_explicit_acquisition_keeps_revision_preconditions()
  {

@@ -19,8 +19,11 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+mod actor;
 mod catalog;
+mod resources;
 pub(crate) mod timing;
+mod transport;
 mod workspace;
 use catalog::{ToolKind, tool, tools_for};
 
@@ -32,16 +35,31 @@ const INSTRUCTIONS: &str = "This server edits multiple .pen documents. Start wit
 #[derive(Clone)]
 struct Server {
     sender: mpsc::Sender<Job>,
+    connection: tokio_util::sync::CancellationToken,
+    admission: std::sync::Arc<resources::Admission>,
     preview_control: bool,
     usage: Option<crate::guidance::usage::UsageAccess>,
 }
 struct Job {
+    _admission: Option<resources::AdmissionPermit>,
     name: String,
     arguments: Value,
     reply: oneshot::Sender<CallToolResult>,
     cancel: tokio_util::sync::CancellationToken,
     timing: timing::Timer,
     usage: Result<Option<crate::guidance::usage::UsageRequest>>,
+}
+
+impl Job {
+    fn finish(self, result: Result<CallToolResult>, started: Option<Instant>) {
+        let result =
+            result.unwrap_or_else(|error| CallToolResult::structured_error(json!({"error":error})));
+        let result = self.timing.finish(&self.name, started, result, self.usage);
+        let _ = self.reply.send(result);
+    }
+    fn cancelled(&self) -> bool {
+        self.reply.is_closed() || self.cancel.is_cancelled()
+    }
 }
 
 #[derive(Default)]
@@ -60,59 +78,13 @@ pub fn serve(options: Options) -> Result<()> {
     let server_usage = prepared.usage();
     let options = prepared.into_options();
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
+    let connection = tokio_util::sync::CancellationToken::new();
     let worker = std::thread::Builder::new()
-        .name("lazypencil-document".into())
-        // Bounded scene expansion can reach 128 references and 256 child levels.
-        // Reserve enough stack for debug frames before those guards reject input.
-        .stack_size(crate::project::SCENE_WORKER_STACK_BYTES)
+        .name("lazypencil-workspace".into())
         .spawn(move || -> Result<()> {
             let mut documents = workspace::Workspace::new(options)?;
-            #[cfg(feature = "rendering")]
-            let wait_runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_time()
-                .build()
-                .map_err(|error| {
-                    Error::new("IO_ERROR", format!("Cannot start document timer: {error}"))
-                })?;
-            loop {
-                #[cfg(feature = "rendering")]
-                let received = {
-                    documents.expire_idle(Instant::now());
-                    let deadline = documents.maintenance_deadline();
-                    wait_runtime.block_on(async {
-                        if let Some(deadline) = deadline {
-                            tokio::time::timeout_at(deadline.into(), receiver.recv()).await
-                        } else {
-                            Ok(receiver.recv().await)
-                        }
-                    })
-                };
-                #[cfg(feature = "rendering")]
-                let job = match received {
-                    Ok(job) => job,
-                    Err(_) => continue,
-                };
-                #[cfg(not(feature = "rendering"))]
-                let job = receiver.blocking_recv();
-                let Some(job) = job else { break };
-                let started = Instant::now();
-                let skipped = job.reply.is_closed() || job.cancel.is_cancelled();
-                let called = if skipped {
-                    Err(Error::new(
-                        "CANCELLED",
-                        "The request was cancelled before execution",
-                    ))
-                } else {
-                    documents.call(&job.name, job.arguments, &job.cancel)
-                };
-                let result = match called {
-                    Ok(result) => result,
-                    Err(error) => CallToolResult::structured_error(json!({"error":error})),
-                };
-                let result =
-                    job.timing
-                        .finish(&job.name, (!skipped).then_some(started), result, job.usage);
-                let _ = job.reply.send(result);
+            while let Some(job) = receiver.blocking_recv() {
+                documents.dispatch(job);
             }
             Ok(())
         })
@@ -121,9 +93,17 @@ pub fn serve(options: Options) -> Result<()> {
         .enable_all()
         .build()
         .map_err(|e| Error::new("IO_ERROR", format!("Cannot start MCP runtime: {e}")))?;
-    let result=runtime.block_on(async move {
-        let running=Server { sender, preview_control: has_preview, usage: server_usage }.serve(rmcp::transport::stdio_pipes()).await
-            .map_err(|e| Error::new("IO_ERROR",format!("MCP connection failed: {e}")))?;
+    let result = runtime.block_on(async move {
+        let (input, output) = rmcp::transport::stdio_pipes();
+        let server = Server {
+            sender,
+            connection: connection.clone(),
+            admission: std::sync::Arc::new(resources::Admission::default()),
+            preview_control: has_preview,
+            usage: server_usage,
+        };
+        let running = server.serve((transport::Input::new(input, connection), output)).await
+            .map_err(|error| Error::new("IO_ERROR", format!("MCP connection failed: {error}")))?;
         let cancel=running.cancellation_token();
         tokio::select! {
             result=running.waiting()=>result.map(|_| ()).map_err(|e| Error::new("IO_ERROR",format!("MCP service failed: {e}"))),
@@ -139,6 +119,16 @@ pub fn serve(options: Options) -> Result<()> {
         .join()
         .map_err(|_| Error::new("INTERNAL_ERROR", "Document worker terminated unexpectedly"))??;
     result
+}
+
+async fn request_cancelled(
+    context: &tokio_util::sync::CancellationToken,
+    request: &tokio_util::sync::CancellationToken,
+) {
+    tokio::select! {
+        _ = context.cancelled() => {},
+        _ = request.cancelled() => {},
+    }
 }
 
 impl ServerHandler for Server {
@@ -186,6 +176,8 @@ impl ServerHandler for Server {
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResponse, ErrorData> {
         let timing = timing::Timer::new();
+        let cancel = self.connection.child_token();
+        let _cancel_on_drop = cancel.clone().drop_guard();
         if self.get_tool(&request.name).is_none() {
             return Err(ErrorData::invalid_params("Unknown tool", None));
         }
@@ -198,14 +190,13 @@ impl ServerHandler for Server {
         ) {
             return Ok(CallToolResult::structured_error(json!({"error":error})).into());
         }
-        if context.ct.is_cancelled() {
+        if context.ct.is_cancelled() || cancel.is_cancelled() {
             return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
         }
-        let (reply, receiver) = oneshot::channel();
         // Capture the active turn before queueing, so cancelled requests cannot
         // append timing data to a later turn on the same connection.
         let usage = if let Some(access) = self.usage.clone() {
-            let cancel = context.ct.clone();
+            let cancel = cancel.clone();
             tokio::task::spawn_blocking(move || access.request(&cancel))
                 .await
                 .map_err(|_| crate::Error::new("INTERNAL_ERROR", "Timing grant worker stopped"))
@@ -213,17 +204,38 @@ impl ServerHandler for Server {
         } else {
             Ok(None)
         };
+        // Close must remain available when a document fills all admitted slots.
+        let admission = if request.name == "close_document" {
+            None
+        } else {
+            match self
+                .admission
+                .reserve(
+                    arguments.get("document_id").and_then(Value::as_str),
+                    &context.ct,
+                    &cancel,
+                )
+                .await
+            {
+                Ok(permit) => Some(permit),
+                Err(error) => {
+                    return Ok(CallToolResult::structured_error(json!({"error":error})).into());
+                }
+            }
+        };
+        let (reply, receiver) = oneshot::channel();
         let job = Job {
+            _admission: admission,
             name: request.name.into_owned(),
             arguments,
             reply,
-            cancel: context.ct.clone(),
+            cancel: cancel.clone(),
             timing,
             usage,
         };
         tokio::select! {
             biased;
-            _ = context.ct.cancelled() => {
+            _ = request_cancelled(&context.ct, &cancel) => {
                 return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
             }
             result = self.sender.send(job) => {
@@ -232,7 +244,7 @@ impl ServerHandler for Server {
         }
         let result = tokio::select! {
             biased;
-            _ = context.ct.cancelled() => {
+            _ = request_cancelled(&context.ct, &cancel) => {
                 return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled")})).into());
             }
             result = receiver => result.map_err(|_| ErrorData::internal_error("Document worker stopped", None))?,
@@ -350,6 +362,12 @@ fn scale_one() -> f32 {
 }
 
 struct DocumentWorker {
+    #[cfg(feature = "rendering")]
+    resources: std::sync::Arc<resources::Resources>,
+    #[cfg(feature = "rendering")]
+    runtime_lease: Option<resources::Lease>,
+    #[cfg(feature = "rendering")]
+    runtime_bytes: Option<resources::Lease>,
     store: Store,
     attachments: Option<crate::attachments::AttachmentAccess>,
     usage: Option<crate::guidance::usage::UsageAccess>,
@@ -369,14 +387,77 @@ struct CachedSnapshot {
     project: Project,
     layout: crate::layout::LayoutSnapshot,
     created: Instant,
+    _lease: resources::Lease,
 }
 #[cfg(feature = "rendering")]
 struct CachedFailure {
     source: crate::project::FailedCodeCapture,
     created: Instant,
+    _lease: resources::Lease,
+}
+
+#[cfg(feature = "rendering")]
+impl Drop for DocumentWorker {
+    fn drop(&mut self) {
+        self.snapshots.clear();
+        self.failed_code.clear();
+        self.dynamic.take();
+        self.scripts.take();
+        self.runtime_bytes.take();
+        self.runtime_lease.take();
+    }
 }
 
 impl DocumentWorker {
+    #[cfg(feature = "rendering")]
+    fn ensure_runtime_capacity(&mut self) -> Result<()> {
+        if self.runtime_lease.is_none() {
+            self.runtime_lease = Some(self.resources.runtimes.reserve(1)?);
+        }
+        Ok(())
+    }
+    #[cfg(feature = "rendering")]
+    fn settle_resources(&mut self) {
+        self.expire_idle(Instant::now());
+        let bytes = self
+            .dynamic
+            .as_ref()
+            .map_or(0, crate::dynamic::DynamicRuntime::retained_bytes);
+        let lease = self.runtime_bytes.get_or_insert_with(|| {
+            self.resources
+                .retained
+                .reserve(0)
+                .expect("empty reservation")
+        });
+        if lease.resize(bytes).is_err() {
+            self.dynamic.take();
+            self.runtime_bytes.take();
+        }
+        if self
+            .scripts
+            .as_ref()
+            .is_none_or(|runtime| runtime.process_id().is_none())
+            && self
+                .dynamic
+                .as_ref()
+                .is_none_or(|runtime| runtime.process_ids().is_empty())
+        {
+            self.runtime_lease.take();
+        }
+    }
+    #[cfg(feature = "rendering")]
+    fn reserve_snapshot(&mut self, bytes: usize) -> Result<resources::Lease> {
+        loop {
+            match self.resources.retained.reserve(bytes) {
+                Ok(lease) => return Ok(lease),
+                Err(_) if !self.snapshots.is_empty() => {
+                    self.snapshots.pop_front();
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     #[cfg(feature = "rendering")]
     fn maintenance_deadline(&self) -> Option<Instant> {
         self.scripts
@@ -556,6 +637,7 @@ impl DocumentWorker {
                 let request: EditRequest = parse(arguments)?;
                 #[cfg(feature = "rendering")]
                 if request.expected_runtime_dependency_revision.is_some() {
+                    self.ensure_runtime_capacity()?;
                     if self.scripts.is_none() {
                         self.scripts = Some(crate::script::ScriptRuntime::current()?);
                     }
@@ -679,7 +761,10 @@ impl DocumentWorker {
                 project.verify_unchanged()?;
                 json!({"revision":project.root_document().revision(),"dependency_revision":project.dependency_revision(),"fonts":inventory,"fallback_families":fonts.fallback_families(),"default_family":fonts.default_family(),"locale":fonts.locale(),"configuration":project.configuration()})
             }
-            ToolKind::OpenDocument | ToolKind::CreateDocument | ToolKind::ListDocuments => {
+            ToolKind::OpenDocument
+            | ToolKind::CreateDocument
+            | ToolKind::CloseDocument
+            | ToolKind::ListDocuments => {
                 return Err(Error::new(
                     "INVALID_ARGUMENT",
                     "Tool requires workspace dispatch",
@@ -808,6 +893,7 @@ impl DocumentWorker {
             cached.project.verify_unchanged()?;
             return Ok(index);
         }
+        self.ensure_runtime_capacity()?;
         if self.scripts.is_none() {
             self.scripts = Some(crate::script::ScriptRuntime::current()?);
         }
@@ -829,7 +915,9 @@ impl DocumentWorker {
         let (project, layout) = match result {
             Ok(value) => value,
             Err(mut error) => {
-                if let Some(source) = failed_code {
+                if let Some(source) = failed_code
+                    && let Ok(lease) = self.resources.retained.reserve(source.retained_bytes())
+                {
                     self.failed_code.retain(|capture| {
                         capture.created.elapsed() < SNAPSHOT_TTL
                             && capture.source.id() != source.id()
@@ -840,6 +928,7 @@ impl DocumentWorker {
                     error.details.get_or_insert_with(|| json!({}))["failure_capture_id"] =
                         json!(source.id());
                     self.failed_code.push_back(CachedFailure {
+                        _lease: lease,
                         source,
                         created: Instant::now(),
                     });
@@ -856,7 +945,13 @@ impl DocumentWorker {
         if self.snapshots.len() >= 4 {
             self.snapshots.pop_front();
         }
+        let lease = self.reserve_snapshot(
+            project
+                .retained_bytes()
+                .saturating_add(layout.retained_bytes()),
+        )?;
         self.snapshots.push_back(CachedSnapshot {
+            _lease: lease,
             project,
             layout,
             created: Instant::now(),
@@ -921,6 +1016,7 @@ impl DocumentWorker {
             args.snapshot_id.as_deref(),
             cancel,
         )?;
+        self.ensure_runtime_capacity()?;
         let cached = &self.snapshots[index];
         if self.dynamic.is_none() {
             self.dynamic = Some(crate::dynamic::DynamicRuntime::new(self.store.data_dir()));
@@ -1057,13 +1153,20 @@ mod tests {
         drop(project);
         let created = Instant::now();
         let mut worker = DocumentWorker {
+            resources: std::sync::Arc::new(resources::Resources::default()),
+            runtime_lease: None,
+            runtime_bytes: None,
             store,
             attachments: None,
             usage: None,
             preview_control: None,
             fonts: vec![],
             snapshots: VecDeque::new(),
-            failed_code: VecDeque::from([CachedFailure { source, created }]),
+            failed_code: VecDeque::from([CachedFailure {
+                _lease: resources::Budget::new(usize::MAX).reserve(0).unwrap(),
+                source,
+                created,
+            }]),
             scripts: None,
             dynamic: None,
         };
@@ -1118,6 +1221,9 @@ mod tests {
         let saved = store.read().unwrap();
         let revision = saved.revision();
         let mut worker = DocumentWorker {
+            resources: std::sync::Arc::new(resources::Resources::default()),
+            runtime_lease: None,
+            runtime_bytes: None,
             store,
             attachments: None,
             usage: None,

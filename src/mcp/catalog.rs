@@ -16,6 +16,7 @@ enum Effect {
     Edit,
     CreateAsset,
     CreateDocument,
+    Release,
     PreviewRead,
     PreviewWrite,
 }
@@ -73,6 +74,7 @@ catalogue! {
     GetPreviewState => ("get_preview_state", Required, PreviewRead),
     SetPreview => ("set_preview", Required, PreviewWrite),
     OpenDocument => ("open_document", None, Read),
+    CloseDocument => ("close_document", Required, Release),
     CreateDocument => ("create_document", None, CreateDocument),
     ListDocuments => ("list_documents", None, Read),
 }
@@ -84,7 +86,7 @@ impl ToolKind {
     pub(super) fn checks_revision(self) -> bool {
         !matches!(
             self.effect(),
-            Effect::Edit | Effect::PreviewRead | Effect::PreviewWrite
+            Effect::Edit | Effect::Release | Effect::PreviewRead | Effect::PreviewWrite
         )
     }
     fn annotations(self) -> ToolAnnotations {
@@ -94,7 +96,7 @@ impl ToolKind {
             .destructive(matches!(self.effect(), Effect::Edit))
             .idempotent(!matches!(
                 self.effect(),
-                Effect::CreateDocument | Effect::PreviewWrite
+                Effect::CreateDocument | Effect::Release | Effect::PreviewWrite
             ))
             .open_world(match self {
                 Self::GetDocument

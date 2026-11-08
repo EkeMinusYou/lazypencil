@@ -42,6 +42,10 @@ pub(super) fn tools() -> Vec<Tool> {
             "Open an existing .pen file and return its connection-local document_id and current metadata. Reopening the same canonical path returns the same ID. This does not execute scripts or initialize a renderer.",
         ),
         create,
+        tool::<Empty>(
+            ToolKind::CloseDocument,
+            "Close this connection-local document handle, cancel its queued/running requests and release its calculations and runtime processes before acknowledgement. Reopen the path for a new ID.",
+        ),
         tool::<List>(
             ToolKind::ListDocuments,
             "Discover .pen files below directory (default server working directory), recursively by default. Does not parse documents or follow directory symlinks. Search stops after 10,000 documents, 100,000 entries or 5 seconds; complete and stop_reason identify partial results. query filters collected relative paths. Reuse the same directory, recursive and query with cursor to page this retained listing.",
@@ -54,10 +58,13 @@ struct CachedListing {
     recursive: bool,
     query: Option<String>,
     created: Instant,
+    _lease: resources::Lease,
 }
 pub(super) struct Workspace {
     options: Options,
-    documents: HashMap<String, DocumentWorker>,
+    documents: HashMap<String, actor::Actor>,
+    retired: Vec<actor::Actor>,
+    resources: std::sync::Arc<resources::Resources>,
     paths: HashMap<PathBuf, String>,
     listings: Vec<CachedListing>,
     owned: Option<Store>,
@@ -124,6 +131,8 @@ impl Workspace {
         Ok(Self {
             options,
             documents: HashMap::new(),
+            retired: Vec::new(),
+            resources: std::sync::Arc::new(resources::Resources::default()),
             paths: HashMap::new(),
             listings: vec![],
             owned,
@@ -199,10 +208,10 @@ impl Workspace {
         let id = if let Some(id) = self.paths.get(&path) {
             id.clone()
         } else {
-            if self.documents.len() >= 64 {
+            if self.documents.len() + self.retired.len() >= 64 {
                 return Err(Error::new(
                     "RESOURCE_LIMIT",
-                    "At most 64 documents may be open on one connection; reconnect to release handles",
+                    "At most 64 documents may be open on one connection; close_document to release handles",
                 ));
             }
             let store = if create {
@@ -226,24 +235,17 @@ impl Workspace {
                 .as_deref()
                 .map(|value| crate::preview_control::Client::parse(value, store.path()))
                 .transpose()?;
-            let document = DocumentWorker {
+            let document = actor::Seed {
                 store,
                 fonts: self.options.fonts.clone(),
                 attachments,
                 usage: self.usage.clone(),
                 preview_control,
-                #[cfg(feature = "rendering")]
-                snapshots: VecDeque::new(),
-                #[cfg(feature = "rendering")]
-                failed_code: VecDeque::new(),
-                #[cfg(feature = "rendering")]
-                scripts: None,
-                #[cfg(feature = "rendering")]
-                dynamic: None,
             };
             let id = uuid::Uuid::new_v4().to_string();
+            let actor = actor::Actor::spawn(id.clone(), document, self.resources.clone())?;
             self.paths.insert(path.clone(), id.clone());
-            self.documents.insert(id.clone(), document);
+            self.documents.insert(id.clone(), actor);
             id
         };
         let document = self.documents[&id].store.read()?;
@@ -319,7 +321,23 @@ impl Workspace {
             if self.listings.len() >= 4 {
                 self.listings.remove(0);
             }
+            let bytes = listing
+                .documents
+                .iter()
+                .map(|path| path.as_os_str().len() + 64)
+                .sum::<usize>()
+                + listing.root.as_os_str().len();
+            let lease = loop {
+                match self.resources.retained.reserve(bytes) {
+                    Ok(lease) => break lease,
+                    Err(_) if !self.listings.is_empty() => {
+                        self.listings.remove(0);
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
             self.listings.push(CachedListing {
+                _lease: lease,
                 id: uuid::Uuid::new_v4().to_string(),
                 listing,
                 recursive: args.recursive,
@@ -344,7 +362,7 @@ impl Workspace {
     pub fn call(
         &mut self,
         name: &str,
-        mut arguments: Value,
+        arguments: Value,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> Result<CallToolResult> {
         crate::cancel::check(Some(cancel))?;
@@ -378,73 +396,6 @@ impl Workspace {
             }
             _ => {}
         }
-        let id = arguments
-            .as_object_mut()
-            .and_then(|object| object.remove("document_id"));
-        if let Some(id) = id {
-            let id = id
-                .as_str()
-                .ok_or_else(|| Error::new("INVALID_ARGUMENT", "document_id must be a string"))?;
-            let document = self.documents.get_mut(id).ok_or_else(|| {
-                Error::new(
-                    "INVALID_ARGUMENT",
-                    "Unknown document_id; open the document on this connection first",
-                )
-            })?;
-            let actual = crate::paths::canonical(document.store.path())?;
-            if actual != document.store.path() {
-                return Err(Error::new(
-                    "REVISION_CONFLICT",
-                    "The opened document path was redirected; reopen the document",
-                ));
-            }
-            for (field, code) in [
-                ("snapshot_id", "SNAPSHOT_UNAVAILABLE"),
-                ("cursor", "INVALID_ARGUMENT"),
-            ] {
-                if let Some(value) = arguments.get(field).filter(|value| !value.is_null()) {
-                    let prefix = format!("{id}:");
-                    let token = value.as_str().and_then(|value| value.strip_prefix(&prefix))
-                        .ok_or_else(|| Error::new(code, "The calculation or cursor belongs to another document or connection"))?;
-                    let token = token.to_owned();
-                    arguments[field] = json!(token);
-                }
-            }
-            let usage = if kind.catalogue_query() {
-                document
-                    .usage
-                    .as_ref()
-                    .map(|usage| usage.request(cancel))
-                    .transpose()?
-            } else {
-                None
-            };
-            let mut result = document.call(name, arguments, cancel)?;
-            if let Some(value) = &mut result.structured_content {
-                for field in ["snapshot_id", "next_cursor"] {
-                    if let Some(token) = value.get(field).and_then(Value::as_str) {
-                        let scoped = format!("{id}:{token}");
-                        value[field] = json!(scoped);
-                    }
-                }
-                value["document_id"] = json!(id);
-                crate::query::check_response_size(
-                    value,
-                    MAX_TOOL_BYTES,
-                    Some(cancel),
-                    "Tool result exceeds 4 MiB; reduce depth or page size",
-                )?;
-                let text = value.to_string();
-                if let Some(usage) = usage {
-                    usage.record(name, value, cancel)?;
-                }
-                result.content.retain(|content| content.as_text().is_none());
-                result
-                    .content
-                    .insert(0, rmcp::model::ContentBlock::text(text));
-            }
-            return Ok(result);
-        }
         let value = match kind {
             ToolKind::GetGuidance => {
                 let args: GuideArgs = parse(arguments)?;
@@ -472,17 +423,65 @@ impl Workspace {
         };
         structured(value)
     }
-    #[cfg(feature = "rendering")]
-    pub fn expire_idle(&mut self, now: Instant) {
-        for document in self.documents.values_mut() {
-            document.expire_idle(now);
+    pub fn dispatch(&mut self, mut job: Job) {
+        self.retired.retain_mut(|actor| !actor.reap());
+        if job.cancelled() {
+            job.finish(
+                Err(Error::new(
+                    "CANCELLED",
+                    "The request was cancelled before dispatch",
+                )),
+                None,
+            );
+            return;
         }
-    }
-    #[cfg(feature = "rendering")]
-    pub fn maintenance_deadline(&self) -> Option<Instant> {
-        self.documents
-            .values()
-            .filter_map(DocumentWorker::maintenance_deadline)
-            .min()
+        let kind = ToolKind::parse(&job.name);
+        if !matches!(
+            kind,
+            Some(
+                ToolKind::OpenDocument
+                    | ToolKind::CreateDocument
+                    | ToolKind::ListDocuments
+                    | ToolKind::ListIcons
+            )
+        ) && let Some(id) = job
+            .arguments
+            .as_object_mut()
+            .and_then(|args| args.remove("document_id"))
+        {
+            let result = (|| {
+                let id = id.as_str().ok_or_else(|| {
+                    Error::new("INVALID_ARGUMENT", "document_id must be a string")
+                })?;
+                if kind == Some(ToolKind::CloseDocument) {
+                    let _: Empty = parse(job.arguments.clone())?;
+                }
+                if !self.documents.contains_key(id) {
+                    return Err(Error::new(
+                        "INVALID_ARGUMENT",
+                        "Unknown document_id; open the document on this connection first",
+                    ));
+                }
+                Ok(id.to_owned())
+            })();
+            match result {
+                Err(error) => job.finish(Err(error), Some(Instant::now())),
+                Ok(id) if kind == Some(ToolKind::CloseDocument) => {
+                    let mut actor = self.documents.remove(&id).expect("checked handle");
+                    self.paths.retain(|_, value| value != &id);
+                    actor.close(job);
+                    self.retired.push(actor);
+                }
+                Ok(id) => self
+                    .documents
+                    .get_mut(&id)
+                    .expect("checked handle")
+                    .enqueue(job),
+            }
+        } else {
+            let started = Instant::now();
+            let result = self.call(&job.name, job.arguments.clone(), &job.cancel);
+            job.finish(result, Some(started));
+        }
     }
 }

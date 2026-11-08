@@ -406,3 +406,38 @@ Cancellation before document replacement leaves the original document in place. 
 ### Explicit HTTP image acquisition
 
 Ordinary document inspection does not fetch HTTP images. `get_document` accepts `acquire_images: true` to explicitly acquire them; layout/rendering and image copy/import can also access the network, including local addresses. Network-capable tools advertise `openWorldHint: true`. Deferred images report `IMAGE_ACQUISITION_REQUIRED` and `assets_complete: false`, while structural edits remain available. Declared `remote_image_reference` dependency identities stay stable across acquisition; fetched `remote_image` byte hashes belong to runtime dependencies and snapshot identity. Use `runtime.browser.image_origins` for an optional exact-origin ceiling, or `network_policy = "offline"` to deny acquisition. See [HTTP image acquisition](dynamic-content.md#http-image-acquisition).
+
+### Connection scheduling and retention
+
+Each open document owns its layout, text and runtime state on its own thread. Native
+Skia paragraphs stay on the thread that created them. Requests execute serially per
+document, with at most two document operations executing per connection. Up to four
+requests per document and sixteen overall are admitted; additional requests wait with
+cancellation. Built-in catalogue, discovery and handle operations use the dispatcher.
+A blocked image acquisition in one document does not serialize another document's work.
+Copy/import acquisition happens before the save lock; revision and source verification
+are repeated inside the transaction. Checkpoint restore retains its locked lookup.
+
+`close_document` cancels running/queued requests for that handle and acknowledges only
+after its native snapshots, caches and owned child processes are released. It bypasses
+normal request admission so a saturated document can still be closed. Reopening the path
+creates a new ID; old calculation IDs and cursors cannot be reused. EOF/connection
+shutdown cancels and joins all document owners. Up to 64 open or retiring handles share
+one connection; closing handles releases this capacity without reconnecting.
+
+Retained calculations, failed-source captures, discovery listings and dynamic cache
+payloads share a 256 MiB accounting budget across the connection. Accounting includes
+captured input buffers, parsed JSON and indexes, expanded node/record payloads, glyph
+arrays and conservative native paragraph/path allowances. Shared buffers are charged
+per retained owner. This is a payload accounting limit, not an exact process RSS limit;
+native allocators, browser heaps and in-flight computations have separate limits.
+There may be at most four document owners with persistent JavaScript/page/shader
+runtimes. Idle cleanup releases their owner capacity; existing worker timeout and heap
+settings still apply.
+
+A new calculation evicts the requesting document's oldest snapshots as needed. Dynamic
+cache pressure drops that cache and its workers while preserving the response. If other
+owners still fill the budget, a new calculation fails explicitly with `RESOURCE_LIMIT`;
+close unused documents or retry after idle cleanup. Other documents' current snapshots
+are not silently replaced. Snapshot/failure TTL and per-document entry limits still
+apply; `SNAPSHOT_UNAVAILABLE` means request a fresh calculation without an old ID.

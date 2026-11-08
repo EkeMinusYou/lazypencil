@@ -43,7 +43,9 @@ enum Cached {
 impl Cached {
     fn bytes(&self) -> usize {
         match self {
-            Self::Raster(raster) => raster.png.len(),
+            Self::Raster(raster) => {
+                raster.png.len() + crate::retained::json_bytes(&raster.metadata)
+            }
             Self::ShaderSource(source) => source.len(),
         }
     }
@@ -71,6 +73,14 @@ pub struct DynamicRuntime {
 }
 
 impl DynamicRuntime {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.cache
+            .entries
+            .iter()
+            .map(|(key, entry)| key.capacity() + 128 + entry.bytes())
+            .sum()
+    }
+
     pub fn new(data: impl Into<PathBuf>) -> Self {
         Self {
             data: data.into(),

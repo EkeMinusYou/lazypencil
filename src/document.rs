@@ -60,6 +60,22 @@ pub struct Document {
 }
 
 impl Document {
+    #[cfg(feature = "rendering")]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.text.capacity()
+            + crate::retained::json_bytes(&self.value)
+            + self
+                .nodes
+                .iter()
+                .map(|(key, location)| {
+                    key.capacity()
+                        + location.pointer.capacity()
+                        + location.parent_id.as_ref().map_or(0, String::capacity)
+                        + 128
+                })
+                .sum::<usize>()
+    }
+
     pub fn parse(text: String) -> Result<Self> {
         check_input(&text)?;
         let root = parse_cst(&text)?;
