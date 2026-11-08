@@ -21,6 +21,7 @@ use tokio::sync::{mpsc, oneshot};
 
 mod actor;
 mod catalog;
+mod output;
 mod resources;
 pub(crate) mod timing;
 mod transport;
@@ -269,6 +270,12 @@ struct DocumentArgs {
     /// Explicitly acquire HTTP image bytes; false keeps inspection free of HTTP requests.
     #[serde(default)]
     acquire_images: bool,
+    /// Include all effective configuration, origins and user settings; false returns a compact summary.
+    #[serde(default)]
+    include_configuration: bool,
+    /// Include the complete feature catalogue; false returns the primary capabilities.
+    #[serde(default)]
+    include_capabilities: bool,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -570,6 +577,34 @@ impl DocumentWorker {
                 )?;
                 value["guidance"] = json!({"entry_tool":"get_guidance","entry_id":"start","language":"en","styles_tool":"list_styles"});
                 value["guidance"]["project_design"] = value["configuration"]["design"].clone();
+                if !args.include_configuration {
+                    retain_fields(
+                        &mut value["configuration"],
+                        &[
+                            "path",
+                            "hash",
+                            "root",
+                            "fonts_complete",
+                            "font_diagnostics",
+                            "font_lock",
+                        ],
+                    );
+                }
+                if !args.include_capabilities {
+                    retain_fields(
+                        &mut value["capabilities"],
+                        &[
+                            "schema",
+                            "supported_schemas",
+                            "default_schema",
+                            "rendering",
+                            "dynamic_content",
+                            "instance_overrides",
+                            "managed_assets",
+                            "attachments",
+                        ],
+                    );
+                }
                 if let Some(attachments) = &self.attachments {
                     value["attachments"] = attachments.metadata(&self.store)?;
                 }
@@ -1060,6 +1095,11 @@ impl DocumentWorker {
 fn parse<T: DeserializeOwned>(value: Value) -> Result<T> {
     serde_json::from_value(value)
         .map_err(|e| Error::new("INVALID_ARGUMENT", format!("Invalid tool arguments: {e}")))
+}
+fn retain_fields(value: &mut Value, fields: &[&str]) {
+    if let Some(object) = value.as_object_mut() {
+        object.retain(|key, _| fields.contains(&key.as_str()));
+    }
 }
 fn structured(value: Value) -> Result<CallToolResult> {
     crate::query::check_response_size(

@@ -128,6 +128,7 @@ pub(super) fn tool<T: JsonSchema>(kind: ToolKind, description: &'static str) -> 
         }
     }
     let mut tool = Tool::new(kind.name(), description, schema);
+    tool.output_schema = Some(std::sync::Arc::new(output::schema(kind.name())));
     tool.annotations = Some(kind.annotations());
     tool
 }
@@ -148,7 +149,7 @@ fn tools() -> Vec<Tool> {
         ),
         tool::<DocumentArgs>(
             ToolKind::GetDocument,
-            "Read the bound document, current revisions, roots, dependency hashes and diagnostics before editing. HTTP image bytes are deferred by default. Set acquire_images:true to explicitly fetch them under the network policy; requests can reach external and local services. Layout/rendering also acquire images.",
+            "Read current revisions, roots, dependencies, diagnostics, primary capabilities and a compact configuration summary before editing. Set include_configuration:true for full settings/origins or include_capabilities:true for the complete feature catalogue. HTTP image bytes are deferred; acquire_images:true explicitly fetches them under the network policy, including external/local services. Layout/rendering also acquire images.",
         ),
         tool::<service::ReadNodesRequest>(
             ToolKind::ReadNodes,
@@ -257,6 +258,17 @@ mod tests {
             assert_eq!(ToolKind::parse(kind.name()), Some(*kind));
             let definition = tools.iter().find(|tool| tool.name == kind.name()).unwrap();
             let schema = &definition.input_schema;
+            let output = definition
+                .output_schema
+                .as_ref()
+                .expect("typed output schema");
+            assert_eq!(output["type"], "object");
+            assert!(output["properties"].is_object());
+            assert!(
+                output["required"]
+                    .as_array()
+                    .is_some_and(|fields| !fields.is_empty())
+            );
             assert_eq!(
                 schema["properties"].get("document_id").is_some(),
                 kind.document_scope() != DocumentScope::None

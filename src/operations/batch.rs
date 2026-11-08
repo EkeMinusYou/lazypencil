@@ -523,9 +523,10 @@ impl Batch<'_> {
         {
             project_for(&self.edited, &self.context)?.validate_structure()?;
         }
+        let diagnostics = self.edited.property_diagnostics();
         Ok(PreparedBatch {
             document: self.edited,
-            result: json!({"changed_ids": self.changed, "generated_ids":self.generated,"bindings":self.bindings,"diagnostics":[]}),
+            result: json!({"changed_ids": self.changed, "generated_ids":self.generated,"bindings":self.bindings,"diagnostics":diagnostics}),
             sources: self.context.sources,
             files: self.context.files,
             overlay: self.context.overlay,

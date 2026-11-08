@@ -10,8 +10,11 @@ use std::collections::{BTreeMap, HashSet};
 
 mod codec;
 mod properties;
+mod property_diagnostics;
 pub use codec::{Codec, SUPPORTED_DOCUMENT_VERSIONS};
 pub(crate) use properties::PropertyEdit;
+#[cfg(feature = "rendering")]
+pub(crate) use property_diagnostics::node_property_diagnostics;
 
 pub const DOCUMENT_VERSION: &str = Codec::DEFAULT.version();
 pub const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
@@ -199,12 +202,14 @@ impl Document {
     }
 
     pub fn summary(&self) -> Value {
+        let mut diagnostics = self.diagnostics();
+        diagnostics.extend(self.property_diagnostics());
         json!({
             "version": self.version(), "revision": self.revision(),
             "node_count": self.node_count(), "writable": self.codec().is_some(),
             "roots": self.value["children"].as_array().into_iter().flatten().map(|n| json!({
                 "id": n["id"], "name": n.get("name"), "type": n["type"],
-            })).collect::<Vec<_>>(), "diagnostics": self.diagnostics(),
+            })).collect::<Vec<_>>(), "diagnostics": diagnostics,
         })
     }
 

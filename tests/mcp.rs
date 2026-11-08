@@ -12,6 +12,9 @@ use tempfile::TempDir;
 #[path = "support/fixture.rs"]
 mod fixture_support;
 
+#[path = "../src/mcp/output.rs"]
+mod output_contract;
+
 #[cfg(unix)]
 #[path = "support/page_wait_reference.rs"]
 mod http_image_reference;
@@ -19,6 +22,126 @@ mod http_image_reference;
 #[cfg(unix)]
 #[path = "support/mcp_scheduling.rs"]
 mod scheduling;
+
+#[test]
+fn mcp_property_typos_warn_on_edits_and_validation_without_losing_unknown_fields() {
+    let (temp, file, data) = fixture();
+    let source = json!({"version":"2.22","children":[
+        {"id":"title","type":"text","content":"MCP","fontSize":24,
+         "metadata":{"custom":{"fontSzie":99}}}
+    ]})
+    .to_string();
+    fs::write(&file, &source).unwrap();
+    let mut client = Client::start(&file, &data);
+    let before = client.data("get_document", json!({}));
+    let request = json!({"request_id":"typo","expected_revision":before["revision"],
+        "expected_dependency_revision":before["dependency_revision"],
+        "operations":[{"op":"update","target":"title","set":{"fontSzie":42,"futureFeature":true}}]});
+    let mut dry_run = request.clone();
+    dry_run["dry_run"] = json!(true);
+    let proposed = client.data("apply_operations", dry_run);
+    assert_eq!(proposed["diagnostics"].as_array().unwrap().len(), 2);
+    assert_eq!(fs::read_to_string(&file).unwrap(), source);
+    let edited = client.data("apply_operations", request.clone());
+    assert_eq!(edited["diagnostics"], proposed["diagnostics"]);
+    assert!(
+        edited["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(
+                |warning| warning["code"] == "UNKNOWN_PROPERTY" && warning["severity"] == "warning"
+            )
+    );
+    assert!(
+        edited["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["message"]
+                .as_str()
+                .unwrap()
+                .contains("Did you mean \"fontSize\"?"))
+    );
+    let replayed = client.data("apply_operations", request);
+    assert_eq!(replayed["replayed"], true);
+    assert_eq!(replayed["diagnostics"], edited["diagnostics"]);
+    let nodes = client.data("read_nodes", json!({"node_id":"title"}));
+    assert_eq!(nodes["nodes"][0]["fontSize"], 24);
+    assert_eq!(nodes["nodes"][0]["fontSzie"], 42);
+    assert_eq!(nodes["nodes"][0]["futureFeature"], true);
+    assert_eq!(nodes["nodes"][0]["metadata"]["custom"]["fontSzie"], 99);
+    let metadata = client.data("get_document", json!({}));
+    assert_eq!(metadata["diagnostics"], edited["diagnostics"]);
+    for scope in ["structure", "layout"] {
+        if scope == "layout" && !cfg!(feature = "rendering") {
+            continue;
+        }
+        let report = client.data("validate_document", json!({"scope":scope,"limit":1}));
+        assert_eq!(report["valid"], true);
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["total_diagnostics"], 2);
+        let mut query = json!({"scope":scope,"cursor":report["next_cursor"],"limit":1});
+        if let Some(snapshot) = report.get("snapshot_id") {
+            query["snapshot_id"] = snapshot.clone();
+        }
+        let page = client.data("validate_document", query);
+        assert_eq!(page["diagnostics"].as_array().unwrap().len(), 1);
+        assert_eq!(page["next_cursor"], Value::Null);
+    }
+    let fixed = client.data("apply_operations", json!({"request_id":"fix-typo",
+        "expected_revision":edited["revision"],"expected_dependency_revision":edited["dependency_revision"],
+        "operations":[{"op":"update","target":"title","set":{"fontSize":42},"unset":["fontSzie","futureFeature"]}]}));
+    assert_eq!(fixed["diagnostics"], json!([]));
+    assert_eq!(
+        client.data("validate_document", json!({}))["total_diagnostics"],
+        0
+    );
+    client.finish();
+    drop(temp);
+}
+
+#[test]
+fn mcp_document_metadata_defaults_to_summary_and_explicit_details_keep_preconditions() {
+    let (_temp, file, data) = fixture();
+    let mut client = Client::start(&file, &data);
+    let summary = client.data("get_document", json!({}));
+    let config = client.data("get_document", json!({"include_configuration":true}));
+    let capabilities = client.data("get_document", json!({"include_capabilities":true}));
+    let full = client.data(
+        "get_document",
+        json!({"include_configuration":true,"include_capabilities":true}),
+    );
+    assert!(summary["configuration"].get("settings").is_none());
+    assert!(summary["configuration"].get("user").is_none());
+    assert!(summary["capabilities"].get("script").is_none());
+    assert!(full["configuration"]["settings"].is_object());
+    assert!(full["configuration"]["user"].is_object());
+    assert!(full["capabilities"]["script"].is_object());
+    assert_eq!(config["configuration"], full["configuration"]);
+    assert_eq!(config["capabilities"], summary["capabilities"]);
+    assert_eq!(capabilities["capabilities"], full["capabilities"]);
+    assert_eq!(capabilities["configuration"], summary["configuration"]);
+    for key in [
+        "revision",
+        "dependency_revision",
+        "runtime_dependency_revision",
+        "dependencies",
+        "diagnostics",
+        "guidance",
+    ] {
+        assert_eq!(summary[key], full[key], "{key}");
+    }
+    assert!(serde_json::to_vec(&summary).unwrap().len() < 4096);
+    assert!(
+        serde_json::to_vec(&summary).unwrap().len() * 2 < serde_json::to_vec(&full).unwrap().len()
+    );
+    assert_eq!(
+        summary["configuration"]["font_lock"],
+        full["configuration"]["font_lock"]
+    );
+    client.finish();
+}
 
 #[cfg(unix)]
 #[test]
@@ -555,6 +678,12 @@ impl Client {
         };
         let response = self.response_with_timeout(id, timeout);
         assert!(response.get("error").is_none(), "{response}");
+        if response["result"]["isError"] != true {
+            output_contract::validate(name, response["result"]["structuredContent"].clone())
+                .unwrap_or_else(|error| {
+                    panic!("{name} violates its advertised output contract: {error}")
+                });
+        }
         response["result"].clone()
     }
     fn data(&mut self, name: &str, arguments: Value) -> Value {
@@ -723,7 +852,7 @@ fn mcp_captures_user_settings_and_rejects_edits_from_stale_dependencies() {
     fs::write(&config, "[fonts]\nlocale='en-US'\n").unwrap();
     let saved = fs::read(&file).unwrap();
     let mut client = Client::start_with_user_config(&file, &data, None, &[], None, Some(&user));
-    let before = client.data("get_document", json!({}));
+    let before = client.data("get_document", json!({"include_configuration":true}));
     assert_eq!(
         before["configuration"]["settings"]["fonts"]["locale"],
         "en-US"
@@ -760,7 +889,7 @@ fn mcp_captures_user_settings_and_rejects_edits_from_stale_dependencies() {
             "REVISION_CONFLICT"
         );
     }
-    let after = client.data("get_document", json!({}));
+    let after = client.data("get_document", json!({"include_configuration":true}));
     assert_eq!(after["revision"], before["revision"]);
     assert_ne!(after["dependency_revision"], before["dependency_revision"]);
     assert_eq!(after["configuration"]["settings"]["fonts"]["locale"], "ja");
@@ -1137,7 +1266,7 @@ fn mcp_can_rebind_a_missing_library_and_then_read_the_original_instance() {
     )
     .unwrap();
     let mut client = Client::start(&file, &data);
-    let metadata = client.data("get_document", json!({}));
+    let metadata = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(metadata["asset_diagnostics"][0]["kind"], "library");
     assert_eq!(
         metadata["capabilities"]["asset_repair"]["declared_libraries"],
@@ -1423,7 +1552,7 @@ fn mcp_shadow_blends_follow_instance_themes_and_return_the_actual_composited_pix
             {"id":"back","type":"rectangle","width":40,"height":20,"fill":"#0000FF80"},
             {"id":"use","type":"ref","ref":"tile","x":8,"y":4}]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
-    let metadata = client.data("get_document", json!({}));
+    let metadata = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(
         metadata["capabilities"]["graphics"]["outer_shadow_blending"],
         true
@@ -1495,7 +1624,7 @@ fn mcp_mesh_gradients_resolve_external_themes_and_render_the_retained_calculatio
     fs::write(&file,json!({"version":"2.21","imports":{"ui":"library/ui.lib.pen"},"themes":{"appearance":["light","dark"]},
         "children":[{"id":"back","type":"rectangle","width":40,"height":24,"fill":"#20202080"},{"id":"use","type":"ref","ref":"ui:tile","x":4,"y":4}]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
-    let metadata = client.data("get_document", json!({}));
+    let metadata = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(metadata["capabilities"]["graphics"]["mesh_gradient"], true);
     let mut conditions = json!({"expected_revision":metadata["revision"],"expected_dependency_revision":metadata["dependency_revision"]});
     for green in [false, true] {
@@ -1565,7 +1694,7 @@ fn mcp_sampler_variables_keep_the_source_image_dependency_through_detachment() {
         .canonicalize()
         .unwrap();
     let mut client = Client::start(&file, &data);
-    let before = client.data("get_document", json!({}));
+    let before = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(
         before["capabilities"]["shader"]["variable_image_origins"],
         true
@@ -1606,7 +1735,7 @@ fn mcp_copies_a_component_and_its_image_then_works_without_the_source_library() 
     )
     .unwrap();
     let mut client = Client::start(&file, &data);
-    let document = client.data("get_document", json!({}));
+    let document = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(
         document["capabilities"]["import_component"]["modes"],
         json!(["link", "copy"])
@@ -1650,7 +1779,7 @@ fn mcp_copies_a_component_and_its_image_then_works_without_the_source_library() 
     assert_eq!(replay["generated_ids"], result["generated_ids"]);
     #[cfg(feature = "rendering")]
     {
-        let document = client.data("get_document", json!({}));
+        let document = client.data("get_document", json!({"include_capabilities":true}));
         let render=client.call("render",json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]}));
         assert_ne!(render["isError"], true, "{render}");
         let content = render["content"]
@@ -1686,7 +1815,7 @@ fn mcp_detaches_inherited_external_instances_and_replays_the_saved_result() {
     let library_bytes = fs::read(&library).unwrap();
     fs::write(&file,json!({"version":"2.21","imports":{"ui":"ui.lib.pen"},"children":[{"id":"use","type":"ref","ref":"ui:card"}]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
-    let document = client.data("get_document", json!({}));
+    let document = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(
         document["capabilities"]["detach_instance"]["inherited"],
         true
@@ -1708,7 +1837,7 @@ fn mcp_detaches_inherited_external_instances_and_replays_the_saved_result() {
     assert_eq!(fs::read(&library).unwrap(), library_bytes);
     #[cfg(feature = "rendering")]
     {
-        let document = client.data("get_document", json!({}));
+        let document = client.data("get_document", json!({"include_capabilities":true}));
         let render=client.call("render",json!({"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]}));
         assert_ne!(render["isError"], true, "{render}");
         assert!(
@@ -1738,7 +1867,7 @@ fn mcp_uses_project_font_configuration_without_cli_flags_and_rejects_stale_setti
     fs::write(&file,json!({"version":"2.21","children":[{"id":"text","type":"text","content":"A日\u{f0000}","fontSize":32,"fill":"#111111"}]}).to_string()).unwrap();
     let saved = fs::read(&file).unwrap();
     let mut client = Client::start(&file, &data);
-    let document = client.data("get_document", json!({}));
+    let document = client.data("get_document", json!({"include_configuration":true}));
     assert_eq!(
         document["configuration"]["settings"]["fonts"]["locale"],
         "en-US"
@@ -1782,7 +1911,7 @@ fn mcp_uses_project_font_configuration_without_cli_flags_and_rejects_stale_setti
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
-    let updated = client.data("get_document", json!({}));
+    let updated = client.data("get_document", json!({"include_configuration":true}));
     assert_ne!(
         updated["dependency_revision"],
         document["dependency_revision"]
@@ -2063,6 +2192,12 @@ fn real_stdio_server_lists_typed_tools_and_edits_one_bound_document() {
     let mut client = Client::start(&file, &data);
     let tools = client.request("tools/list", json!({}));
     let tools = tools["result"]["tools"].as_array().unwrap();
+    for tool in tools {
+        assert_eq!(
+            tool["outputSchema"],
+            json!(output_contract::schema(tool["name"].as_str().unwrap()))
+        );
+    }
     let apply = tools
         .iter()
         .find(|t| t["name"] == "apply_operations")
@@ -2256,7 +2391,7 @@ fn mcp_discovers_icons_and_renders_variable_bound_icons_in_reused_components() {
                 .iter()
                 .any(|icon| icon["name"] == alias && icon["alias_of"] == "house")
         );
-        let document = client.data("get_document", json!({}));
+        let document = client.data("get_document", json!({"include_capabilities":true}));
         assert_eq!(document["capabilities"]["icons"]["node_type"], "icon");
         let layout = client.data("get_layout", json!({"limit":20,"expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"]}));
         let icons = layout["nodes"]
@@ -3072,7 +3207,7 @@ fn real_stdio_script_source_inputs_and_generated_pixels_form_one_workflow() {
     use skia_safe::{Color, Data, Image};
     let (_temp, file, data) = fixture();
     let mut client = Client::start(&file, &data);
-    let document = client.data("get_document", json!({}));
+    let document = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(document["capabilities"]["script"]["rendering"], true);
     let asset=client.data("put_asset",json!({"kind":"script","source":{"text":"/**\n@schema 2.21\n@input color: color = #0000FF\n*/\nreturn [{type:'rectangle',width:pencil.width,height:pencil.height,fill:pencil.input.color}];"}}));
     let edited=client.data("apply_operations",json!({"request_id":"script-create","expected_revision":document["revision"],"operations":[
@@ -3190,7 +3325,7 @@ fn real_stdio_external_script_detach_keeps_generated_refs_after_a_fresh_calculat
         {"id":"use","type":"ref","ref":"ui:generator"}
     ]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
-    let document = client.data("get_document", json!({}));
+    let document = client.data("get_document", json!({"include_capabilities":true}));
     assert_eq!(
         document["capabilities"]["detach_instance"]["external_scripts"],
         true
@@ -4110,7 +4245,10 @@ fn multidocument_connection_resolves_project_settings_independently() {
         opened.push((document["document_id"].clone(), locale));
     }
     for (id, locale) in opened.iter().chain(opened.iter().rev()) {
-        let document = client.data("get_document", json!({"document_id":id}));
+        let document = client.data(
+            "get_document",
+            json!({"document_id":id,"include_configuration":true}),
+        );
         assert_eq!(
             document["configuration"]["settings"]["fonts"]["locale"],
             *locale

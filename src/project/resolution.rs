@@ -99,7 +99,12 @@ impl Project {
     pub fn diagnostics(&self) -> Vec<crate::document::Diagnostic> {
         self.documents
             .values()
-            .flat_map(Document::diagnostics)
+            .flat_map(|document| {
+                document
+                    .diagnostics()
+                    .into_iter()
+                    .chain(document.property_diagnostics())
+            })
             .collect()
     }
 

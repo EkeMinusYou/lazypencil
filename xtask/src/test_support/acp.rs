@@ -589,7 +589,7 @@ impl<'a> Peer<'a> {
             .collect::<Vec<_>>()
             .join("\n");
         if mode == "user-config" {
-            let document = self.call("get_document", json!({}))?;
+            let document = self.call("get_document", json!({"include_configuration":true}))?;
             let config = &document["structuredContent"]["configuration"];
             assert_eq!(
                 config["settings"]["fonts"]["default_family"],

@@ -140,6 +140,9 @@ fn structural_report(
     request: &ValidateRequest,
 ) -> Result<Value> {
     let diagnostics = project.diagnostics();
+    let unsupported = diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code != "UNKNOWN_PROPERTY");
     let identity = crate::document::hash(json!({"scope":request.scope,"revision":scene.revision,"dependency_revision":scene.dependency_revision}).to_string().as_bytes());
     let offset = crate::query::page_offset(
         &identity,
@@ -152,7 +155,7 @@ fn structural_report(
         .skip(offset)
         .take(request.limit)
         .collect::<Vec<_>>();
-    let mut result = json!({"valid":true,"complete":diagnostics.is_empty(),"revision":scene.revision,
+    let mut result = json!({"valid":true,"complete":!unsupported,"revision":scene.revision,
         "dependency_revision":scene.dependency_revision,"dependencies":scene.dependencies,
         "node_count":project.root_document().node_count(),"diagnostics":page,"total_diagnostics":diagnostics.len(),
         "next_cursor":(offset + page.len() < diagnostics.len()).then(|| format!("{identity}:{}",offset + page.len())),
@@ -160,7 +163,7 @@ fn structural_report(
     asset_status(&mut result, project);
     project.verify_unchanged()?;
     let result = crate::query::response(result)?;
-    if !diagnostics.is_empty() {
+    if unsupported {
         return Err(Error::new(
             "UNSUPPORTED_FEATURE",
             "The document includes unrecognized node types",
@@ -204,7 +207,10 @@ pub fn validation_from_snapshot(
     }
     // Keep the structural scope honest even when a layout engine can measure an unknown node.
     let diagnostics = project.diagnostics();
-    if !diagnostics.is_empty() {
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code != "UNKNOWN_PROPERTY")
+    {
         let scene = project.resolve()?;
         structural_report(project, &scene, request)?;
     }

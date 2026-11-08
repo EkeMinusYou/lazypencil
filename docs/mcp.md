@@ -20,7 +20,7 @@ Call `list_documents` with a `directory`, or open a known absolute path directly
 
 `open_document` returns `document_id`, canonical `path`, `revision`, and `version`
 without running scripts, loading fonts, or rendering. `create_document` accepts the
-same input and creates an empty 2.21 document in an existing parent directory;
+same input and creates an empty 2.22 document in an existing parent directory;
 it never overwrites a file. Reopening the same canonical path returns the same ID.
 Up to 64 documents can remain open on one connection. IDs are not persisted: reopen
 paths after reconnecting. There is no implicit active document.
@@ -67,6 +67,20 @@ Each opened document independently selects its nearest `lazypencil.toml`. Font
 settings, captured source bytes, and discovered files remain dependencies.
 `get_document.configuration` exposes them. Project design and executable trust
 remain explicit local user actions; opening a document does not grant trust.
+
+`get_document` defaults to a compact response: document identity, revisions, roots,
+dependencies, diagnostics, guidance/trust metadata, primary capability flags and
+configuration paths/font status. Pass `include_configuration: true` for the complete
+effective configuration, origins and user settings, or `include_capabilities: true`
+for the detailed feature catalogue. These flags do not change dependency tracking,
+trust, image acquisition or execution. CLI inspection retains its full metadata.
+
+Unrecognized node properties produce `UNKNOWN_PROPERTY` warnings in edit results,
+document metadata, and structural/layout validation. Warnings suggest a nearby
+known property name when possible. Unknown fields remain stored without changing
+their spelling or values; arbitrary keys inside metadata and script inputs are not
+treated as node properties. Review warnings before claiming a requested edit worked.
+
 Owned CLI/TUI conversations use the same open-document API; private attachment and
 usage grants continue to restrict their connection to the host's selected document.
 Their server name is `lazypencil_bound_<UUID>`, separate from a user's configured
@@ -103,7 +117,7 @@ When the CLI/TUI conversation host owns the server, it also binds design-resourc
 | `set_preview` (TUI only) | Fit nodes, a region or the document; center, pan and zoom without editing nodes |
 | `list_fonts` | Each bundled/configured face, collection index, source/face hashes, styles, axes, and default fallback chain |
 
-`list_fonts`, `get_layout`, `render`, and calculated node reads require the rendering feature. The public input schemas are generated from the same Rust types used to parse tool arguments; unknown fields are rejected. Domain errors appear as `isError: true` with a structured error code and readable text.
+`list_fonts`, `get_layout`, `render`, and calculated node reads require the rendering feature. The public input schemas are generated from the same Rust types used to parse tool arguments; unknown argument fields are rejected. Every tool also advertises an object `outputSchema` generated from a Rust success contract. Contracts describe stable fields and allow additional fields for detailed capabilities, node properties and future extensions. Real-stdio tests deserialize successful results against these same contracts. Render metadata follows its contract; PNG content is returned in a separate image block. Domain errors appear as `isError: true` with a structured error code and readable text, outside the success schema.
 
 The [catalogue](icons.md) supports bundled Lucide and optional Feather, Phosphor and Material Symbols packs. Host-owned conversations register document-bound attachments for `get_document` and `put_asset`; external MCP clients upload typed image data without that grant. Rendering and copy limits are described in [dynamic content](dynamic-content.md).
 

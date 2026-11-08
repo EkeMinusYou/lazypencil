@@ -340,6 +340,16 @@ impl Solver<'_> {
         let index = self.items.len();
         let enabled =
             inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
+        let diagnostics = crate::document::node_property_diagnostics(&node.properties, &node.id())
+            .into_iter()
+            .map(|diagnostic| LayoutDiagnostic {
+                code: "UNKNOWN_PROPERTY",
+                severity: diagnostic.severity,
+                node_id: node.id(),
+                message: diagnostic.message,
+                details: Value::Null,
+            })
+            .collect();
         self.items.push(LayoutItem {
             record: LayoutRecord {
                 id: node.id(),
@@ -354,7 +364,7 @@ impl Solver<'_> {
                 visual_bounds: Rect::default(),
                 sizing: [String::new(), String::new()],
                 text: None,
-                diagnostics: Vec::new(),
+                diagnostics,
                 generated_by: node.generated_by.clone(),
                 icon: node.icon_metadata.clone(),
             },
