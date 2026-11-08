@@ -88,6 +88,11 @@ readable screen size based on terminal cell metrics. Further zooming keeps that
 size constant. Text is rasterized directly at each size. Long names are clipped
 with an ellipsis to their frame width rather than shrinking to fit or overlapping
 adjacent titles. These titles decorate the preview only and are not added to exports.
+Use `View · Toggle node names` in the command palette, `/toggle-node-names`, or
+`Node names` in View controls to show or hide them for the current session. Set
+`[tui.preview] show_node_names = false` in the user `config.toml` to start with names
+hidden (the default is `true`). Whole-document fitting reserves no title space while
+names are hidden.
 
 The dark theme retains the semantic palette in `design.pen`; the file picker and
 dialogs share the active theme surfaces.
@@ -370,7 +375,7 @@ is ready; it does not replace or send the current draft.
 | Send queue | `/queue <text>`, `/resume-queue`, `/clear-queue` |
 | Images | `/attach <quoted path> [WIDTHxHEIGHT\|original]`, `/paste-image [WIDTHxHEIGHT\|original]`, `/resize-image <number> <WIDTHxHEIGHT\|original>`, `/clear-images` |
 | Preview | `/refresh`, `/open-preview`, `/play [fps]`, `/pause`, `/time <nonnegative seconds>` |
-| View | `/toggle-nodes`, `/toggle-agent`, `/view-controls`, `/enable-pinch` |
+| View | `/toggle-nodes`, `/toggle-agent`, `/toggle-node-names`, `/view-controls`, `/enable-pinch` |
 | Checkpoints | `/checkpoints` (`/history` is a compatibility alias) |
 | General | `/commands`, `/help`, `/quit` |
 

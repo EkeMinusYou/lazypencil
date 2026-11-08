@@ -211,6 +211,7 @@ pub fn run_with_selection(
         app.keys = settings.keys;
         app.navigation = settings.navigation;
         app.panel_layout = settings.layout;
+        app.preview_settings = settings.preview;
         app.mouse = settings.mouse;
         if !screen.startup_text.is_empty() {
             app.insert_text(&screen.startup_text);
@@ -245,6 +246,7 @@ struct App {
     keys: crate::config::keys::PromptKeys,
     navigation: crate::config::keys::NavigationKeys,
     panel_layout: crate::config::keys::PanelLayout,
+    preview_settings: crate::config::keys::PreviewSettings,
     mouse: crate::config::keys::MouseSettings,
     pointer: mouse::Pointer,
     selection: selection::Selection,
@@ -331,6 +333,7 @@ impl App {
             keys: Default::default(),
             navigation: Default::default(),
             panel_layout: Default::default(),
+            preview_settings: Default::default(),
             mouse: Default::default(),
             pointer: Default::default(),
             selection: Default::default(),
@@ -724,6 +727,7 @@ impl App {
         Ok(false)
     }
     fn request(&mut self, worker: &Worker, check_only: bool, refresh: bool) {
+        worker.set_show_node_names(self.preview_settings.show_node_names);
         if (check_only && self.camera_navigation) || self.cells.width == 0 || self.cells.height == 0
         {
             return;

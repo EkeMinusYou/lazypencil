@@ -51,6 +51,44 @@ fn ui_themes_default_to_auto_and_are_user_owned() {
 }
 
 #[test]
+fn preview_node_names_default_to_visible_and_are_user_owned() {
+    let f = Fixture::new();
+    assert_eq!(
+        f.data(&["config", "show", "--user"])["settings"]["tui"]["preview"]["show_node_names"],
+        true
+    );
+    for visible in [false, true] {
+        f.settings(&format!("[tui.preview]\nshow_node_names={visible}\n"));
+        assert_eq!(
+            f.data(&["config", "show", "--user"])["settings"]["tui"]["preview"]["show_node_names"],
+            visible
+        );
+    }
+    let schema = f.data(&["config", "schema", "--user"]);
+    assert_eq!(
+        schema["$defs"]["PreviewSettings"]["properties"]["show_node_names"]["type"],
+        "boolean"
+    );
+    for body in ["show_node_names='false'", "show_node_name=false"] {
+        f.settings(&format!("[tui.preview]\n{body}\n"));
+        assert_eq!(
+            UserSnapshot::load_file(Some(f.user.join("config.toml")))
+                .err()
+                .unwrap()
+                .code,
+            "CONFIGURATION_ERROR"
+        );
+    }
+    f.settings("");
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.preview]\nshow_node_names=false\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     let f = Fixture::new();
     let shown = f.data(&["config", "show", "--user"]);

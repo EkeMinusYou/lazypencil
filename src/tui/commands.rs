@@ -84,6 +84,8 @@ commands! {
         "toggle-nodes", [], "", 0, 0, Always;
     ToggleAgent, "View", "Toggle Agent panel", "Collapse or expand the Agent panel.",
         "toggle-agent", [], "", 0, 0, Always;
+    ToggleNodeNames, "View", "Toggle node names", "Show or hide root node names in Preview for this session.",
+        "toggle-node-names", [], "", 0, 0, Always;
     Theme, "View", "Theme…", "Select auto, dark, light or monochrome UI colors for this session.",
         "theme", [], "[auto|dark|light|monochrome]", 0, 1, Always;
     ViewControls, "View", "View controls…", "Open view controls, including the temporary wheel pan/zoom switch.",
@@ -383,6 +385,18 @@ impl App {
             }
             Action::ToggleNodes => self.toggle_panel(Nav::ToggleNodesPanel, worker),
             Action::ToggleAgent => self.toggle_panel(Nav::ToggleAgentPanel, worker),
+            Action::ToggleNodeNames => {
+                self.preview_settings.show_node_names = !self.preview_settings.show_node_names;
+                self.request(worker, false, false);
+                self.set_status(format!(
+                    "Node names: {}",
+                    if self.preview_settings.show_node_names {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+            }
             Action::Theme => {
                 if let Some(name) = args.first() {
                     let theme =

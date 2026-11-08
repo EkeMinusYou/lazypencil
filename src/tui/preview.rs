@@ -152,6 +152,7 @@ pub struct Output {
 }
 struct Shared {
     canvas_background: Mutex<image::Rgba<u8>>,
+    show_node_names: Mutex<bool>,
     selection: Mutex<super::selection::render::State>,
     request: Mutex<(Option<Request>, bool)>,
     wake: Condvar,
@@ -177,6 +178,7 @@ impl Worker {
     ) -> Result<Self> {
         let shared = Arc::new(Shared {
             canvas_background: Mutex::new(picker.canvas_background()),
+            show_node_names: Mutex::new(true),
             selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
@@ -217,6 +219,9 @@ impl Worker {
     }
     pub(super) fn set_canvas_background(&self, background: image::Rgba<u8>) {
         *self.shared.canvas_background.lock().unwrap() = background;
+    }
+    pub(super) fn set_show_node_names(&self, visible: bool) {
+        *self.shared.show_node_names.lock().unwrap() = visible;
     }
     pub(super) fn set_selection(&self, selection: super::selection::render::State) {
         *self.shared.selection.lock().unwrap() = selection;
@@ -376,6 +381,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
         }
         if state.1 {
             return;
+        }
+        if labels.set_visible(*shared.show_node_names.lock().unwrap()) {
+            // Cached terminal frames already contain their root-name decoration.
+            frames.clear();
+            document_preview_time = None;
         }
         let Some(request) = state.0.take() else {
             let presentation = shared.presentation_request.lock().unwrap().take();
@@ -1074,8 +1084,8 @@ mod tests {
     }
 
     #[test]
-    fn revisited_native_frames_reuse_pixels_but_invalidate_changed_documents_backgrounds_and_sizes()
-    {
+    fn revisited_native_frames_reuse_pixels_but_invalidate_node_names_documents_backgrounds_and_sizes()
+     {
         let directory = TempDir::new().unwrap();
         let store = Store::init(
             directory.path().join("design.pen"),
@@ -1139,6 +1149,35 @@ mod tests {
                     returned.view, request.view,
                     "Reuse must preserve precise requested camera coordinates"
                 );
+                for visible in [false, true] {
+                    worker.set_show_node_names(visible);
+                    request.generation += 1;
+                    worker.request(request.clone());
+                    let toggled = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap();
+                    assert_ne!(
+                        toggled.frame_time,
+                        Duration::ZERO,
+                        "Name visibility must invalidate decorated frames"
+                    );
+                    assert_eq!(toggled.view, request.view);
+                    assert_eq!(toggled.image.png().unwrap(), initial.image.png().unwrap());
+                    request.generation += 1;
+                    worker.request(request.clone());
+                    let reused = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap();
+                    assert_eq!(
+                        reused.frame_time,
+                        Duration::ZERO,
+                        "Unchanged visibility still reuses frames"
+                    );
+                }
                 worker.set_canvas_background(image::Rgba([20, 30, 40, 255]));
                 request.generation += 1;
                 worker.request(request.clone());
@@ -1207,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn root_labels_decorate_initial_and_selected_previews_without_changing_export_pixels() {
+    fn node_names_toggle_on_initial_and_selected_previews_without_changing_export_pixels() {
         use ratatui::{buffer::Buffer, widgets::Widget};
         let directory = TempDir::new().unwrap();
         let store = Store::init(
@@ -1293,6 +1332,63 @@ mod tests {
                         .unwrap();
                 assert_ne!(render(&selected), initial, "Selected root names turn blue");
                 assert_eq!(preview.image.png().unwrap().as_ref(), png);
+                for visible in [false, true] {
+                    worker.set_show_node_names(visible);
+                    worker.request(Request {
+                        generation: 2 + u64::from(visible),
+                        cells,
+                        view,
+                        refresh: false,
+                        refresh_pages: false,
+                        check_only: false,
+                        attachment: None,
+                    });
+                    let toggled = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap()
+                        .result
+                        .unwrap();
+                    assert_eq!(toggled.view, view, "Toggling must preserve the camera");
+                    assert_eq!(
+                        render(&toggled.protocol),
+                        if visible {
+                            initial.clone()
+                        } else {
+                            plain.clone()
+                        }
+                    );
+                    worker.present(super::super::selection::render::Request {
+                        source: toggled.image.clone(),
+                        nodes: toggled.nodes.clone(),
+                        selected: vec!["page".into()],
+                        before: view,
+                        view,
+                        size: cells,
+                        viewport: pixel_size(&picker, cells).unwrap(),
+                        outlines: vec![],
+                        marquee: None,
+                        picker: picker.clone(),
+                        image_id: 198,
+                        serial: 0,
+                        clock: Arc::default(),
+                    });
+                    let decorated =
+                        tokio::time::timeout(Duration::from_secs(15), worker.next_presentation())
+                            .await
+                            .unwrap()
+                            .result
+                            .unwrap()
+                            .unwrap();
+                    assert_eq!(
+                        render(&decorated),
+                        if visible {
+                            render(&selected)
+                        } else {
+                            plain.clone()
+                        }
+                    );
+                    assert_eq!(toggled.image.png().unwrap().as_ref(), png);
+                }
             });
         assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
     }
@@ -1416,6 +1512,7 @@ mod tests {
         let background = Backend::halfblocks().canvas_background();
         let shared = Shared {
             canvas_background: Mutex::new(background),
+            show_node_names: Mutex::new(true),
             selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),
@@ -1470,6 +1567,7 @@ mod tests {
     fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
         let shared = Arc::new(Shared {
             canvas_background: Mutex::new(Backend::halfblocks().canvas_background()),
+            show_node_names: Mutex::new(true),
             selection: Mutex::default(),
             request: Mutex::new((None, false)),
             wake: Condvar::new(),

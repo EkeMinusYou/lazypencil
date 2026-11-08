@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const TEMPLATE: &str = "\n[tui]\n# auto, dark, light, or monochrome; auto follows the terminal background.\n# theme = \"auto\"\n\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# native_pinch = true\n# native_scroll = true\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
+pub const TEMPLATE: &str = "\n[tui]\n# auto, dark, light, or monochrome; auto follows the terminal background.\n# theme = \"auto\"\n\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.preview]\n# show_node_names = true\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# native_pinch = true\n# native_scroll = true\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
 
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, clap::ValueEnum,
@@ -28,9 +28,25 @@ pub use navigation::{NavigationAction, NavigationKeys};
 pub struct TuiSettings {
     pub theme: Theme,
     pub layout: PanelLayout,
+    pub preview: PreviewSettings,
     pub mouse: MouseSettings,
     pub keys: PromptKeys,
     pub navigation: NavigationKeys,
+}
+
+/// Initial preview preferences; in-session changes do not rewrite configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PreviewSettings {
+    pub show_node_names: bool,
+}
+
+impl Default for PreviewSettings {
+    fn default() -> Self {
+        Self {
+            show_node_names: true,
+        }
+    }
 }
 
 impl TuiSettings {

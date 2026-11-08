@@ -7,6 +7,7 @@ use crate::{
 use std::collections::BTreeMap;
 
 pub(in crate::tui) struct Labels {
+    visible: bool,
     fonts: Option<Fonts>,
     blocks: BTreeMap<(String, bool), TextBlock>,
     screen_scale: f32,
@@ -22,6 +23,7 @@ impl Default for Labels {
 impl Labels {
     pub fn new(font: ratatui_image::FontSize) -> Self {
         Self {
+            visible: true,
             fonts: None,
             blocks: BTreeMap::new(),
             // Terminal metrics bound the readable title size when zoomed in.
@@ -31,7 +33,17 @@ impl Labels {
     }
 
     pub(super) fn top_padding(&self) -> u32 {
-        (28.0 * self.screen_scale).ceil() as u32
+        if self.visible {
+            (28.0 * self.screen_scale).ceil() as u32
+        } else {
+            0
+        }
+    }
+
+    pub(super) fn set_visible(&mut self, visible: bool) -> bool {
+        let changed = self.visible != visible;
+        self.visible = visible;
+        changed
     }
 
     fn shape(&mut self, content: &str, selected: bool) -> Result<TextBlock> {
@@ -62,6 +74,9 @@ impl Labels {
         viewport: [u32; 2],
         selected: &[String],
     ) -> Result<()> {
+        if !self.visible {
+            return Ok(());
+        }
         let region = view.region(viewport);
         let scale = image.width() as f32 / viewport[0] as f32;
         let zoom = view.zoom.unwrap_or(1.0);
@@ -191,6 +206,28 @@ mod tests {
             parent,
             children: vec![],
         }
+    }
+
+    #[test]
+    fn hidden_node_names_leave_pixels_and_initial_fit_undecorated() {
+        let root = node("Page", -100.0, None, true);
+        let mut labels = Labels::default();
+        assert!(labels.top_padding() > 0);
+        labels.set_visible(false);
+        assert_eq!(labels.top_padding(), 0);
+        let pixels = [240, 120];
+        let mut view = View::default();
+        view.fit_canvas(root.bounds, pixels, labels.top_padding());
+        let mut expected = View::default();
+        expected.fit(root.bounds, pixels);
+        assert_eq!(view, expected);
+        let white = image::Rgba([255, 255, 255, 255]);
+        let mut image = image::RgbaImage::from_pixel(240, 120, white);
+        labels
+            .paint(&mut image, &[root], view, pixels, &[])
+            .unwrap();
+        assert!(image.pixels().all(|pixel| *pixel == white));
+        assert!(labels.fonts.is_none(), "Hidden names need no font loading");
     }
 
     #[test]

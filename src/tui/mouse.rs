@@ -19,6 +19,7 @@ pub(super) enum ListTarget {
 pub(super) enum Action {
     ToggleNodes,
     ToggleAgent,
+    ToggleNodeNames,
     ZoomIn,
     ZoomOut,
     FitAll,
@@ -1020,6 +1021,9 @@ impl App {
         match action {
             Action::ToggleNodes => self.toggle_panel(Nav::ToggleNodesPanel, worker),
             Action::ToggleAgent => self.toggle_panel(Nav::ToggleAgentPanel, worker),
+            Action::ToggleNodeNames => {
+                self.execute_command(commands::Action::ToggleNodeNames, &[], worker)?;
+            }
             Action::ZoomIn => self.zoom_pointer(1.25, None, picker, worker)?,
             Action::ZoomOut => self.zoom_pointer(1.0 / 1.25, None, picker, worker)?,
             Action::FitAll => {
@@ -1074,7 +1078,7 @@ impl App {
             header.right().saturating_sub(28),
             header.bottom(),
             28.min(header.width),
-            13,
+            14,
         )
     }
 
@@ -1161,6 +1165,11 @@ impl App {
             } else {
                 "[Wheel: pan]"
             };
+            let names = if self.preview_settings.show_node_names {
+                "[Node names: on]"
+            } else {
+                "[Node names: off]"
+            };
             for (row, (label, action)) in [
                 ("[-] Zoom out", Action::ZoomOut),
                 ("[+] Zoom in", Action::ZoomIn),
@@ -1169,6 +1178,7 @@ impl App {
                 ("[+Ref] Add reference", Action::Reference),
                 (play, Action::PlayPause),
                 (wheel, Action::WheelMode),
+                (names, Action::ToggleNodeNames),
                 ("[Commands]", Action::Commands),
                 ("[Help]", Action::Help),
                 ("[N] Toggle Nodes", Action::ToggleNodes),

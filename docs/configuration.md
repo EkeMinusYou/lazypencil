@@ -6,6 +6,22 @@ font/runtime/agent fields and supplies design guides/styles. CLI, MCP, and TUI c
 the same document settings. Design instructions and project executables need separate
 explicit user grants. See [TUI controls](tui.md#viewing-and-global-shortcuts) for user-only keys.
 
+## Preview node names
+
+Set the initial visibility of root node names in the user `config.toml`:
+
+```toml
+[tui.preview]
+show_node_names = true
+```
+
+The default is `true`. Use `false` to start with names hidden. Toggle them during a
+session with `View · Toggle node names` in the command palette, `/toggle-node-names`,
+or `Node names` in the View controls menu. Session changes do not rewrite the file.
+Hidden names reserve no title padding when fitting the whole document. This setting
+only affects the terminal preview; exported images keep their document contents.
+Like other TUI preferences, it cannot be set in project `lazypencil.toml`.
+
 ## Image attachment budgets
 
 Attachment limits belong to the user `config.toml`; projects cannot override them. `config init --user` writes these defaults, and `config show --user` / `config schema --user` expose them:

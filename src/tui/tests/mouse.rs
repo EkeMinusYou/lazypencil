@@ -374,16 +374,26 @@ fn pointer_capture_keeps_the_default_workspace_appearance() {
 }
 
 #[test]
-fn view_menu_is_available_without_persistent_buttons() {
+fn view_menu_toggles_node_names_without_persistent_buttons() {
+    use crossterm::event::{MouseButton, MouseEventKind as M};
     runtime().block_on(async {
         let temp = TempDir::new().unwrap();
-        let (mut app, worker, _) = mouse_fixture(&temp).await;
+        let (mut app, worker, picker) = mouse_fixture(&temp).await;
         app.mouse.show_controls = false;
         app.modal = Some(command_modal(commands::Action::ViewControls));
         app.activate_modal(&worker).unwrap();
         paint_mouse(&mut app, 130, 34);
         assert!(app.pointer.more);
         assert!(app.pointer.area(mouse::Target::Button(mouse::Action::WheelMode)).is_some());
+        let names = app.pointer.area(mouse::Target::Button(mouse::Action::ToggleNodeNames)).unwrap();
+        assert!(app.preview_settings.show_node_names);
+        for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
+            app.mouse_event(mouse_input(kind, (names.x, names.y), KeyModifiers::NONE), &picker, &worker).await.unwrap();
+        }
+        assert!(!app.preview_settings.show_node_names);
+        app.modal = Some(command_modal(commands::Action::ToggleNodeNames));
+        app.activate_modal(&worker).unwrap();
+        assert!(app.preview_settings.show_node_names);
         app.pointer.more = false;
         app.mouse.enabled = false;
         app.modal = Some(command_modal(commands::Action::ViewControls));
