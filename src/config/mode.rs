@@ -207,7 +207,7 @@ mod tests {
     fn fixture() -> (TempDir, Store) {
         let temp = TempDir::new().unwrap();
         let store = Store::init(
-            &temp.path().join("design.pen"),
+            temp.path().join("design.pen"),
             Some(temp.path().join("data")),
         )
         .unwrap();

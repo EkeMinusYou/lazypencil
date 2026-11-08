@@ -205,17 +205,10 @@ fn native_kitty_resize_and_upload_use_terminal_background_for_padding() {
         decoder.feed(buffer[(0, 0)].symbol().as_bytes()).unwrap();
         assert_eq!(decoder.images.len(), 1);
         let pixels = decoder.images[0].rgba();
-        assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 255));
-        assert!(
-            pixels
-                .chunks_exact(4)
-                .any(|pixel| pixel == [17, 34, 51, 255])
-        );
-        assert!(
-            pixels
-                .chunks_exact(4)
-                .any(|pixel| pixel == [255, 255, 255, 255])
-        );
+        let (rgba, _) = pixels.as_chunks::<4>();
+        assert!(rgba.iter().all(|pixel| pixel[3] == 255));
+        assert!(rgba.contains(&[17, 34, 51, 255]));
+        assert!(rgba.contains(&[255, 255, 255, 255]));
         assert_eq!(&pixels[(8 - 1) * 4..8 * 4], &[17, 34, 51, 255]);
         assert_eq!(buffer[(7, 3)].bg, ratatui::style::Color::Reset);
     }
