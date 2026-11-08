@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3
+
+- Keep ordinary CLI/MCP inspection free of HTTP image requests. Explicitly acquire images with `inspect --acquire-images` or `get_document` with `acquire_images: true`; layout/rendering and image copy/import can also acquire them. Record URL declarations separately from acquired byte hashes and advertise network-capable MCP tools accurately.
+- Add `runtime.browser.image_origins` to restrict initial image requests and redirects to exact HTTP(S) origins. Project settings can only narrow a user allowlist; an empty list denies HTTP images.
+- Run MCP document work on independent native owners with bounded admission and two concurrent operations per connection. Move copy/import network preparation outside the save lock and revalidate inputs during publication.
+- Share a 256 MiB retained-payload accounting budget across MCP calculations, failure captures, listings and dynamic caches, and limit persistent runtimes to four document owners. Add `close_document` to cancel work and release resources; reap running and waiting owners promptly on connection EOF. The payload budget is not a process RSS limit.
+- Persist conversation transcripts off the terminal input path with a bounded queue, batched synchronization and durability barriers before prompt delivery, permission approval and successful completion. Preserve drafts and surface storage failures.
+- Batch independent property updates while preserving comments and unrelated source, and serialize only the requested layout page.
+- Add the preview node-name visibility setting and view-menu action.
+- Use one CI contract assessment for enforcement and reporting. Retain selection reasons and every job's expected/actual status, including intentional skips and failed gates, in Actions summaries and JSON artifacts.
+
 ## 0.2.2
 
 - Format mid-turn user messages consistently with ordinary prompts and separate streamed replies from the injected text.
