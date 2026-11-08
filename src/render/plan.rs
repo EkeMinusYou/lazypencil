@@ -81,7 +81,7 @@ impl RasterPlan {
             }
             // A preview already knows its integer viewport. Dividing it by a
             // fractional zoom and multiplying back in f32 can add one pixel to
-            // ceil(). Allocate the requested viewport without resampling pixels.
+            // ceil(). Crop to the requested viewport without resampling pixels.
             self.width = width;
             self.height = height;
         }

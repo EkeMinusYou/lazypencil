@@ -422,11 +422,13 @@ fn raster_impl_cached(
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
     }
+    let plan = RasterPlan::new(project, snapshot, options, cache.is_some())?;
+    let raster_size = [plan.width, plan.height];
     let RasterPlan {
         region,
         width,
         height,
-    } = RasterPlan::new(project, snapshot, options, cache.is_some())?.with_viewport(viewport)?;
+    } = plan.with_viewport(viewport)?;
     if let Some(runtime) = runtime.as_deref_mut() {
         runtime.prepare_pages(project, snapshot)?;
     }
@@ -438,8 +440,12 @@ fn raster_impl_cached(
         Some(cache) => std::borrow::Cow::Borrowed(cache.background_nodes.as_slice()),
         None => std::borrow::Cow::Owned(background_nodes(snapshot)),
     };
-    let (working_width, working_height) =
-        raster_dimensions(width + 2 * padding as u64, height + 2 * padding as u64)?;
+    // Preserve the original raster clip: shrinking it by one rounding pixel can
+    // change Skia's path antialiasing. Crop to the exact viewport after drawing.
+    let (working_width, working_height) = raster_dimensions(
+        raster_size[0].max(width) + 2 * padding as u64,
+        raster_size[1].max(height) + 2 * padding as u64,
+    )?;
     let viewport = Affine::translation(padding as f32, padding as f32)
         .then(Affine::scale(options.scale, options.scale))
         .then(Affine::translation(-region.x, -region.y));
