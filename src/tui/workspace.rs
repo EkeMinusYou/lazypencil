@@ -2,6 +2,8 @@
 use crate::config::keys::PanelLayout;
 use ratatui::layout::{Constraint, Layout, Rect};
 
+pub(super) const FOOTER_HEIGHT: u16 = 2;
+
 pub(super) struct Areas {
     pub header: Rect,
     pub panes: [Rect; 3],

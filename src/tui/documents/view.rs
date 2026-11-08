@@ -236,7 +236,7 @@ fn workspace_frame(
         ratatui::widgets::Block::default().style(theme::base()),
         frame.area(),
     );
-    let areas = workspace::areas(frame.area(), layout, false, false, 1);
+    let areas = workspace::areas(frame.area(), layout, false, false, workspace::FOOTER_HEIGHT);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -332,7 +332,10 @@ fn workspace_frame(
         ),
         prompt,
     );
-    frame.render_widget(Paragraph::new(hints(&[("Ctrl+C", " quit")])), areas.footer);
+    frame.render_widget(
+        Paragraph::new(vec![Line::default(), hints(&[("Ctrl+C", " quit")])]),
+        areas.footer,
+    );
 }
 
 fn hints(items: &[(&str, &str)]) -> Line<'static> {
@@ -587,7 +590,13 @@ mod tests {
         terminal
             .draw(|frame| empty_workspace(frame, &layout, None))
             .unwrap();
-        let areas = workspace::areas(Rect::new(0, 0, 130, 34), &layout, false, false, 1);
+        let areas = workspace::areas(
+            Rect::new(0, 0, 130, 34),
+            &layout,
+            false,
+            false,
+            workspace::FOOTER_HEIGHT,
+        );
         for pane in areas.panes {
             assert_eq!(terminal.backend().buffer()[(pane.x, pane.y)].symbol(), "╭");
             assert_eq!(
@@ -664,7 +673,13 @@ mod tests {
                 }
                 assert!(screen.lines().next().unwrap().contains("設定.pen"));
                 assert!(!screen.contains("nested/設定.pen"));
-                let areas = workspace::areas(buffer.area, &PanelLayout::default(), false, false, 1);
+                let areas = workspace::areas(
+                    buffer.area,
+                    &PanelLayout::default(),
+                    false,
+                    false,
+                    workspace::FOOTER_HEIGHT,
+                );
                 let preview = areas.panes[1];
                 for y in preview.y + 2..preview.bottom() - 1 {
                     for x in preview.x + 1..preview.right() - 1 {

@@ -90,7 +90,7 @@ impl App {
     }
 
     pub(super) fn footer_height(&self) -> u16 {
-        2
+        super::workspace::FOOTER_HEIGHT
     }
 
     fn hint(&self, action: Nav, description: &'static str) -> Option<Hint> {
