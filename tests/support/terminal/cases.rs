@@ -2444,12 +2444,14 @@ fn permission_modes(h: &mut Harness) -> Result {
     h.key(b"\r")?;
     h.visible("Apply permissions")?;
     h.key(b"\x1b")?;
+    h.hidden("Apply permissions")?;
     h.visible("workspace-write")?;
     h.resize(80, 24)?;
     command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
     h.save_screen("permission-mode-compact-screen.txt")?;
     h.key(b"\x1b")?;
+    h.hidden("Agent permissions")?;
     h.resize(130, 34)?;
     command(h, "Agent permissions")?;
     h.visible("Agent permissions")?;
