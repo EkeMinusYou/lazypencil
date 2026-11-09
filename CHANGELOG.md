@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4
+
+- Validate boolean document properties before editing or resolving variables, including nested paints, effects and component overrides. Reject invalid values without changing the document or history.
+- Bound pending MCP requests by count and input bytes across each document and connection, release reservations on cancellation, and keep separate capacity for closing documents under load.
+- Keep document metadata overviews bounded and expose complete paginated roots, diagnostics, dependencies, image attachments and font diagnostics with revision-bound cursors and exact totals.
+- Wait for persisted frontend completion state in terminal integration tests so asynchronous transcript persistence cannot produce premature assertions.
+
 ## 0.2.3
 
 - Keep ordinary CLI/MCP inspection free of HTTP image requests. Explicitly acquire images with `inspect --acquire-images` or `get_document` with `acquire_images: true`; layout/rendering and image copy/import can also acquire them. Record URL declarations separately from acquired byte hashes and advertise network-capable MCP tools accurately.

@@ -763,7 +763,7 @@ kasuari@0.4.13
 Declared license: MIT OR Apache-2.0
 Published package authors: Dylan Ede <dylanede@googlemail.com>; The Ratatui Developers
 
-lazypencil@0.2.3
+lazypencil@0.2.4
 Declared license: MIT
 
 libc@0.2.191
@@ -19719,7 +19719,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-lazypencil@0.2.3 :: workspace :: LICENSE
+lazypencil@0.2.4 :: workspace :: LICENSE
 SHA-256: ce8ad525282f9212bdc8d63a0c2f20100a567e77975fb6b368996602002c860d
 
 MIT License
