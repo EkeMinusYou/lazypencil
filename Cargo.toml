@@ -32,7 +32,7 @@ flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] 
 tar = { version = "=0.4.46", default-features = false }
 roxmltree = "=0.21.1"
 jsonc-parser = { version = "0.34.0", features = ["cst", "serde_json", "preserve_order"] }
-rmcp = { version = "3.6.0", default-features = false, features = ["server", "transport-io"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-io"] }
 rquickjs = { version = "=0.14.0", default-features = false, features = ["std"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }

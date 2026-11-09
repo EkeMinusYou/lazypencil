@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "b8be4f1decf63d50ce169f7723b0218eebedb205eda1bd29591e87ceb1cf3822",
+  "cargo_lock_sha256": "1fde2a737001b474dd3496e45697f8d6108aefd4a685b76ecbc3c170a7a3d44a",
   "format_version": 1,
   "license_references": [
     {
@@ -6803,7 +6803,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "0e360aa947c9c0053fdba47e0c705c6fb066079f0c7ec42ab103bf5eb4c32888",
+      "manifest_sha256": "e3449efd432906b8c94cdad39a8e1e1ad80b8c4ef5d609196e9e8a0d299c9f1f",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.2.4",
@@ -27356,7 +27356,7 @@
       "version": "0.17.14"
     },
     {
-      "archive_sha256": "ceb42e9e47443cd83a834dea57b5816d35481417bae72ade5dc5615c59122e26",
+      "archive_sha256": "d24a7e92f4bcaa36b97fa93c4fa7ca8f3e669eced949345b3462dba333c7f909",
       "attribution_comments": [],
       "authors": [],
       "files": [
@@ -27369,17 +27369,17 @@
       ],
       "license": "Apache-2.0",
       "license_file": null,
-      "manifest_sha256": "554d766de8b22924c4f004a69856a7d9f697207c9945539e0747ab7da4422073",
+      "manifest_sha256": "93b3a36d62507f952882210d62a31108fe2a42dae4fada7a8616afad295b8495",
       "name": "rmcp",
       "repository": "https://github.com/modelcontextprotocol/rust-sdk/",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "74d789515fdee63ef46a1635b801364aad6695e4"
+          "sha1": "5596a8a0bba2a1ec5519cc855cdadf23e4dcecdc"
         },
         "path_in_vcs": "crates/rmcp"
       },
-      "version": "3.6.0"
+      "version": "3.9.0"
     },
     {
       "archive_sha256": "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb",
