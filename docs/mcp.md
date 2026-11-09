@@ -68,12 +68,31 @@ settings, captured source bytes, and discovered files remain dependencies.
 `get_document.configuration` exposes them. Project design and executable trust
 remain explicit local user actions; opening a document does not grant trust.
 
-`get_document` defaults to a compact response: document identity, revisions, roots,
-dependencies, diagnostics, guidance/trust metadata, primary capability flags and
-configuration paths/font status. Pass `include_configuration: true` for the complete
-effective configuration, origins and user settings, or `include_capabilities: true`
-for the detailed feature catalogue. These flags do not change dependency tracking,
-trust, image acquisition or execution. CLI inspection retains its full metadata.
+`get_document` defaults to a bounded overview: document identity, revisions, previews
+of roots/dependencies/diagnostics, guidance/trust metadata, primary capability flags
+and configuration paths/font status. Each collection preview contains at most 100
+entries and 64 KiB of serialized data. `collections` reports exact `total`, `offset`,
+`returned` and `truncated` values; an empty preview can still have entries too large
+for the preview budget. Oversized optional object fields appear in `omitted_fields`
+instead of silently losing their values.
+
+Read full entries with `get_document` and `collection`: `roots`, `diagnostics`,
+`dependencies`, `runtime_dependencies`, `asset_diagnostics`, `attachments` (under
+`attachments.images`) or `font_diagnostics` (under `configuration.font_diagnostics`).
+Only collections present in the overview's `collections` are available for paging.
+Set `limit` to 1–500 (default 100), then repeat the same collection with the returned
+`next_cursor` as `cursor`. The selected array contains that page; the other arrays
+remain overview previews. Pages have a 3 MiB collection byte budget and can end
+before `limit`. Entries are never shortened. A single entry exceeding that budget
+requires CLI inspection. Cursors belong to their document/connection, collection and
+document/dependency revisions; changed inputs require restarting without a cursor.
+
+Pass `include_configuration: true` for the effective configuration, origins and user
+settings, or `include_capabilities: true` for the detailed feature catalogue.
+Collection previews remain bounded with either flag. A full configuration that
+exceeds the overall response budget requires CLI inspection. These flags do not
+change dependency tracking, trust, image acquisition or execution. CLI inspection
+retains its full metadata.
 
 Unrecognized node properties produce `UNKNOWN_PROPERTY` warnings in edit results,
 document metadata, and structural/layout validation. Warnings suggest a nearby

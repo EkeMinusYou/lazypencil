@@ -15,6 +15,9 @@ mod fixture_support;
 #[path = "../src/mcp/output.rs"]
 mod output_contract;
 
+#[path = "support/mcp_metadata.rs"]
+mod metadata_queries;
+
 #[cfg(unix)]
 #[path = "support/page_wait_reference.rs"]
 mod http_image_reference;

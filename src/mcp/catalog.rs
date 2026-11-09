@@ -149,7 +149,7 @@ fn tools() -> Vec<Tool> {
         ),
         tool::<DocumentArgs>(
             ToolKind::GetDocument,
-            "Read current revisions, roots, dependencies, diagnostics, primary capabilities and a compact configuration summary before editing. Set include_configuration:true for full settings/origins or include_capabilities:true for the complete feature catalogue. HTTP image bytes are deferred; acquire_images:true explicitly fetches them under the network policy, including external/local services. Layout/rendering also acquire images.",
+            "Read current revisions and a bounded overview before editing. collections reports exact totals and truncated roots, dependencies, diagnostics and attachment/font lists. Read their complete entries with collection, limit and next_cursor; pass collection again with cursor. Omitted oversized overview fields appear in omitted_fields. Set include_configuration:true for full settings/origins or include_capabilities:true for the feature catalogue. HTTP image bytes are deferred; acquire_images:true explicitly fetches them under the network policy, including external/local services. Layout/rendering also acquire images.",
         ),
         tool::<service::ReadNodesRequest>(
             ToolKind::ReadNodes,

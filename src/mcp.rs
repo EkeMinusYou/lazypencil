@@ -21,6 +21,7 @@ use tokio::sync::{mpsc, oneshot};
 
 mod actor;
 mod catalog;
+mod metadata;
 mod output;
 mod resources;
 pub(crate) mod timing;
@@ -283,6 +284,14 @@ struct DocumentArgs {
     /// Include the complete feature catalogue; false returns the primary capabilities.
     #[serde(default)]
     include_capabilities: bool,
+    /// Read a complete metadata collection in bounded pages; omit for an overview.
+    #[serde(default)]
+    collection: Option<metadata::Collection>,
+    #[serde(default = "hundred")]
+    #[schemars(range(min = 1, max = 500))]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -576,6 +585,7 @@ impl DocumentWorker {
             }
             ToolKind::GetDocument => {
                 let args: DocumentArgs = parse(arguments)?;
+                metadata::validate(&args)?;
                 let mut value = service::document_metadata_with_images(
                     &self.store,
                     &self.fonts,
@@ -615,7 +625,7 @@ impl DocumentWorker {
                 if let Some(attachments) = &self.attachments {
                     value["attachments"] = attachments.metadata(&self.store)?;
                 }
-                value
+                metadata::prepare(value, &args, cancel)?
             }
             ToolKind::ReadNodes => {
                 let args: service::ReadNodesRequest = parse(arguments)?;

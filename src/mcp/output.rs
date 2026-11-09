@@ -39,6 +39,15 @@ struct Diagnostic {
     details: Option<Value>,
 }
 
+#[allow(dead_code)]
+#[derive(Deserialize, JsonSchema)]
+struct MetadataCollection {
+    total: usize,
+    offset: usize,
+    returned: usize,
+    truncated: bool,
+}
+
 outputs! {
     Handle => ["open_document", "create_document"] {
         document_id: String,
@@ -70,6 +79,11 @@ outputs! {
         writable: bool,
         roots: Vec<Object>,
         diagnostics: Vec<Diagnostic>,
+        collections: BTreeMap<String, MetadataCollection>,
+        collection: Option<String>,
+        total_matches: Option<usize>,
+        next_cursor: Option<String>,
+        omitted_fields: Option<Vec<String>>,
         capabilities: Object,
         /// Compact by default; include_configuration returns full settings and origins.
         configuration: Option<Object>,
