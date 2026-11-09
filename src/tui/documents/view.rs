@@ -1,12 +1,12 @@
 //! The document modal shares the workspace's panels, palette and selection style.
-use super::super::{centered, clean, composer, panel, theme, workspace};
+use super::super::{centered, clean, composer, modal, panel, theme, workspace};
 use crate::{config::keys::PanelLayout, documents::Listing};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{List, ListItem, ListState, Paragraph, Wrap},
 };
 use std::path::{Path, PathBuf};
 
@@ -45,23 +45,18 @@ impl View<'_> {
         empty_workspace(frame, self.layout, self.agent);
         let area = frame.area();
         let popup = popup(area);
-        frame.render_widget(Clear, popup);
-        let title = theme::title("▤", "Open a .pen file", theme::colors().nodes, true);
-        let title_width = title.width();
-        let mut block = panel(title, true).padding(Padding::horizontal(1));
-        let count = Line::styled(
-            format!(
-                " {} / {} files ",
+        let shell = modal::Shell::draw(frame, popup, "Open a .pen file", 2);
+        let inner = shell.body;
+        frame.render_widget(
+            Paragraph::new(format!(
+                "{} / {} files",
                 self.paths.len(),
                 self.listing.documents.len()
-            ),
-            Style::default().fg(theme::colors().secondary),
+            ))
+            .style(Style::default().fg(theme::colors().secondary))
+            .right_aligned(),
+            shell.header,
         );
-        if title_width + count.width() + 2 <= usize::from(popup.width) {
-            block = block.title_top(count.right_aligned());
-        }
-        let inner = block.inner(popup);
-        frame.render_widget(block, popup);
         if inner.height < 6 || inner.width < 12 {
             frame.render_widget(
                 Paragraph::new("Resize the terminal to choose a document. Ctrl+C exits.")
@@ -77,7 +72,6 @@ impl View<'_> {
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(if self.notice.is_empty() { 1 } else { 3 }),
-            Constraint::Length(2),
         ])
         .split(inner);
         frame.render_widget(
@@ -175,25 +169,16 @@ impl View<'_> {
                 hints(&[("↑/↓", " select"), ("Enter", " open")]),
                 hints(&[("Ctrl+L", " path / folder"), ("Esc", " clear")]),
             ]),
-            sections[5],
+            shell.footer,
         );
+        let footer = Rect::new(shell.footer.x, shell.footer.y, shell.footer.width, 1);
+        modal::action(frame, footer, "[Enter Open]", pointer);
         pointer.button(
             frame,
             Rect::new(
-                popup.right().saturating_sub(9),
-                popup.bottom().saturating_sub(2),
-                8,
-                1,
-            ),
-            "[Open]",
-            super::super::mouse::Action::Accept,
-        );
-        pointer.button(
-            frame,
-            Rect::new(
-                popup.right().saturating_sub(9),
-                popup.bottom().saturating_sub(3),
-                8,
+                shell.footer.right().saturating_sub(6),
+                shell.footer.y + 1,
+                6,
                 1,
             ),
             "[Path]",
@@ -211,6 +196,9 @@ impl View<'_> {
 }
 
 fn popup(area: Rect) -> Rect {
+    if area.height <= 20 {
+        return modal::area(area);
+    }
     centered(
         area,
         area.width.saturating_sub(6).min(94),
@@ -489,7 +477,7 @@ mod tests {
         }
         let popup = centered(buffer.area, 94, 22);
         assert_eq!(buffer[(popup.x, popup.y)].symbol(), "╭");
-        assert_eq!(buffer[(popup.x, popup.y)].fg, theme::colors().focus);
+        assert_eq!(buffer[(popup.x, popup.y)].fg, theme::colors().frame);
         let selected = buffer
             .content
             .iter()

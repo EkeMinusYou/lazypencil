@@ -234,39 +234,97 @@ impl Input {
         self.error = None;
     }
 
-    pub fn draw(&mut self, frame: &mut Frame, area: Rect, editing: bool) {
+    pub fn draw(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        editing: bool,
+        pointer: &mut mouse::Pointer,
+    ) {
         let command = self.action.command();
-        let block = dialog(command.label);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let details = Paragraph::new(format!("{}\n{}", command.description, command.usage()))
-            .wrap(Wrap { trim: false });
-        let details_height = details
-            .line_count(inner.width)
-            .min(usize::from(inner.height.saturating_sub(4))) as u16;
-        let message = self
-            .error
-            .as_deref()
-            .unwrap_or("Enter run · Alt/Shift+Enter newline · Esc returns to commands");
-        let footer = Paragraph::new(message)
-            .wrap(Wrap { trim: false })
-            .style(Style::default().fg(if self.error.is_some() {
-                theme::colors().running
-            } else {
-                theme::colors().secondary
-            }));
-        let footer_height = footer
-            .line_count(inner.width)
-            .min(usize::from(inner.height.saturating_sub(details_height + 2)))
-            as u16;
-        let regions = Layout::vertical([
-            Constraint::Length(details_height),
-            Constraint::Min(2),
-            Constraint::Length(footer_height),
+        let shell = modal::Shell::draw(frame, area, command.label, 2);
+        shell.close(frame, pointer);
+        let colors = theme::colors();
+        let body = shell.body;
+        let wide = body.width >= 96 && body.height >= 16;
+        let (input, details_area) = if wide {
+            let columns = Layout::horizontal([
+                Constraint::Fill(3),
+                Constraint::Length(3),
+                Constraint::Fill(2),
+            ])
+            .split(body);
+            (columns[0], modal::detail_surface(frame, columns[2]))
+        } else {
+            let rows = Layout::vertical([
+                Constraint::Length(if body.height >= 12 { 6 } else { 3 }),
+                Constraint::Length(1),
+                Constraint::Min(2),
+            ])
+            .split(body);
+            (rows[2], rows[0])
+        };
+        let details = Paragraph::new(vec![
+            Line::styled(
+                command.category.to_uppercase(),
+                Style::default()
+                    .fg(colors.preview)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::styled(command.description, Style::default().fg(colors.secondary)),
+            Line::default(),
+            Line::styled(
+                "SLASH COMMAND",
+                Style::default()
+                    .fg(colors.secondary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Line::styled(command.usage(), Style::default().fg(colors.preview)),
         ])
-        .split(inner);
-        frame.render_widget(details, regions[0]);
-        self.editor.set_block(Block::bordered().title("Arguments"));
+        .wrap(Wrap { trim: false });
+        if !wide && body.height < 12 {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::styled(command.usage(), Style::default().fg(colors.preview)),
+                    Line::styled(command.description, Style::default().fg(colors.secondary)),
+                ])
+                .wrap(Wrap { trim: false }),
+                details_area,
+            );
+        } else {
+            frame.render_widget(details, details_area);
+        }
+        let regions = Layout::vertical([
+            Constraint::Length(u16::from(input.height >= 6)),
+            Constraint::Min(3),
+            Constraint::Length(if self.error.is_some() {
+                2.min(input.height.saturating_sub(3))
+            } else {
+                0
+            }),
+        ])
+        .spacing(u16::from(input.height >= 8))
+        .split(input);
+        frame.render_widget(
+            Paragraph::new("ARGUMENTS").style(
+                Style::default()
+                    .fg(colors.secondary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            regions[0],
+        );
+        self.editor.set_style(
+            Style::default()
+                .fg(colors.text)
+                .bg(colors.prompt_background),
+        );
+        self.editor.set_block(
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(colors.frame))
+                .padding(ratatui::widgets::Padding::horizontal(1))
+                .style(Style::default().bg(colors.prompt_background)),
+        );
         self.editor.set_cursor_style(if editing {
             Style::default().add_modifier(Modifier::HIDDEN)
         } else {
@@ -286,7 +344,28 @@ impl Input {
         if let Some(cursor) = cursor {
             frame.set_cursor_position(cursor);
         }
-        frame.render_widget(footer, regions[2]);
+        if let Some(error) = &self.error {
+            frame.render_widget(
+                Paragraph::new(error.as_str())
+                    .style(Style::default().fg(colors.error))
+                    .wrap(Wrap { trim: false }),
+                regions[2],
+            );
+        }
+        let hints = Rect::new(
+            shell.footer.x,
+            shell.footer.y,
+            shell.footer.width.saturating_sub(13),
+            shell.footer.height,
+        );
+        frame.render_widget(
+            Paragraph::new(vec![
+                modal::hints(&[("Esc", "Back to commands")]),
+                modal::hints(&[("Alt/Shift+Enter", "Newline")]),
+            ]),
+            hints,
+        );
+        modal::action(frame, shell.footer, "[Enter Run]", pointer);
     }
 }
 

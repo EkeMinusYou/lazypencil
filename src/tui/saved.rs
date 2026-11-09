@@ -534,15 +534,12 @@ pub fn draw(
         widgets::{List, ListItem, Paragraph, Wrap},
     };
     if let Some(review) = &page.deletion_review {
-        let block = super::dialog("Delete local conversation?");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let regions = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .split(inner);
+        let shell = super::modal::Shell::draw(frame, area, "Delete local conversation?", 2);
+        shell.close(frame, pointer);
+        let inner = shell.body;
+        let regions = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
+            .spacing(1)
+            .split(inner);
         frame.render_widget(
             Paragraph::new(review["session"].as_str().unwrap_or(""))
                 .style(Style::default().fg(super::theme::colors().secondary)),
@@ -560,18 +557,21 @@ pub fn draw(
         if let Some(notice) = &page.notice {
             text.push_str(&format!("\n\n{}", super::clean(notice)));
         }
+        let details = super::modal::detail_surface(frame, regions[1]);
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
         page.review_maximum_scroll = paragraph
-            .line_count(regions[1].width)
-            .saturating_sub(regions[1].height as usize)
+            .line_count(details.width)
+            .saturating_sub(details.height as usize)
             .min(u16::MAX as usize) as u16;
         page.review_scroll = page.review_scroll.min(page.review_maximum_scroll);
-        frame.render_widget(paragraph.scroll((page.review_scroll, 0)), regions[1]);
-        pointer.add(regions[1], super::mouse::Target::SavedText);
+        frame.render_widget(paragraph.scroll((page.review_scroll, 0)), details);
+        pointer.add(details, super::mouse::Target::SavedText);
         frame.render_widget(
-            Paragraph::new("y confirms · n/Esc returns\n↑/↓ PgUp/PgDn · Home/End scroll")
-                .style(Style::default().fg(super::theme::colors().secondary)),
-            regions[2],
+            Paragraph::new(vec![
+                super::modal::hints(&[("y", "Delete permanently"), ("n/Esc", "Back")]),
+                super::modal::hints(&[("PgUp/PgDn", "Scroll review")]),
+            ]),
+            shell.footer,
         );
         return;
     }
@@ -600,9 +600,9 @@ pub fn draw(
             ),
         ),
     };
-    let block = super::dialog(title);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let shell = super::modal::Shell::draw(frame, area, &title, 3);
+    shell.close(frame, pointer);
+    let inner = shell.body;
     let raw_records = page.data["raw_records"].as_u64().unwrap_or(0);
     let mut notice = if page.deletion_completed {
         format!("{context}\nLocal deletion committed · browsing sends no requests")
@@ -620,12 +620,9 @@ pub fn draw(
     let height = notice
         .line_count(inner.width)
         .min(inner.height.saturating_sub(5) as usize) as u16;
-    let regions = Layout::vertical([
-        Constraint::Length(height),
-        Constraint::Min(1),
-        Constraint::Length(3),
-    ])
-    .split(inner);
+    let regions = Layout::vertical([Constraint::Length(height), Constraint::Min(1)])
+        .spacing(1)
+        .split(inner);
     frame.render_widget(notice, regions[0]);
     if matches!(page.location, Location::Text { .. }) {
         let mut text: Cow<'_, str> = Cow::Borrowed(page.data["text"].as_str().unwrap_or(""));
@@ -649,17 +646,25 @@ pub fn draw(
             }
             text = Cow::Owned(visible);
         }
+        let details = super::modal::detail_surface(frame, regions[1]);
         // Raw records can contain terminal controls; decode only into cells.
         let clean = super::clean(&text);
         let paragraph = Paragraph::new(clean).wrap(Wrap { trim: false });
         page.maximum_scroll = paragraph
-            .line_count(regions[1].width)
-            .saturating_sub(regions[1].height as usize)
+            .line_count(details.width)
+            .saturating_sub(details.height as usize)
             .min(u16::MAX as usize) as u16;
         page.scroll = page.scroll.min(page.maximum_scroll);
-        frame.render_widget(paragraph.scroll((page.scroll, 0)), regions[1]);
-        pointer.add(regions[1], super::mouse::Target::SavedText);
-        frame.render_widget(Paragraph::new("↑/↓ PgUp/PgDn scroll · Home/End edges\nn/p pages · v raw/formatted · u use · N new · d delete…\nBackspace parent · s sessions · r refresh · Esc closes").style(Style::default().fg(super::theme::colors().secondary)).wrap(Wrap { trim: false }), regions[2]);
+        frame.render_widget(paragraph.scroll((page.scroll, 0)), details);
+        pointer.add(details, super::mouse::Target::SavedText);
+        frame.render_widget(
+            Paragraph::new(vec![
+                super::modal::hints(&[("↑ ↓", "Scroll"), ("PgUp/PgDn", "Page")]),
+                super::modal::hints(&[("n/p", "Pages"), ("v", "Raw/formatted"), ("u", "Use")]),
+                super::modal::hints(&[("Backspace", "Back"), ("Esc", "Close"), ("r", "Refresh")]),
+            ]),
+            shell.footer,
+        );
     } else {
         let entries = page.entries();
         let items = entries
@@ -692,24 +697,58 @@ pub fn draw(
                 frame,
                 List::new(items)
                     .highlight_style(super::theme::modal_selected())
-                    .highlight_symbol("› "),
+                    .highlight_symbol("▏› "),
                 regions[1],
                 page.selected,
                 super::mouse::ListTarget::Saved,
             );
         }
-        frame.render_widget(Paragraph::new("↑/↓ select · Enter opens · u use · N new · d delete…\nn/p pages · Home first · c current · r refresh\nBackspace parent · Esc/q closes · s sessions").style(Style::default().fg(super::theme::colors().secondary)).wrap(Wrap { trim: false }), regions[2]);
-        pointer.button(
-            frame,
-            ratatui::layout::Rect::new(
-                area.right().saturating_sub(9),
-                area.bottom().saturating_sub(1),
-                8,
-                1,
-            ),
-            "[Open]",
-            super::mouse::Action::Accept,
+        let footer_lines = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(shell.footer);
+        frame.render_widget(
+            Paragraph::new(super::modal::hints(&[
+                ("↑ ↓", "Select"),
+                ("u", "Use"),
+                ("N", "New"),
+                ("d", "Delete…"),
+            ])),
+            footer_lines[0],
         );
+        frame.render_widget(
+            Paragraph::new(super::modal::hints(&[
+                ("n/p", "Pages"),
+                ("r", "Refresh"),
+                ("s", "Sessions"),
+                ("c", "Current"),
+            ])),
+            footer_lines[1],
+        );
+        let back = ratatui::layout::Rect::new(
+            footer_lines[2].x,
+            footer_lines[2].y,
+            footer_lines[2].width.saturating_sub(14),
+            footer_lines[2].height,
+        );
+        frame.render_widget(
+            Paragraph::new(super::modal::hints(&[
+                ("Backspace", "Back"),
+                ("Esc", "Close"),
+            ])),
+            back,
+        );
+        if !page.entries().is_empty() {
+            let footer = ratatui::layout::Rect::new(
+                shell.footer.x,
+                shell.footer.bottom().saturating_sub(1),
+                shell.footer.width,
+                1.min(shell.footer.height),
+            );
+            super::modal::action(frame, footer, "[Enter Open]", pointer);
+        }
     }
 }
 

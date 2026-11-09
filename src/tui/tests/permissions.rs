@@ -109,6 +109,7 @@ fn permission_failure_pauses_queue_and_keeps_draft_and_reported_mode() {
         app.permission_click(permissions::Hit::Continue).unwrap();
         permission_changed(&mut app).await;
         assert!(app.conversation.modes().error.is_some());
+        modal_review_layouts(&mut app, "permission-error", "Permissions could not be changed");
         assert_eq!(
             app.conversation.modes().current.as_deref(),
             Some("read-only")
@@ -132,6 +133,7 @@ fn permission_project_save_requires_review_and_trust_and_survives_first_prompt()
         app.permission_click(permissions::Hit::Scope(1)).unwrap();
         app.permission_click(permissions::Hit::Continue).unwrap();
         crate::tui::test_artifacts::snapshot(&mut app, "permission-project-review");
+        modal_review_layouts(&mut app, "permission-defaults", "Review permission defaults");
         assert!(!temp.path().join("lazypencil.toml").exists());
         assert!(!temp.path().join("received-mode-changes.jsonl").exists());
         app.permission_click(permissions::Hit::Continue).unwrap();
@@ -201,10 +203,12 @@ fn permission_pending_change_keeps_tool_approval_and_can_be_cancelled() {
         app.permission_click(permissions::Hit::Continue).unwrap();
         app.permission_click(permissions::Hit::Continue).unwrap();
         crate::tui::test_artifacts::snapshot(&mut app, "permission-busy-confirm");
+        modal_review_layouts(&mut app, "permission-busy", "Change permissions after this turn");
         assert!(app.conversation.modes().pending().is_none());
         app.permission_click(permissions::Hit::Decision(true))
             .unwrap();
         assert_eq!(app.conversation.modes().pending(), Some("workspace-write"));
+        modal_review_layouts(&mut app, "permission-waiting", "Permission change pending");
         assert!(!temp.path().join("received-mode-changes.jsonl").exists());
         app.permission_click(permissions::Hit::Close).unwrap();
         assert_eq!(app.permissions.front().unwrap().id, permission_id);

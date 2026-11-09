@@ -124,8 +124,10 @@ fn panel_toggles_use_custom_bindings_and_palette_but_respect_dialogs() {
             })
             .unwrap();
         let help_buffer = help_terminal.backend().buffer();
-        assert_eq!(help_buffer[(15, 4)].fg, theme::colors().focus);
-        assert_eq!(help_buffer[(16, 5)].bg, theme::colors().canvas);
+        let popup = modal::area(help_buffer.area);
+        assert_eq!(help_buffer[(popup.x, popup.y)].fg, theme::colors().frame);
+        assert_eq!(help_buffer[(popup.x + 2, popup.y + 1)].fg, theme::colors().text);
+        assert_eq!(help_buffer[(popup.x + 2, popup.y + 1)].symbol(), "H");
         crate::tui::test_artifacts::artifact(help_buffer, "help");
         press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT, &worker).await;
         assert!(!app.agent_collapsed);

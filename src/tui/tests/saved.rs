@@ -54,6 +54,7 @@ fn saved_log_deletion_requires_review_rejects_stale_state_and_keeps_the_current_
         select(&mut app);
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
         document_result(&mut app, &worker).await;
+        modal_review_layouts(&mut app, "delete-conversation", "Delete local conversation?");
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
         assert!(directory.exists());
         press(&mut app, KeyCode::Char('d'), KeyModifiers::NONE, &worker).await;
@@ -346,7 +347,7 @@ fn checkpoint_palette_reviews_before_restoring_and_keeps_draft_and_images() {
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
         let buffer = crate::tui::test_artifacts::snapshot(&mut app, "checkpoints");
         assert!(buffer.content.iter().any(|cell| {
-            cell.symbol() == "›" && cell.fg == theme::colors().canvas && cell.bg == theme::colors().preview
+            cell.symbol() == "›" && cell.fg == theme::colors().preview && cell.bg == theme::colors().selected_background
         }));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(matches!(app.modal, Some(checkpoints::Modal::Confirm(_))));

@@ -353,12 +353,7 @@ impl App {
         };
         self.pointer.overlay();
         let colors = theme::colors();
-        // Match the palette's dimmed workspace while retaining native TUI controls.
-        for cell in frame.buffer_mut().content.iter_mut() {
-            cell.set_fg(colors.muted);
-        }
-        let popup = centered(frame.area(), 126, 32);
-        frame.render_widget(Clear, popup);
+        let popup = modal::area(frame.area());
         let title = match ui.step {
             Step::Modes => "Agent permissions",
             Step::Scope => "Apply permissions",
@@ -368,16 +363,9 @@ impl App {
             Step::Waiting => "Permission change pending",
             Step::Error => "Permissions could not be changed",
         };
-        let block = dialog(title);
-        let inner = block.inner(popup);
-        frame.render_widget(block, popup);
-        let parts = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Min(3),
-            Constraint::Length(2),
-            Constraint::Length(1),
-        ])
-        .split(inner);
+        let shell = modal::Shell::draw(frame, popup, title, 3);
+        let inner = shell.body;
+        let parts = Layout::vertical([Constraint::Length(2), Constraint::Min(3)]).split(inner);
         let modes = self.conversation.modes();
         let current = modes.current.as_deref().unwrap_or("not confirmed");
         frame.render_widget(
@@ -398,8 +386,10 @@ impl App {
         };
         let mode = selected.map(|m| m.id.as_str()).unwrap_or("not available");
         let body = parts[1];
+        let footer_parts =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(shell.footer);
         let mut details = String::new();
-        let mut details_area = body;
+        let details_area;
         if matches!(ui.step, Step::Modes | Step::Scope) {
             let count = if ui.step == Step::Modes {
                 modes.available.len()
@@ -423,7 +413,7 @@ impl App {
                 .split(body);
                 (split[0], split[1])
             };
-            details_area = detail;
+            details_area = modal::detail_surface(frame, detail);
             let choices: Vec<ListItem> = if ui.step == Step::Modes {
                 modes
                     .available
@@ -461,7 +451,7 @@ impl App {
             frame.render_stateful_widget(
                 List::new(choices)
                     .highlight_style(theme::modal_selected())
-                    .highlight_symbol("› "),
+                    .highlight_symbol("▏› "),
                 list,
                 &mut ui.state,
             );
@@ -562,6 +552,7 @@ impl App {
                 );
             }
         } else {
+            details_area = modal::detail_surface(frame, body);
             match ui.step {
                 Step::Review => {
                     if let Some(review) = &ui.reviewed {
@@ -648,23 +639,23 @@ impl App {
                 Paragraph::new(error.as_str())
                     .style(Style::default().fg(colors.running))
                     .wrap(Wrap { trim: false }),
-                parts[2],
+                footer_parts[0],
             );
         } else {
-            frame.render_widget(
-                Paragraph::new(
-                    if matches!(ui.step, Step::Full | Step::Busy | Step::Error) {
-                        "Tab Choose action · Enter Confirm · Esc Close"
-                    } else {
-                        "↑ ↓ Choose · PgUp/PgDn Details · Backspace Back · Esc Close"
-                    },
-                )
-                .style(Style::default().fg(colors.secondary))
-                .wrap(Wrap { trim: false }),
-                parts[2],
-            );
+            let hints = if matches!(ui.step, Step::Full | Step::Busy | Step::Error) {
+                vec![
+                    modal::hints(&[("Tab", "Choose action"), ("Enter", "Confirm")]),
+                    modal::hints(&[("Esc", "Close"), ("PgUp/PgDn", "Details")]),
+                ]
+            } else {
+                vec![
+                    modal::hints(&[("↑ ↓", "Choose"), ("PgUp/PgDn", "Details")]),
+                    modal::hints(&[("Backspace", "Back"), ("Esc", "Close")]),
+                ]
+            };
+            frame.render_widget(Paragraph::new(hints), footer_parts[0]);
         }
-        let footer = parts[3];
+        let footer = footer_parts[1];
         let label = match ui.step {
             Step::Full | Step::Busy if ui.focus == 0 => "[Keep current]",
             Step::Full => "[Enable full access]",
@@ -685,14 +676,21 @@ impl App {
             Step::Error => "[Choose mode]",
             _ => "[Continue]",
         };
+        let width = Line::raw(match ui.step {
+            Step::Full => "[Enable full access]",
+            Step::Busy => "[Apply after turn]",
+            Step::Error => "[Retry]",
+            _ => label,
+        })
+        .width() as u16;
         let button = Rect::new(
-            footer.right().saturating_sub(21),
+            footer.right().saturating_sub(width.min(footer.width)),
             footer.y,
-            21.min(footer.width),
-            1,
+            width.min(footer.width),
+            1.min(footer.height),
         );
         if !matches!(ui.step, Step::Full | Step::Busy | Step::Error) {
-            frame.render_widget(Paragraph::new(label).style(theme::modal_selected()), button);
+            frame.render_widget(Paragraph::new(label).style(modal::action_style()), button);
         }
         if !matches!(ui.step, Step::Full | Step::Busy | Step::Error)
             && (ui.step != Step::Waiting || !modes.changing())
@@ -744,9 +742,9 @@ impl App {
             self.pointer
                 .add(button, mouse::Target::AgentPermissions(Hit::Decision(true)));
         }
-        let close = Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1);
+        let close = shell.close;
         frame.render_widget(
-            Paragraph::new("[Close]").style(Style::default().fg(colors.preview)),
+            Paragraph::new("[Close]").style(Style::default().fg(colors.key)),
             close,
         );
         self.pointer

@@ -3,7 +3,7 @@ use super::*;
 use ratatui::{layout::Margin, style::Stylize};
 
 pub(in crate::tui) fn area(workspace: Rect) -> Rect {
-    centered(workspace, 120, 35)
+    modal::area(workspace)
 }
 
 /// Return command indices and their label rows; category headings are not selectable.
@@ -37,24 +37,6 @@ pub(in crate::tui) fn maximum_start(height: u16) -> usize {
                 .is_some_and(|row| row.0 + 1 == COMMANDS.len())
         })
         .unwrap_or(COMMANDS.len() - 1)
-}
-
-fn dim(color: Color, background: Color) -> Color {
-    match (color, background) {
-        (Color::Rgb(r, g, b), Color::Rgb(br, bg, bb)) => {
-            let mix = |a, b| ((u16::from(a) * 2 + u16::from(b) * 3) / 5) as u8;
-            Color::Rgb(mix(r, br), mix(g, bg), mix(b, bb))
-        }
-        _ => color,
-    }
-}
-
-fn rule(frame: &mut Frame, area: Rect) {
-    frame.render_widget(
-        Paragraph::new("─".repeat(usize::from(area.width)))
-            .style(Style::default().fg(theme::colors().frame)),
-        area,
-    );
 }
 
 fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<'static> {
@@ -144,39 +126,11 @@ impl App {
         let command = &COMMANDS[selected];
         let unavailable = self.command_unavailable(command);
         let colors = theme::colors();
-        // Dim the workspace without changing its focus, selection or theme.
-        for cell in &mut frame.buffer_mut().content {
-            // Kitty placeholder foregrounds encode image IDs, not text colors.
-            if !cell.symbol().contains('\u{10eeee}') {
-                cell.fg = dim(cell.fg, colors.canvas);
-            }
-            cell.bg = dim(cell.bg, colors.canvas);
-        }
         self.pointer.overlay();
         let popup = area(frame.area());
-        frame.render_widget(Clear, popup);
-        let block = Block::bordered()
-            .border_set(ratatui::symbols::border::ROUNDED)
-            .border_style(Style::default().fg(colors.frame))
-            .style(theme::base());
-        let inner = block.inner(popup);
-        frame.render_widget(block, popup);
-        let sections = Layout::vertical([
-            Constraint::Length(if popup.height >= 20 { 2 } else { 1 }),
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-        let header = sections[0].inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        });
-        frame.render_widget(
-            Paragraph::new("Commands").style(Style::default().fg(colors.text).bold()),
-            header,
-        );
+        let shell = modal::Shell::draw(frame, popup, "Commands", 1);
+        shell.close(frame, &mut self.pointer);
+        let header = shell.header;
         let categories = COMMANDS
             .iter()
             .enumerate()
@@ -192,21 +146,7 @@ impl App {
                 Rect::new(header.x + 18, header.y, header.width - 30, 1),
             );
         }
-        let close = Rect::new(header.right().saturating_sub(7), header.y, 7, 1);
-        frame.render_widget(
-            Paragraph::new("[Close]").style(Style::default().fg(colors.key)),
-            close,
-        );
-        if self.pointer.controls {
-            self.pointer
-                .add(close, mouse::Target::Button(mouse::Action::Close));
-        }
-        rule(frame, sections[1]);
-        rule(frame, sections[3]);
-        let body = sections[2].inner(Margin {
-            horizontal: 1,
-            vertical: u16::from(popup.height >= 24),
-        });
+        let body = shell.body;
         let wide = body.width >= 96 && body.height >= 20;
         let (list, detail) = if wide {
             let columns = Layout::horizontal([
@@ -306,10 +246,7 @@ impl App {
         } else {
             format!("{}/{}", selected + 1, COMMANDS.len())
         };
-        let footer = sections[4].inner(Margin {
-            horizontal: 1,
-            vertical: 0,
-        });
+        let footer = shell.footer;
         let parts = Layout::horizontal([
             Constraint::Min(18),
             Constraint::Length(Line::raw(&range).width() as u16 + 2),

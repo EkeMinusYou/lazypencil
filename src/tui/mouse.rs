@@ -47,6 +47,7 @@ pub(super) enum Target {
     Help,
     DiagnosticDetails,
     SavedText,
+    CheckpointReview,
     PermissionDetails,
     AgentPermissions(super::permissions::Hit),
     AgentPermissionDetails,
@@ -940,6 +941,12 @@ impl App {
                         page.pointer_scroll(backwards, step);
                     }
                 }
+                Target::CheckpointReview => {
+                    if let Some(checkpoints::Modal::Confirm(page)) = &mut self.modal {
+                        scroll(&mut page.review_scroll);
+                        page.review_scroll = page.review_scroll.min(page.review_maximum_scroll);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1076,13 +1083,8 @@ impl App {
         Ok(false)
     }
 
-    pub(super) fn pointer_menu_area(header: Rect) -> Rect {
-        Rect::new(
-            header.right().saturating_sub(28),
-            header.bottom(),
-            28.min(header.width),
-            14,
-        )
+    pub(super) fn pointer_menu_area(area: Rect) -> Rect {
+        super::modal::area(area)
     }
 
     pub(super) fn draw_pointer_controls(
@@ -1150,18 +1152,16 @@ impl App {
             );
         }
         if self.pointer.more {
-            let popup = Self::pointer_menu_area(header);
-            frame.render_widget(Clear, popup);
-            let block = panel("View controls", true);
-            let inner = block.inner(popup);
-            frame.render_widget(block, popup);
+            let popup = Self::pointer_menu_area(frame.area());
+            let popup = popup.intersection(frame.area());
+            let shell = super::modal::Shell::draw(frame, popup, "View controls", 1);
+            let inner = shell.body;
             // A menu captures all pointer input, including empty space.
             self.pointer.hits.clear();
-            self.pointer.button(
-                frame,
-                Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
-                "[Close]",
-                Action::Close,
+            shell.close(frame, &mut self.pointer);
+            frame.render_widget(
+                Paragraph::new(super::modal::hints(&[("Esc", "Close")])),
+                shell.footer,
             );
             let wheel = if self.mouse.wheel_zoom {
                 "[Wheel: zoom]"
@@ -1173,6 +1173,9 @@ impl App {
             } else {
                 "[Node names: off]"
             };
+            let columns = if inner.height < 12 { 2 } else { 1 };
+            let rows = 12u16.div_ceil(columns);
+            let width = inner.width / columns;
             for (row, (label, action)) in [
                 ("[-] Zoom out", Action::ZoomOut),
                 ("[+] Zoom in", Action::ZoomIn),
@@ -1190,12 +1193,12 @@ impl App {
             .into_iter()
             .enumerate()
             {
-                self.pointer.button(
-                    frame,
-                    Rect::new(inner.x, inner.y + row as u16, inner.width, 1),
-                    label,
-                    action,
-                );
+                let x = inner.x + (row as u16 / rows) * width;
+                let y = inner.y + row as u16 % rows;
+                if y < inner.bottom() {
+                    self.pointer
+                        .button(frame, Rect::new(x, y, width, 1), label, action);
+                }
             }
         }
     }

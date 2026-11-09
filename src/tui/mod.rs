@@ -17,6 +17,7 @@ mod history;
 mod images;
 mod input;
 mod markdown;
+mod modal;
 mod mouse;
 mod nodes;
 mod outbox;
@@ -1753,41 +1754,58 @@ impl App {
         }
         if self.help {
             self.pointer.overlay();
-            let popup = centered(area, 100, 26);
-            frame.render_widget(Clear, popup);
-            let paragraph = Paragraph::new(self.help_text()).wrap(Wrap { trim: false });
-            let block = dialog("Help");
-            let inner = block.inner(popup);
-            let sections =
-                Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+            let popup = modal::area(area);
+            let shell = modal::Shell::draw(frame, popup, "Help", 1);
+            shell.close(frame, &mut self.pointer);
+            let colors = theme::colors();
+            let content = self
+                .help_text()
+                .lines()
+                .map(|line| {
+                    if commands::COMMANDS
+                        .iter()
+                        .any(|command| command.category == line)
+                    {
+                        Line::styled(
+                            line.to_uppercase(),
+                            Style::default()
+                                .fg(colors.preview)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    } else if let Some((key, description)) = line.split_once(": ") {
+                        Line::from(vec![
+                            Span::styled(
+                                format!("{key}: "),
+                                Style::default().fg(colors.key).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::raw(description.to_owned()),
+                        ])
+                    } else {
+                        Line::raw(line.to_owned())
+                    }
+                })
+                .collect::<Vec<_>>();
+            let paragraph = Paragraph::new(content).wrap(Wrap { trim: false });
+            let sections = [shell.body, shell.footer];
             self.pointer.add(sections[0], mouse::Target::Help);
             let maximum = paragraph
                 .line_count(sections[0].width)
                 .saturating_sub(sections[0].height as usize)
                 .min(u16::MAX as usize) as u16;
             self.help_scroll = self.help_scroll.min(maximum);
-            frame.render_widget(block, popup);
             frame.render_widget(paragraph.scroll((self.help_scroll, 0)), sections[0]);
             frame.render_widget(
-                Paragraph::new("PgUp/PgDn scroll · Esc closes")
-                    .style(Style::default().fg(theme::colors().secondary)),
+                Paragraph::new(modal::hints(&[("PgUp/PgDn", "Scroll"), ("Esc", "Close")])),
                 sections[1],
-            );
-            self.pointer.button(
-                frame,
-                Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
-                "[Close]",
-                mouse::Action::Close,
             );
         }
         self.draw_checkpoint_modal(frame);
         if let Some(permission) = self.permissions.front() {
             self.pointer.overlay();
-            let popup = centered(area, 92, 26);
-            frame.render_widget(Clear, popup);
-            let block = dialog("Permission");
-            let inner = block.inner(popup);
-            frame.render_widget(block, popup);
+            let popup = modal::area(area);
+            let shell = modal::Shell::draw(frame, popup, "Permission", 2);
+            shell.close(frame, &mut self.pointer);
+            let inner = shell.body;
             let details = serde_json::to_value(&permission.request.tool_call).unwrap_or_default();
             let details = crate::conversation::sanitize_event(&details);
             let details = clean(&serde_json::to_string_pretty(&details).unwrap_or_default());
@@ -1803,43 +1821,51 @@ impl App {
                     .as_deref()
                     .unwrap_or("Agent requests permission"),
             );
+            let wide = inner.width >= 96 && inner.height >= 16;
+            let columns = Layout::horizontal([
+                Constraint::Fill(3),
+                Constraint::Length(3),
+                Constraint::Fill(2),
+            ])
+            .split(inner);
+            let choices = if wide { columns[0] } else { inner };
             let title_rows = Paragraph::new(title.as_str())
                 .wrap(Wrap { trim: false })
-                .line_count(inner.width);
+                .line_count(choices.width);
             let option_rows = permission
                 .request
                 .options
                 .iter()
                 .fold(title_rows, |rows, option| {
                     rows.saturating_add(
-                        Paragraph::new(format!("  {}", clean(&option.name)))
+                        Paragraph::new(format!("   {}", clean(&option.name)))
                             .wrap(Wrap { trim: false })
-                            .line_count(inner.width),
+                            .line_count(choices.width),
                     )
                 })
                 .min(u16::MAX as usize) as u16;
-            let detail_rows = paragraph.line_count(inner.width).min(usize::from(
-                inner.height.saturating_sub(option_rows.saturating_add(2)),
-            )) as u16;
-            let sections = Layout::vertical([
-                Constraint::Length(detail_rows),
-                Constraint::Length(1),
-                Constraint::Length(option_rows),
-                Constraint::Min(0),
-                Constraint::Length(1),
-            ])
-            .split(inner);
+            let (details_area, choices_area) = if wide {
+                (modal::detail_surface(frame, columns[2]), choices)
+            } else {
+                let rows = Layout::vertical([
+                    Constraint::Length(option_rows),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                ])
+                .split(inner);
+                (modal::detail_surface(frame, rows[2]), rows[0])
+            };
             self.pointer
-                .add(sections[0], mouse::Target::PermissionDetails);
+                .add(details_area, mouse::Target::PermissionDetails);
             let max_scroll = paragraph
-                .line_count(sections[0].width)
-                .saturating_sub(usize::from(sections[0].height))
+                .line_count(details_area.width)
+                .saturating_sub(usize::from(details_area.height))
                 .min(u16::MAX as usize) as u16;
             frame.render_widget(
                 paragraph.scroll((permission.scroll.min(max_scroll), 0)),
-                sections[0],
+                details_area,
             );
-            let mut y = sections[2]
+            let mut y = choices_area
                 .y
                 .saturating_add(title_rows.min(u16::MAX as usize) as u16);
             let mut lines = vec![Line::styled(
@@ -1856,9 +1882,9 @@ impl App {
                     format!(
                         "{} {}",
                         if index == permission.selected {
-                            "›"
+                            "▏›"
                         } else {
-                            " "
+                            "  "
                         },
                         clean(&option.name)
                     ),
@@ -1867,22 +1893,22 @@ impl App {
             }
             frame.render_widget(
                 Paragraph::new(lines).wrap(Wrap { trim: false }),
-                sections[2],
+                choices_area,
             );
             frame.render_widget(
-                Paragraph::new(
-                    "↑/↓ choose · Enter respond · Esc denies · p permissions · PgUp/PgDn details",
-                )
-                .style(Style::default().fg(theme::colors().secondary)),
-                sections[4],
+                Paragraph::new(vec![
+                    modal::hints(&[("↑ ↓", "Choose"), ("Esc", "Deny"), ("p", "Permissions")]),
+                    modal::hints(&[("PgUp/PgDn", "Details")]),
+                ]),
+                shell.footer,
             );
             // Match wrapped option labels rather than assuming one row each.
             for (index, option) in permission.request.options.iter().enumerate() {
-                let height = Paragraph::new(format!("  {}", clean(&option.name)))
+                let height = Paragraph::new(format!("   {}", clean(&option.name)))
                     .wrap(Wrap { trim: false })
-                    .line_count(sections[2].width) as u16;
-                let height = height.min(sections[2].bottom().saturating_sub(y));
-                let option_area = Rect::new(sections[2].x, y, sections[2].width, height);
+                    .line_count(choices_area.width) as u16;
+                let height = height.min(choices_area.bottom().saturating_sub(y));
+                let option_area = Rect::new(choices_area.x, y, choices_area.width, height);
                 if index == permission.selected {
                     frame
                         .buffer_mut()
@@ -1892,52 +1918,43 @@ impl App {
                     .add(option_area, mouse::Target::PermissionChoice(index));
                 y = y.saturating_add(height);
             }
-            let permissions_button = Rect::new(popup.right().saturating_sub(27), popup.y, 16, 1);
+            let permissions_button = Rect::new(
+                shell.header.right().saturating_sub(25),
+                shell.header.y,
+                14.min(shell.header.width.saturating_sub(9)),
+                1,
+            );
             frame.render_widget(
-                Paragraph::new("[Permissions…]")
-                    .style(Style::default().fg(theme::colors().preview)),
+                Paragraph::new("[Permissions…]").style(Style::default().fg(theme::colors().key)),
                 permissions_button,
             );
             self.pointer.add(
                 permissions_button,
                 mouse::Target::AgentPermissions(permissions::Hit::Continue),
             );
-            self.pointer.button(
-                frame,
-                Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
-                "[Close]",
-                mouse::Action::Close,
+            let action_footer = Rect::new(
+                shell.footer.x,
+                shell.footer.bottom().saturating_sub(1),
+                shell.footer.width,
+                1.min(shell.footer.height),
             );
-            self.pointer.button(
-                frame,
-                Rect::new(
-                    popup.right().saturating_sub(11),
-                    popup.bottom().saturating_sub(1),
-                    10,
-                    1,
-                ),
-                "[Respond]",
-                mouse::Action::Accept,
-            );
+            modal::action(frame, action_footer, "[Enter Respond]", &mut self.pointer);
         }
         self.draw_agent_permissions(frame);
         self.pointer.finish();
         self.native_input.retain_canvas(self.gesture_canvas());
-        // Keep native preview pixels outside the command palette's popup visible.
-        let command_palette = matches!(self.modal, Some(checkpoints::Modal::Commands { .. }));
-        let modal = self.help
-            || (self.modal.is_some() && !command_palette)
+        // All modal workflows retain native preview pixels outside their surface.
+        let overlay = if self.help
+            || self.modal.is_some()
             || self.permission_ui.is_some()
-            || !self.permissions.is_empty();
-        let overlay = if command_palette {
-            Some(commands::palette::area(area))
+            || !self.permissions.is_empty()
+        {
+            Some(modal::area(area))
         } else {
-            self.pointer
-                .more
-                .then(|| Self::pointer_menu_area(workspace.header))
+            self.pointer.more.then(|| Self::pointer_menu_area(area))
         };
         self.presentation
-            .finish_with_overlay(frame.buffer_mut(), modal, overlay);
+            .finish_with_overlay(frame.buffer_mut(), false, overlay);
         Size::new(inner.width, inner.height)
     }
 }
@@ -1972,9 +1989,6 @@ fn panel(title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
         } else {
             theme::colors().frame
         }))
-}
-fn dialog(title: impl Into<Line<'static>>) -> Block<'static> {
-    panel(title, true).padding(ratatui::widgets::Padding::horizontal(1))
 }
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);

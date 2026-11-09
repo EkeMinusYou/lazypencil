@@ -212,6 +212,7 @@ include!("tests/commands.rs");
 include!("tests/slash.rs");
 
 include!("tests/permissions.rs");
+include!("tests/modal.rs");
 
 fn palette_parse(line: &str) -> Result<(&'static commands::Command, Vec<String>)> {
     let (name, input) = line.split_once(char::is_whitespace).unwrap_or((line, ""));

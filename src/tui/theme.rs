@@ -175,11 +175,17 @@ pub(super) fn canvas_background() -> image::Rgba<u8> {
 }
 
 pub(super) fn modal_selected() -> Style {
-    Style::default().fg(colors().canvas).bg(colors().preview)
+    Style::default()
+        .fg(colors().preview)
+        .bg(colors().selected_background)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub(super) fn permission_selected() -> Style {
-    Style::default().fg(colors().canvas).bg(colors().running)
+    Style::default()
+        .fg(colors().running)
+        .bg(colors().selected_background)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub(super) fn title(

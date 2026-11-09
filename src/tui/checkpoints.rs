@@ -25,6 +25,8 @@ pub struct Page {
     pub cursors: Vec<Option<u64>>,
     pub selected: usize,
     pub notice: Option<String>,
+    pub review_scroll: u16,
+    pub review_maximum_scroll: u16,
 }
 pub enum Output {
     History(Page),
@@ -96,6 +98,8 @@ impl Task {
                 cursors,
                 selected: 0,
                 notice: None,
+                review_scroll: 0,
+                review_maximum_scroll: 0,
             }))
         })
     }
@@ -410,6 +414,24 @@ impl super::App {
                 _ => {}
             },
             Modal::Confirm(page) => match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    page.review_scroll = page.review_scroll.saturating_sub(1)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    page.review_scroll = page
+                        .review_scroll
+                        .saturating_add(1)
+                        .min(page.review_maximum_scroll)
+                }
+                KeyCode::PageUp => page.review_scroll = page.review_scroll.saturating_sub(5),
+                KeyCode::PageDown => {
+                    page.review_scroll = page
+                        .review_scroll
+                        .saturating_add(5)
+                        .min(page.review_maximum_scroll)
+                }
+                KeyCode::Home => page.review_scroll = 0,
+                KeyCode::End => page.review_scroll = page.review_maximum_scroll,
                 KeyCode::Esc | KeyCode::Backspace => {
                     self.modal = Some(Modal::History(page.clone()));
                     return Ok(false);
@@ -421,15 +443,13 @@ impl super::App {
         Ok(false)
     }
     pub(super) fn draw_checkpoint_modal(&mut self, frame: &mut ratatui::Frame) {
+        use super::{modal, mouse, theme};
         use ratatui::{
             layout::{Constraint, Layout},
-            style::Style,
+            style::{Modifier, Style},
             text::Line,
-            widgets::{Clear, List, ListItem, Paragraph, Wrap},
+            widgets::{List, ListItem, Paragraph, Wrap},
         };
-        if self.modal.is_none() {
-            return;
-        }
         if matches!(self.modal, Some(Modal::Commands { .. })) {
             self.draw_command_palette(frame);
             return;
@@ -438,129 +458,162 @@ impl super::App {
             return;
         };
         self.pointer.overlay();
-        let popup = super::centered(frame.area(), 100, 26);
-        frame.render_widget(Clear, popup);
-        let highlight = super::theme::modal_selected();
+        let popup = modal::area(frame.area());
         match modal {
-            Modal::Saved(page) => super::saved::draw(page, frame, popup, &mut self.pointer),
-            Modal::Commands { .. } => unreachable!("Command palettes are drawn separately"),
-            Modal::CommandInput(input) => input.draw(frame, popup, self.permissions.is_empty()),
-            Modal::Loading { message } => frame.render_widget(
-                Paragraph::new(*message)
-                    .style(Style::default().fg(super::theme::colors().secondary))
-                    .block(super::dialog("Document operation"))
-                    .wrap(Wrap { trim: false }),
-                popup,
-            ),
+            Modal::Saved(page) => {
+                super::saved::draw(page, frame, popup, &mut self.pointer);
+                return;
+            }
+            Modal::CommandInput(input) => {
+                input.draw(frame, popup, self.permissions.is_empty(), &mut self.pointer);
+                return;
+            }
+            _ => {}
+        }
+        let title = match modal {
+            Modal::Loading { .. } => "Document operation",
+            Modal::History(_) => "Checkpoints",
+            Modal::Confirm(_) => "Review restoration",
+            _ => unreachable!(),
+        };
+        let shell = modal::Shell::draw(frame, popup, title, 2);
+        shell.close(frame, &mut self.pointer);
+        let colors = theme::colors();
+        match modal {
+            Modal::Loading { message } => {
+                frame.render_widget(
+                    Paragraph::new(*message)
+                        .style(Style::default().fg(colors.secondary))
+                        .wrap(Wrap { trim: false }),
+                    shell.body,
+                );
+                frame.render_widget(
+                    Paragraph::new(modal::hints(&[("Esc", "Cancel")])),
+                    shell.footer,
+                );
+            }
             Modal::History(page) => {
-                let block = super::dialog("Checkpoints");
-                let inner = block.inner(popup);
-                frame.render_widget(block, popup);
-                let header_height = if page.notice.is_some() { 5 } else { 2 };
-                let footer = Paragraph::new(format!(
-                    "Page {} · older checkpoints {}\nEnter review · r reload · PgDn/n older · PgUp/p newer · Home latest\nRestoration creates a new history entry and preserves the draft.",
-                    page.cursors.len(),
-                    if page.next_before.is_some() { "available" } else { "unavailable" },
-                ))
-                .style(Style::default().fg(super::theme::colors().secondary))
-                .wrap(Wrap { trim: false });
-                let footer_height = footer
-                    .line_count(inner.width)
-                    .min(usize::from(inner.height.saturating_sub(header_height + 1)))
-                    as u16;
-                let sections = Layout::vertical([
-                    Constraint::Length(header_height),
-                    Constraint::Min(1),
-                    Constraint::Length(footer_height),
-                ])
-                .split(inner);
                 let mut lines = vec![Line::styled(
                     format!(
                         "Current document: {} · dependencies: {}",
                         short(&page.revision),
                         short(&page.dependency_revision)
                     ),
-                    Style::default().fg(super::theme::colors().secondary),
+                    Style::default().fg(colors.secondary),
                 )];
+                lines.push(Line::styled(
+                    format!(
+                        "Page {} · older checkpoints {}",
+                        page.cursors.len(),
+                        if page.next_before.is_some() {
+                            "available"
+                        } else {
+                            "unavailable"
+                        }
+                    ),
+                    Style::default().fg(colors.secondary),
+                ));
                 if let Some(notice) = &page.notice {
                     lines.push(Line::styled(
                         notice.clone(),
-                        Style::default().fg(super::theme::colors().running),
+                        Style::default().fg(colors.running),
                     ));
                 }
+                let header = Paragraph::new(lines).wrap(Wrap { trim: false });
+                let header_height = header
+                    .line_count(shell.body.width)
+                    .min(usize::from(shell.body.height.saturating_sub(3)))
+                    as u16;
+                let sections = Layout::vertical([
+                    Constraint::Length(header_height),
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                ])
+                .split(shell.body);
+                frame.render_widget(header, sections[0]);
                 if page.entries.is_empty() {
-                    lines.push(Line::styled(
-                        "No committed checkpoints yet",
-                        Style::default().fg(super::theme::colors().secondary),
-                    ));
+                    frame.render_widget(
+                        Paragraph::new("No committed checkpoints yet")
+                            .style(Style::default().fg(colors.secondary)),
+                        sections[2],
+                    );
+                } else {
+                    let items = page.entries.iter().map(|entry| {
+                        ListItem::new(super::clean(&format!(
+                            "#{} · {} · {} · {}",
+                            entry.sequence,
+                            entry.created_at,
+                            short(&entry.revision),
+                            entry.request_id
+                        )))
+                    });
+                    self.pointer.modal_list(
+                        frame,
+                        List::new(items)
+                            .highlight_style(theme::modal_selected())
+                            .highlight_symbol("▏› "),
+                        sections[2],
+                        page.selected,
+                        mouse::ListTarget::Checkpoints,
+                    );
+                    modal::action(frame, shell.footer, "[Enter Review]", &mut self.pointer);
                 }
+                let hints = super::Rect::new(
+                    shell.footer.x,
+                    shell.footer.y,
+                    shell.footer.width.saturating_sub(16),
+                    shell.footer.height,
+                );
                 frame.render_widget(
-                    Paragraph::new(lines).wrap(Wrap { trim: false }),
-                    sections[0],
+                    Paragraph::new(vec![
+                        modal::hints(&[("↑ ↓", "Select"), ("r", "Reload"), ("Esc", "Close")]),
+                        modal::hints(&[("PgDn/PgUp", "Pages"), ("Home", "Latest")]),
+                    ]),
+                    hints,
                 );
-                let items = page.entries.iter().map(|entry| {
-                    ListItem::new(super::clean(&format!(
-                        "#{} · {} · {} · {}",
-                        entry.sequence,
-                        entry.created_at,
-                        short(&entry.revision),
-                        entry.request_id
-                    )))
-                });
-                self.pointer.modal_list(
-                    frame,
-                    List::new(items)
-                        .highlight_style(highlight)
-                        .highlight_symbol("› "),
-                    sections[1],
-                    page.selected,
-                    super::mouse::ListTarget::Checkpoints,
-                );
-                frame.render_widget(footer, sections[2]);
             }
             Modal::Confirm(page) => {
                 let entry = &page.entries[page.selected];
-                let text = super::clean(&format!(
-                    "Restore selected checkpoint?\n\nCheckpoint #{}\n{}\nCreated: {}\nRequest: {}\n\nCurrent revision: {}\nTarget revision: {}\n\nThis restores the document using current referenced assets.\nIt creates a new history entry and preserves the draft and attachments.\nConcurrent document or dependency changes stop the restoration.\n\nEnter restores · Esc returns to the checkpoint list",
-                    entry.sequence,
-                    entry.id,
-                    entry.created_at,
-                    entry.request_id,
-                    page.revision,
-                    entry.revision
-                ));
+                let body = modal::detail_surface(frame, shell.body);
+                let text = vec![
+                    Line::styled(
+                        format!("Restore checkpoint #{}?", entry.sequence),
+                        Style::default()
+                            .fg(colors.running)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Line::default(),
+                    Line::raw(super::clean(&format!("Checkpoint: {}", entry.id))),
+                    Line::raw(super::clean(&format!("Created: {}", entry.created_at))),
+                    Line::raw(super::clean(&format!("Request: {}", entry.request_id))),
+                    Line::raw(super::clean(&format!("Current: {}", page.revision))),
+                    Line::raw(super::clean(&format!("Target:  {}", entry.revision))),
+                    Line::default(),
+                    Line::raw("Uses current referenced assets and creates a new history entry."),
+                    Line::raw("Your draft and attachments are preserved."),
+                    Line::styled(
+                        "Concurrent document or dependency changes stop restoration.",
+                        Style::default().fg(colors.secondary),
+                    ),
+                ];
+                let text = Paragraph::new(text).wrap(Wrap { trim: false });
+                page.review_maximum_scroll = text
+                    .line_count(body.width)
+                    .saturating_sub(usize::from(body.height))
+                    .min(u16::MAX as usize) as u16;
+                page.review_scroll = page.review_scroll.min(page.review_maximum_scroll);
+                frame.render_widget(text.scroll((page.review_scroll, 0)), body);
+                self.pointer.add(body, mouse::Target::CheckpointReview);
                 frame.render_widget(
-                    Paragraph::new(text)
-                        .block(super::dialog("Review restoration"))
-                        .wrap(Wrap { trim: false }),
-                    popup,
+                    Paragraph::new(vec![
+                        modal::hints(&[("Esc", "Back to checkpoints")]),
+                        modal::hints(&[("PgUp/PgDn", "Scroll review")]),
+                    ]),
+                    shell.footer,
                 );
+                modal::action(frame, shell.footer, "[Enter Restore]", &mut self.pointer);
             }
-        }
-        self.pointer.button(
-            frame,
-            super::Rect::new(popup.right().saturating_sub(9), popup.y, 8, 1),
-            "[Close]",
-            super::mouse::Action::Close,
-        );
-        let label = match self.modal {
-            Some(Modal::Commands { .. } | Modal::CommandInput(_)) => Some("[Run]"),
-            Some(Modal::History(_)) => Some("[Review]"),
-            Some(Modal::Confirm(_)) => Some("[Restore]"),
-            _ => None,
-        };
-        if let Some(label) = label {
-            self.pointer.button(
-                frame,
-                super::Rect::new(
-                    popup.right().saturating_sub(12),
-                    popup.bottom().saturating_sub(1),
-                    11,
-                    1,
-                ),
-                label,
-                super::mouse::Action::Accept,
-            );
+            _ => unreachable!(),
         }
     }
 }
