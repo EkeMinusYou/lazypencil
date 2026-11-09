@@ -6,7 +6,8 @@
     "color.text": {"type": "color", "value": "#0F172A"},
     "color.secondary": {"type": "color", "value": "#475569"},
     "color.border": {"type": "color", "value": "#CBD5E1"},
-    "color.accent": {"type": "color", "value": "#2563EB"}
+    "color.accent": {"type": "color", "value": "#2563EB"},
+    "color.error": {"type": "color", "value": "#B91C1C"}
   },
   "children": [
     {
@@ -115,6 +116,100 @@
               "fontSize": 14, "fontWeight": "500", "lineHeight": 1.5, "fill": "#FFFFFF"
             }
           ]
+        }
+      ]
+    },
+    {
+      "id": "profile-screen", "type": "frame", "name": "Profile settings",
+      "x": 1008, "width": 456, "height": 640, "layout": "vertical",
+      "padding": 48, "gap": 24, "fill": "$color.canvas",
+      "children": [
+        {
+          "id": "profile-heading", "type": "frame", "name": "Profile heading",
+          "layout": "horizontal", "width": "fill_container", "height": 32,
+          "gap": 12, "alignItems": "center",
+          "children": [
+            {
+              "id": "text-avatar", "type": "frame", "name": "Text avatar", "reusable": true,
+              "layout": "horizontal", "width": 32, "height": 32,
+              "cornerRadius": 16, "fill": "$color.text",
+              "children": [
+                {
+                  "id": "avatar-character", "type": "text", "name": "Avatar character",
+                  "content": "山", "textGrowth": "fixed-width-height",
+                  "width": "fill_container", "height": "fill_container",
+                  "textAlign": "center", "textAlignVertical": "middle",
+                  "fontFamily": "Noto Sans JP", "fontSize": 14, "fontWeight": "500",
+                  "lineHeight": 1.5, "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "id": "profile-title", "type": "text", "name": "Profile title",
+              "content": "プロフィール", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+              "fontSize": 24, "fontWeight": "700", "lineHeight": 1.25, "fill": "$color.text"
+            }
+          ]
+        },
+        {
+          "id": "profile-description", "type": "text", "name": "Profile description",
+          "content": "表示名と連絡先を設定します。", "textGrowth": "fixed-width",
+          "width": "fill_container", "fontFamily": "Noto Sans JP", "fontSize": 14,
+          "lineHeight": 1.5, "fill": "$color.secondary"
+        },
+        {
+          "id": "form-field", "type": "frame", "name": "Form field", "reusable": true,
+          "layout": "vertical", "width": "fill_container(360)", "height": "fit_content", "gap": 8,
+          "children": [
+            {
+              "id": "field-label", "type": "text", "name": "Field label",
+              "content": "表示名", "textGrowth": "fixed-width", "width": "fill_container",
+              "fontFamily": "Noto Sans JP", "fontSize": 14, "fontWeight": "500",
+              "lineHeight": 1.5, "fill": "$color.text"
+            },
+            {
+              "id": "field-input", "type": "frame", "name": "Input surface",
+              "layout": "horizontal", "width": "fill_container", "height": 44,
+              "padding": [0, 12], "alignItems": "center", "cornerRadius": 8,
+              "fill": "$color.surface", "stroke": "$color.border", "strokeWidth": 1,
+              "strokeAlignment": "inner",
+              "children": [
+                {
+                  "id": "field-value", "type": "text", "name": "Field value",
+                  "content": "山田 花子", "textGrowth": "fixed-width", "width": "fill_container",
+                  "fontFamily": "Noto Sans JP", "fontSize": 14,
+                  "lineHeight": 1.5, "fill": "$color.text"
+                }
+              ]
+            },
+            {
+              "id": "field-support", "type": "text", "name": "Supporting instructions",
+              "content": "チーム内に表示される名前です。", "textGrowth": "fixed-width",
+              "width": "fill_container", "fontFamily": "Noto Sans JP", "fontSize": 12,
+              "lineHeight": 1.5, "fill": "$color.secondary"
+            },
+            {
+              "id": "field-error", "type": "text", "name": "Validation message", "enabled": false,
+              "content": "表示名を入力してください。", "textGrowth": "fixed-width",
+              "width": "fill_container", "fontFamily": "Noto Sans JP", "fontSize": 12,
+              "lineHeight": 1.5, "fill": "$color.error"
+            }
+          ]
+        },
+        {
+          "id": "email-field", "type": "ref", "name": "Email field with error", "ref": "form-field",
+          "descendants": {
+            "field-label": {"content": "メールアドレス"},
+            "field-value": {"content": "user@"},
+            "field-input": {"stroke": "$color.error"},
+            "field-support": {"enabled": true, "content": "仕事で使うメールアドレスを入力してください。"},
+            "field-error": {"enabled": true, "content": "メールアドレスの形式を確認してください。"}
+          }
+        },
+        {
+          "id": "profile-save", "type": "ref", "name": "Save profile", "ref": "button",
+          "width": "fill_container",
+          "descendants": {"button-label": {"content": "プロフィールを保存"}}
         }
       ]
     }

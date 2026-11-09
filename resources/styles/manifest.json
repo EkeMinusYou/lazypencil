@@ -5,7 +5,7 @@
   "styles": [
     {
       "id": "standard-ui",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "name": "Standard UI",
       "description": "A restrained, readable starting point for application screens.",
       "use_cases": [
@@ -15,6 +15,7 @@
       ],
       "guidance": [
         "start",
+        "app-screen",
         "layout",
         "typography",
         "color",
@@ -52,12 +53,13 @@
           "text": "#0F172A",
           "secondary": "#475569",
           "border": "#CBD5E1",
-          "accent": "#2563EB"
+          "accent": "#2563EB",
+          "error": "#B91C1C"
         },
         "controlHeight": 44,
         "cardRadius": 12
       },
-      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example includes reusable button, button-with-icon, breadcrumbs, and sort-control definitions with content-sized labels and layout-managed spacing. Prefer existing components; import these fallbacks only when useful and adapt their tokens. Do not copy their stored IDs into an editing batch."
+      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example includes reusable button, button-with-icon, breadcrumbs, sort-control, text-avatar, and form-field definitions. Labels follow their layout roles; form messages grow with their content and can appear independently. Prefer existing components; import these fallbacks only when useful and adapt their tokens. Do not copy their stored IDs into an editing batch."
     },
     {
       "id": "dense-workspace",

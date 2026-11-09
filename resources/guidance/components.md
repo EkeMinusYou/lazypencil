@@ -30,6 +30,8 @@ When the document has no suitable control, get_style with id `standard-ui` provi
 | `button-with-icon` | Content-sized action with the icon and label centered together. A fixed instance width keeps that group centered. |
 | `breadcrumbs` | Content-sized labels and a separator in reading order, with layout-managed gaps. |
 | `sort-control` | Compact content-sized label and chevron with a small gap; not a full-width select field. |
+| `text-avatar` | Fixed-size avatar with its character centered in a text box that fills it; see `typography`. |
+| `form-field` | Label, input, and independent optional supporting/error messages in a content-height group; see `app-screen`. |
 
 Use the existing document's components first. These examples are fallbacks, not a mandatory design system. Read their children before overriding labels or icons, adapt their tokens and spacing to the document, and reuse one definition for repeated controls. Keep the layout relationships when changing copy instead of assigning new fixed label widths or child coordinates. Long constrained labels may need a different sizing treatment; follow `layout` rather than forcing every control to hug its content.
 

@@ -275,3 +275,99 @@ fn control_examples_follow_changed_labels_and_keep_fixed_width_buttons_centered(
         }
     }
 }
+
+#[cfg(feature = "rendering")]
+#[test]
+fn form_messages_wrap_and_leave_flow_independently() {
+    use lazypencil::{layout, operations, project::Project, text::Fonts};
+    let temp = tempfile::TempDir::new().unwrap();
+    let style = guidance::get_style("standard-ui").unwrap();
+    let template = Document::parse(style["example"]["document"].to_string()).unwrap();
+    let mut fonts = Fonts::new(&[]).unwrap();
+    let near = |actual: f32, expected: f32| {
+        assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
+    };
+    for width in [200, 360] {
+        for long_message in [false, true] {
+            let message = if long_message {
+                "この名前はワークスペースのメンバー全員に表示されます。チーム内で識別しやすい名前を入力してください。"
+            } else {
+                "表示名を入力してください。"
+            };
+            for (support, error) in [(true, false), (false, true), (true, true), (false, false)] {
+                let edits: Vec<operations::Operation> = serde_json::from_value(json!([
+                    {"op":"update","target":"profile-screen","set":{"width":width+96,"height":"fit_content"}},
+                    {"op":"update","target":"field-support","set":{"content":message,"enabled":support}},
+                    {"op":"update","target":"field-error","set":{"enabled":error}},
+                    {"op":"update","target":"avatar-character","set":{"content":if long_message {"峯"} else {"P"}}},
+                    {"op":"insert","client_ref":"standalone","node":{"type":"ref","ref":"form-field","x":1600}}
+                ])).unwrap();
+                let (document, result) = operations::apply(&template, &edits).unwrap();
+                let path = temp.path().join("fields.pen");
+                std::fs::write(&path, document.text()).unwrap();
+                let project = Project::from_document(&path, document, &[]).unwrap();
+                let snapshot = layout::compute(project.resolve().unwrap(), &mut fonts).unwrap();
+                assert!(
+                    snapshot
+                        .items
+                        .iter()
+                        .all(|item| item.record.diagnostics.is_empty()),
+                    "{width}, long={long_message}, support={support}, error={error}: {}",
+                    snapshot.summary()
+                );
+                let record = |id: &str| {
+                    &snapshot
+                        .items
+                        .iter()
+                        .find(|item| item.record.id == id)
+                        .unwrap()
+                        .record
+                };
+                let field = record("form-field").rect;
+                near(field.width, width as f32);
+                near(
+                    record(result["bindings"]["standalone"].as_str().unwrap())
+                        .rect
+                        .width,
+                    360.0,
+                );
+                assert_eq!(record("field-support").enabled, support);
+                assert_eq!(record("field-error").enabled, error);
+                if support {
+                    let lines = record("field-support").text.as_ref().unwrap().line_count;
+                    assert_eq!(lines > 1, long_message);
+                }
+                let mut next_y = 0.0;
+                for id in ["field-label", "field-input", "field-support", "field-error"] {
+                    let item = record(id);
+                    if item.enabled {
+                        near(item.rect.y, next_y);
+                        near(item.rect.width, field.width);
+                        next_y = item.rect.bottom() + 8.0;
+                    }
+                }
+                near(field.height, next_y - 8.0);
+                near(record("email-field").rect.y, field.bottom() + 24.0);
+                let email_messages = snapshot
+                    .items
+                    .iter()
+                    .filter(|item| {
+                        item.record.address.node_id == "email-field"
+                            && item.record.address.instance_path.last().is_some_and(|id| {
+                                ["field-support", "field-error"].contains(&id.as_str())
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(email_messages.len(), 2);
+                assert!(email_messages.iter().all(|item| item.record.enabled));
+                let avatar = record("text-avatar").rect;
+                let character = record("avatar-character");
+                near(character.rect.x, 0.0);
+                near(character.rect.y, 0.0);
+                near(character.rect.width, avatar.width);
+                near(character.rect.height, avatar.height);
+                assert_eq!(character.text.as_ref().unwrap().line_count, 1);
+            }
+        }
+    }
+}
