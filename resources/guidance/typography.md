@@ -8,7 +8,7 @@ Choose the text box from its role and available space, rather than estimating di
 
 | Role | Text box |
 | --- | --- |
-| Unconstrained single-line action label | Content-sized text. Follow `layout` for button and icon placement. |
+| Unconstrained single-line action label | Content-sized text. Follow `components` for button and icon placement. |
 | Heading or description with a constrained width | `textGrowth: "fixed-width"` and a usable width, often `fill_container` within a width-constrained layout parent. Let text height grow when it wraps. |
 | Single character inside a text avatar | `textGrowth: "fixed-width-height"` with both dimensions set by the avatar, `textAlign: "center"`, and `textAlignVertical: "middle"`. |
 

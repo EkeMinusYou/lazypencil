@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.63";
+const VERSION: &str = "1.0.64";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -30,7 +30,7 @@ const GUIDES: &[Guide] = &[
     },
     Guide {
         id: "layout",
-        summary: "Flow, spacing, sizing constraints, text growth, and overflow.",
+        summary: "Flow, spacing, width-dependent composition, sizing constraints, and text growth.",
         body: include_str!("../resources/guidance/layout.md"),
     },
     Guide {
@@ -82,6 +82,11 @@ const GUIDES: &[Guide] = &[
         id: "app-screen",
         summary: "Application screens, controls, states, and primary actions.",
         body: include_str!("../resources/guidance/app-screen.md"),
+    },
+    Guide {
+        id: "forms",
+        summary: "Input field grouping, independent messages, single-line clipping, and multiline text.",
+        body: include_str!("../resources/guidance/forms.md"),
     },
     Guide {
         id: "dashboard",

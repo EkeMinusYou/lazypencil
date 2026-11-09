@@ -371,3 +371,190 @@ fn form_messages_wrap_and_leave_flow_independently() {
         }
     }
 }
+
+#[cfg(feature = "rendering")]
+#[test]
+fn form_value_examples_distinguish_single_line_clipping_from_multiline_growth() {
+    use lazypencil::{layout, operations, project::Project, text::Fonts};
+    let temp = tempfile::TempDir::new().unwrap();
+    let style = guidance::get_style("standard-ui").unwrap();
+    let template = Document::parse(style["example"]["document"].to_string()).unwrap();
+    let guide = guidance::get_guidance(Some("forms")).unwrap();
+    let multiline: serde_json::Map<String, Value> = serde_json::from_str(
+        guide["body"]
+            .as_str()
+            .unwrap()
+            .split_once("```json\n")
+            .unwrap()
+            .1
+            .split_once("```")
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    let mut fonts = Fonts::new(&[]).unwrap();
+    let near = |actual: f32, expected: f32| {
+        assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
+    };
+    for width in [200, 360] {
+        for content in [
+            "山田 花子",
+            "alexander.very.long.display.name.for.the.team@example.test",
+            "必要な情報を読みやすく整理し、利用者が次に行う操作を見つけやすい画面を設計します。補足する内容も同じ文章に含めます。",
+        ] {
+            for wrap in [false, true] {
+                let mut edits = vec![
+                    json!({"op":"update","target":"profile-screen","set":{"width":width+96,"height":"fit_content"}}),
+                    json!({"op":"update","target":"field-value","set":{"content":content}}),
+                ];
+                if wrap {
+                    edits.extend(
+                        multiline
+                            .iter()
+                            .map(|(target, set)| json!({"op":"update","target":target,"set":set})),
+                    );
+                }
+                let edits: Vec<operations::Operation> =
+                    serde_json::from_value(json!(edits)).unwrap();
+                let (document, _) = operations::apply(&template, &edits).unwrap();
+                let path = temp.path().join("values.pen");
+                std::fs::write(&path, document.text()).unwrap();
+                let project = Project::from_document(&path, document, &[]).unwrap();
+                let snapshot = layout::compute(project.resolve().unwrap(), &mut fonts).unwrap();
+                let item = |id: &str| {
+                    snapshot
+                        .items
+                        .iter()
+                        .find(|item| item.record.id == id)
+                        .unwrap()
+                };
+                let input = item("field-input").record.rect;
+                let viewport = item("field-value-viewport");
+                let value = item("field-value");
+                let metrics = value.record.text.as_ref().unwrap();
+                assert_eq!(value.node.properties["content"], content);
+                near(input.width, width as f32);
+                near(viewport.record.rect.x, 12.0);
+                near(viewport.record.rect.width, input.width - 24.0);
+                let diagnostics = snapshot
+                    .items
+                    .iter()
+                    .flat_map(|item| &item.record.diagnostics)
+                    .collect::<Vec<_>>();
+                if wrap {
+                    assert_eq!(viewport.node.properties["clip"], false);
+                    assert!(diagnostics.is_empty(), "{}", snapshot.summary());
+                    near(input.height, metrics.height + 24.0);
+                    near(viewport.record.rect.y, 12.0);
+                    near(viewport.record.rect.height, metrics.height);
+                    assert_eq!(
+                        metrics.line_count > 1,
+                        metrics.intrinsic_width > viewport.record.rect.width
+                    );
+                } else {
+                    assert_eq!(viewport.node.properties["clip"], true);
+                    assert_eq!(metrics.line_count, 1);
+                    near(input.height, 44.0);
+                    near(viewport.record.rect.y, 0.0);
+                    near(viewport.record.rect.height, input.height);
+                    near(value.record.rect.y, (input.height - metrics.height) / 2.0);
+                    near(
+                        item("field-input").record.visual_bounds.height,
+                        input.height,
+                    );
+                    let clipped = value.record.rect.width > viewport.record.rect.width + 0.01;
+                    assert_eq!(diagnostics.len(), usize::from(clipped));
+                    if clipped {
+                        let diagnostic = diagnostics[0];
+                        assert_eq!(diagnostic.code, "LAYOUT_OVERFLOW");
+                        assert_eq!(diagnostic.node_id, "field-value");
+                        assert_eq!(diagnostic.details["clipped"], true);
+                        assert!(diagnostic.details["right"].as_f64().unwrap() > 0.0);
+                        for side in ["left", "top", "bottom"] {
+                            assert_eq!(diagnostic.details[side], 0.0);
+                        }
+                    }
+                }
+                let field = item("form-field").record.rect;
+                near(item("email-field").record.rect.y, field.bottom() + 24.0);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn layout_guide_examples_recompose_the_same_content_at_different_widths() {
+    use lazypencil::{layout, operations, project::Project, text::Fonts};
+    let temp = tempfile::TempDir::new().unwrap();
+    let guide = guidance::get_guidance(Some("layout")).unwrap();
+    let edits: Vec<operations::Operation> = serde_json::from_str(
+        guide["body"]
+            .as_str()
+            .unwrap()
+            .split_once("```json\n")
+            .unwrap()
+            .1
+            .split_once("```")
+            .unwrap()
+            .0,
+    )
+    .unwrap();
+    let (document, result) = operations::apply(&Document::empty(), &edits).unwrap();
+    let path = temp.path().join("widths.pen");
+    std::fs::write(&path, document.text()).unwrap();
+    let project = Project::from_document(&path, document, &[]).unwrap();
+    let snapshot =
+        layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+    assert!(
+        snapshot
+            .items
+            .iter()
+            .all(|item| item.record.diagnostics.is_empty()),
+        "{}",
+        snapshot.summary()
+    );
+    let named = |name: &str| {
+        snapshot
+            .items
+            .iter()
+            .find(|item| item.node.properties.get("name").and_then(Value::as_str) == Some(name))
+            .unwrap()
+    };
+    let wide = named("Wide reading content");
+    let narrow = named("Narrow reading content");
+    let wide_visual = named("Wide supporting visual").record.rect;
+    let narrow_visual = named("Narrow supporting visual").record.rect;
+    assert_eq!(
+        wide.node.properties["content"],
+        narrow.node.properties["content"]
+    );
+    assert_eq!(
+        wide.node.properties["fontSize"],
+        narrow.node.properties["fontSize"]
+    );
+    assert!(
+        narrow.record.text.as_ref().unwrap().line_count
+            > wide.record.text.as_ref().unwrap().line_count
+    );
+    let near = |actual: f32, expected: f32| {
+        assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
+    };
+    near(wide.record.rect.x, 24.0);
+    near(
+        wide.record.rect.width,
+        640.0 - 48.0 - 24.0 - wide_visual.width,
+    );
+    near(wide_visual.x, wide.record.rect.right() + 24.0);
+    near(wide_visual.y, wide.record.rect.y);
+    near(narrow.record.rect.width, 280.0 - 48.0);
+    near(narrow_visual.x, narrow.record.rect.x);
+    near(narrow_visual.width, narrow.record.rect.width);
+    near(narrow_visual.y, narrow.record.rect.bottom() + 16.0);
+    let parent = snapshot
+        .items
+        .iter()
+        .find(|item| item.record.id == result["bindings"]["narrow"].as_str().unwrap())
+        .unwrap();
+    near(parent.record.rect.height, narrow_visual.bottom() + 24.0);
+}

@@ -8,28 +8,35 @@ Specify important dimensions explicitly. A fill child in the main axis shares th
 
 Auto-growing text does not wrap. For a constrained paragraph, set textGrowth to fixed-width and provide a usable width. Then let its measured height participate in the parent's content height. Use fixed-width-height only when the fixed box is intentional and inspect overflow.
 
-## Control labels and alignment
+## Compose for the available width
 
-Use textGrowth: "auto" for an unconstrained single-line label and omit its width and height. The parent control may still have a fixed width, such as equally sized actions; a content-sized label does not require a content-sized button. Use a constrained text box when long names must wrap or fit an established width. Preserve the user's or existing design's alignment conventions.
+Assign each region a sizing role: fixed dimensions for elements that must retain their size, content dimensions for intrinsically sized elements, and fill for regions that can use the remaining space. Account for the parent's padding and gaps before sharing width. Preserve readable type and the content required for the task.
 
-- For an ordinary button, use horizontal layout, a small gap, symmetric horizontal padding, and center alignment on both axes. Center the icon and label as one group, rather than centering only the text inside a leftover text box.
-- For breadcrumbs, use a content-sized horizontal row with explicit gaps between labels and separators. Let a changed label move the following separator and item through layout, rather than recalculating their x coordinates.
-- For a compact sort action, keep the label and chevron together in a content-sized horizontal row with a gap. A wide select field has a different role: its constrained label may fill the available space and keep the chevron at the far edge. Do not apply one alignment rule to both.
+When a horizontal arrangement becomes crowded, decide which text can wrap and which supporting regions can move below the main content. Use a vertical frame or separate row frames to express that reading order. The layout engine does not automatically wrap children, shrink fixed siblings, or switch direction at breakpoints. Author the structure for the requested width; create additional variants only when they are part of the task. Avoid shrinking all type or removing supplied content to preserve a wide arrangement.
 
-For example, this button derives its width from its icon, label, gap, and padding. Setting a fixed width on the frame would keep the same group centered without giving the label a guessed width:
+This insertion batch shows the same reading content and supporting visual in a wide row and a narrow stack. The wide paragraph shares space with a fixed-size visual; the narrow paragraph and visual use the available width. Both parents grow to their content height. The colored rectangle stands for a supporting visual; replace it with meaningful artwork when the task calls for it.
 
 ```json
-{
-  "type": "frame", "name": "Add member", "layout": "horizontal",
-  "width": "fit_content", "height": 44, "padding": [0, 16], "gap": 8,
-  "justifyContent": "center", "alignItems": "center", "fill": "#2563EB",
-  "children": [
-    {"type": "icon", "name": "Add member icon", "library": "lucide", "icon": "user-plus", "width": 16, "height": 16, "fill": "#FFFFFF"},
-    {"type": "text", "name": "Label", "content": "メンバーを追加", "textGrowth": "auto", "fontFamily": "Noto Sans JP", "fontSize": 14, "fill": "#FFFFFF"}
-  ]
-}
+[
+  {"op":"insert","client_ref":"wide","node":{
+    "type":"frame","name":"Wide composition","width":640,"height":"fit_content",
+    "layout":"horizontal","padding":24,"gap":24,"fill":"#FFFFFF",
+    "children":[
+      {"type":"text","name":"Wide reading content","textGrowth":"fixed-width","width":"fill_container","fontFamily":"Noto Sans JP","fontSize":16,"lineHeight":1.5,"fill":"#0F172A","content":"調査では、利用者が必要な情報を見つけやすい構成を優先しました。関連する説明は本文にまとめ、補助的な図は読み順を保って配置します。"},
+      {"type":"rectangle","name":"Wide supporting visual","width":160,"height":120,"fill":"#E2E8F0"}
+    ]
+  }},
+  {"op":"insert","client_ref":"narrow","node":{
+    "type":"frame","name":"Narrow composition","x":704,"width":280,"height":"fit_content",
+    "layout":"vertical","padding":24,"gap":16,"fill":"#FFFFFF",
+    "children":[
+      {"type":"text","name":"Narrow reading content","textGrowth":"fixed-width","width":"fill_container","fontFamily":"Noto Sans JP","fontSize":16,"lineHeight":1.5,"fill":"#0F172A","content":"調査では、利用者が必要な情報を見つけやすい構成を優先しました。関連する説明は本文にまとめ、補助的な図は読み順を保って配置します。"},
+      {"type":"rectangle","name":"Narrow supporting visual","width":"fill_container","height":120,"fill":"#E2E8F0"}
+    ]
+  }}
+]
 ```
 
-Adapt the colors, type, and spacing to the document. The `standard-ui` style includes editable, importable examples of these three control patterns; see `components` for their IDs.
+For interface-specific label and control patterns, read `components`; input fields are covered by `forms`.
 
 Inspect get_layout after structural changes. A shadow's extent and a layout box are different measurements. Overlap may be intentional; clipped text or a displaced primary action usually needs correction. Scale the preview after layout rather than changing document coordinates to fit terminal cells.

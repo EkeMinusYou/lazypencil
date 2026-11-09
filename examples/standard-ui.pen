@@ -175,10 +175,17 @@
               "strokeAlignment": "inner",
               "children": [
                 {
-                  "id": "field-value", "type": "text", "name": "Field value",
-                  "content": "山田 花子", "textGrowth": "fixed-width", "width": "fill_container",
-                  "fontFamily": "Noto Sans JP", "fontSize": 14,
-                  "lineHeight": 1.5, "fill": "$color.text"
+                  "id": "field-value-viewport", "type": "frame", "name": "Input value viewport",
+                  "layout": "horizontal", "width": "fill_container", "height": "fill_container",
+                  "alignItems": "center", "clip": true,
+                  "children": [
+                    {
+                      "id": "field-value", "type": "text", "name": "Field value",
+                      "content": "山田 花子", "textGrowth": "auto",
+                      "fontFamily": "Noto Sans JP", "fontSize": 14,
+                      "lineHeight": 1.5, "fill": "$color.text"
+                    }
+                  ]
                 }
               ]
             },

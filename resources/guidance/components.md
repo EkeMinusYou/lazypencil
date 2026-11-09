@@ -31,7 +31,7 @@ When the document has no suitable control, get_style with id `standard-ui` provi
 | `breadcrumbs` | Content-sized labels and a separator in reading order, with layout-managed gaps. |
 | `sort-control` | Compact content-sized label and chevron with a small gap; not a full-width select field. |
 | `text-avatar` | Fixed-size avatar with its character centered in a text box that fills it; see `typography`. |
-| `form-field` | Label, input, and independent optional supporting/error messages in a content-height group; see `app-screen`. |
+| `form-field` | Label, input, and independent optional supporting/error messages in a content-height group; see `forms`. |
 
 Use the existing document's components first. These examples are fallbacks, not a mandatory design system. Read their children before overriding labels or icons, adapt their tokens and spacing to the document, and reuse one definition for repeated controls. Keep the layout relationships when changing copy instead of assigning new fixed label widths or child coordinates. Long constrained labels may need a different sizing treatment; follow `layout` rather than forcing every control to hug its content.
 
@@ -51,6 +51,32 @@ For example, a batch can import a bundled button, then place its returned instan
 ```
 
 Inspect the imported structure, measure layout, and render the result. Source libraries and original asset files are never edited by an import. A dry run validates staged bytes without creating managed files or document history. A committed request can be replayed even after its original source is unavailable.
+
+## Interface control patterns
+
+Use textGrowth: "auto" for an unconstrained single-line label and omit its width and height. The parent control may still have a fixed width, such as equally sized actions; a content-sized label does not require a content-sized button. Use a constrained text box when long names must wrap or fit an established width. Preserve the user's or existing design's alignment conventions.
+
+- For an ordinary button, use horizontal layout, a small gap, symmetric horizontal padding, and center alignment on both axes. Center the icon and label as one group, rather than centering only the text inside a leftover text box.
+- For breadcrumbs, use a content-sized horizontal row with explicit gaps between labels and separators. Let a changed label move the following separator and item through layout, rather than recalculating their x coordinates.
+- For a compact sort action, keep the label and chevron together in a content-sized horizontal row with a gap. A wide select field has a different role: its constrained label may fill the available space and keep the chevron at the far edge. Do not apply one alignment rule to both.
+
+For example, this button derives its width from its icon, label, gap, and padding. Setting a fixed width on the frame would keep the same group centered without giving the label a guessed width:
+
+```json
+{
+  "type": "frame", "name": "Add member", "layout": "horizontal",
+  "width": "fit_content", "height": 44, "padding": [0, 16], "gap": 8,
+  "justifyContent": "center", "alignItems": "center", "fill": "#2563EB",
+  "children": [
+    {"type": "icon", "name": "Add member icon", "library": "lucide", "icon": "user-plus", "width": 16, "height": 16, "fill": "#FFFFFF"},
+    {"type": "text", "name": "Label", "content": "メンバーを追加", "textGrowth": "auto", "fontFamily": "Noto Sans JP", "fontSize": 14, "fill": "#FFFFFF"}
+  ]
+}
+```
+
+Adapt the colors, type, and spacing to the document. The `standard-ui` component table above lists editable, importable examples of these patterns.
+
+## Script component copies
 
 For script copies, the importer closes the reachable source component, variable, and theme namespaces without executing JavaScript. Code remains executable JavaScript, stored as immutable copied bytes. Add files selected only inside the code to options.script_assets, keyed by the qualified source script node, with entries such as {"kind":"script","uri":"nested.js"} or {"kind":"image","uri":"alternate.png"}. A descendant code override uses its owning ref and override path, such as ui:inner/draw. URIs use that script's original output document. Include shader source and alternative files that later input values can select. Generated paths outside the manifest fail instead of opening a same-named consumer file.
 

@@ -5,7 +5,7 @@
   "styles": [
     {
       "id": "standard-ui",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "name": "Standard UI",
       "description": "A restrained, readable starting point for application screens.",
       "use_cases": [
@@ -16,6 +16,7 @@
       "guidance": [
         "start",
         "app-screen",
+        "forms",
         "layout",
         "typography",
         "color",
