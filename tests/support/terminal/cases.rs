@@ -572,7 +572,7 @@ pub fn run(
             no_agent(&h);
             h.paste("Check the model and speed")?;
             h.key(b"\x13")?;
-            h.wait("header turn completed", 15.0, |h| h.count("complete") == 1)?;
+            h.wait("header turn completed", 15.0, |h| h.completed_turns(1))?;
             h.wait(
                 "negotiated model and speed in the top row",
                 15.0,
@@ -622,7 +622,7 @@ pub fn run(
             h.paste("Check the selected account")?;
             h.key(b"\x13")?;
             h.visible("other-account@example.test")?;
-            h.wait("account turn complete", 15.0, |h| h.count("complete") == 1)?;
+            h.wait("account turn complete", 15.0, |h| h.completed_turns(1))?;
             for saved in std::iter::once(state(&h)).chain(h.turns()) {
                 let saved = saved.to_string();
                 for private in [
@@ -994,7 +994,7 @@ fn node_references(h: &mut Harness, design: &Value) -> Result {
     h.paste("。余白を調整できますか？")?;
     h.key(b"\x13")?;
     h.wait("reference request completes", 15.0, |h| {
-        h.count("complete") == 1
+        h.completed_turns(1)
     })?;
     let received = read_json(&h.root.join("received-turn-1.json")).unwrap();
     let reference = received["text"]
@@ -1015,7 +1015,7 @@ fn node_references(h: &mut Harness, design: &Value) -> Result {
     h.hidden("References ·")?;
     h.paste("Continue the conversation")?;
     h.key(b"\x13")?;
-    h.wait("next request completes", 15.0, |h| h.count("complete") == 2)?;
+    h.wait("next request completes", 15.0, |h| h.completed_turns(2))?;
     let next = read_json(&h.root.join("received-turn-2.json")).unwrap();
     assert!(
         next["text"]
@@ -1070,7 +1070,7 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     no_agent(h);
     h.key(b"\x13")?;
     h.wait("diagnostic reference reaches the agent", 15.0, |h| {
-        h.count("complete") == 1
+        h.completed_turns(1)
     })?;
     let received = read_json(&h.root.join("received-turn-1.json")).unwrap();
     let reference = received["text"]
@@ -1096,7 +1096,7 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
     h.wait(
         "document-wide diagnostic request reaches the agent",
         15.0,
-        |h| h.count("complete") == 2,
+        |h| h.completed_turns(2),
     )?;
     let all = read_json(&h.root.join("received-turn-2.json")).unwrap();
     assert!(
@@ -1743,9 +1743,7 @@ fn keys(h: &mut Harness) -> Result {
     );
     let expected = state(h)["draft"].as_str().unwrap().to_owned();
     h.key(b"\x1b[15~")?;
-    h.wait("F5 submitted actual turn", 15.0, |h| {
-        h.count("complete") == 1
-    })?;
+    h.wait("F5 submitted actual turn", 15.0, |h| h.completed_turns(1))?;
     assert!(
         read_json(&h.root.join("received-turn-1.json")).unwrap()["text"]
             .as_array()
@@ -1756,9 +1754,7 @@ fn keys(h: &mut Harness) -> Result {
     fs::write(config(h), "[tui.keys]\nsubmit=['F6']\npaste=[]\n")?;
     h.paste("同じキーで次の依頼")?;
     h.key(b"\x1b[15~")?;
-    h.wait("startup shortcut retained", 15.0, |h| {
-        h.count("complete") == 2
-    })?;
+    h.wait("startup shortcut retained", 15.0, |h| h.completed_turns(2))?;
     assert_eq!(h.count("ready"), 1);
     Ok(())
 }
@@ -1768,7 +1764,7 @@ fn agent(h: &mut Harness, design: &Value) -> Result {
     h.paste("保存したエージェント設定で送信")?;
     h.key(b"\r")?;
     h.wait("configured agent completed turn", 15.0, |h| {
-        h.count("complete") == 1
+        h.completed_turns(1)
     })?;
     let ready = h
         .turns()
@@ -1790,7 +1786,7 @@ fn agent(h: &mut Harness, design: &Value) -> Result {
     h.paste("同じ接続で次の依頼")?;
     h.key(b"\x13")?;
     h.wait("second turn kept resolved settings", 15.0, |h| {
-        h.count("complete") == 2
+        h.completed_turns(2)
     })?;
     let starts: Vec<_> = h
         .turns()
@@ -1843,7 +1839,7 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     ])?;
     h.key(b"\x13")?;
     h.wait("project grant permits the pending turn", 15.0, |h| {
-        h.count("complete") == 1
+        h.completed_turns(1)
     })?;
     assert!(!dynamic::children(h).is_empty());
     h.cli(&[
@@ -1866,7 +1862,7 @@ fn project_agent(h: &mut Harness, design: &Value) -> Result {
     ])?;
     h.key(b"\x13")?;
     h.wait("regrant resumes the same conversation", 15.0, |h| {
-        h.count("complete") == 2
+        h.completed_turns(2)
     })?;
     assert_eq!(h.count("ready"), 2);
     let configuration =
@@ -1959,7 +1955,7 @@ fn queued_followups(h: &mut Harness) -> Result {
         }
     }
     h.wait("queue drained and editor restored", 15.0, |h| {
-        h.count("complete") == 3 && h.screen.text().contains("Idle")
+        h.completed_turns(3)
     })?;
     h.draft("Unsent next draft")?;
     h.paste(" appended")?;
@@ -1972,7 +1968,7 @@ fn queued_followups(h: &mut Harness) -> Result {
     )?;
     fs::write(h.root.join("release-turn-4"), "release")?;
     h.wait("fourth request completed", 15.0, |h| {
-        h.count("complete") == 4 && !h.screen.text().contains("Working…")
+        h.completed_turns(4) && !h.screen.text().contains("Working…")
     })?;
     let prompts = fs::read_to_string(h.root.join("received-prompts.jsonl"))?;
     let prompts = prompts
@@ -2003,13 +1999,13 @@ fn basic(h: &mut Harness) -> Result {
     h.draft(text)?;
     no_agent(h);
     h.key(b"\r")?;
-    h.wait("first completed turn", 15.0, |h| h.count("complete") == 1)?;
+    h.wait("first completed turn", 15.0, |h| h.completed_turns(1))?;
     h.wait("visible turn completion", 15.0, |h| {
         h.screen.contains_words("Request", "complete")
     })?;
     h.paste("次の依頼")?;
     h.key(b"\x13")?;
-    h.wait("second completed turn", 15.0, |h| h.count("complete") == 2)?;
+    h.wait("second completed turn", 15.0, |h| h.completed_turns(2))?;
     assert!(
         read_json(&h.root.join("received-turn-1.json")).unwrap()["text"]
             .as_array()

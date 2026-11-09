@@ -490,6 +490,29 @@ impl Harness {
     pub fn count(&self, kind: &str) -> usize {
         self.turns().iter().filter(|v| v["type"] == kind).count()
     }
+    pub fn completed_turns(&self, count: usize) -> bool {
+        // A complete log record precedes the durability barrier and session save.
+        // An earlier Idle frame may still be visible. The saved outbox must also
+        // acknowledge delivery, and its next draft must match the saved session.
+        let Some(session) = self.sessions().into_iter().next() else {
+            return false;
+        };
+        let Some(state) = read_json(&session) else {
+            return false;
+        };
+        let Some(outbox) = session
+            .parent()
+            .and_then(|directory| read_json(&directory.join("prompt-outbox.json")))
+        else {
+            return false;
+        };
+        self.count("complete") == count
+            && state["continuity_pending"] == false
+            && outbox.get("in_flight") == Some(&Value::Null)
+            && outbox["queued"].as_array().is_some_and(Vec::is_empty)
+            && state["draft"] == outbox["draft"]
+            && self.screen.text().contains("Idle")
+    }
     pub fn last_color(&self, color: [u8; 4]) -> bool {
         self.frames
             .images
