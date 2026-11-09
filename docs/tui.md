@@ -217,6 +217,11 @@ The bounded trace records received pointer kinds, cell positions, modifiers, hit
 targets and image presentation timing; it does not record prompt text. Tracing is
 disabled by default.
 
+While the TUI is active, diagnostics directed to the terminal (including native
+macOS warnings) are captured so they cannot scroll or overwrite the workspace.
+After the terminal is restored, up to the last 64 KiB are printed. Explicit stderr
+redirection such as `2>diagnostics.log` remains live and bypasses this capture.
+
 For native macOS pinch and precise scrolling, open the command palette (`Alt+p`)
 and choose **Enable native gestures…**. Allow the requested application in macOS
 Accessibility settings and retry the action. Move the pointer onto Preview, then

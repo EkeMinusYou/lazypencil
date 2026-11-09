@@ -9,6 +9,13 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_stderr_stays_off_the_workspace_and_preserves_explicit_redirection() {
+    run_pty_case("stderr-terminal");
+    run_pty_case("stderr-file");
+    run_pty_case("picker-stderr");
+}
+
+#[test]
 fn real_pty_startup_focus_opens_existing_documents_at_preview_and_new_documents_at_prompt() {
     run_pty_case("startup-existing");
     run_pty_case("startup-new");

@@ -109,6 +109,12 @@ pub fn run(
     environment.remove(std::ffi::OsStr::new("HERDR_ENV"));
     environment.remove(std::ffi::OsStr::new("HC_TERMINAL_ID"));
     environment.extend(extra_environment.iter().cloned());
+    if matches!(case, "stderr-terminal" | "stderr-file" | "picker-stderr") {
+        environment.insert(
+            "LAZYPENCIL_PROFILE_INPUT".into(),
+            "owned-local-measurement".into(),
+        );
+    }
     if case.starts_with("background-") || case.starts_with("theme-") {
         // These cases inspect emitted RGB; NO_COLOR has separate coverage.
         environment.insert("NO_COLOR".into(), "".into());
@@ -397,7 +403,7 @@ pub fn run(
         }
         if matches!(
             case,
-            "picker-default" | "picker-prepared" | "picker-loading"
+            "picker-default" | "picker-prepared" | "picker-loading" | "picker-stderr"
         ) {
             h.key(b"\x0c")?;
             h.key(b"design.pen")?;
@@ -490,6 +496,31 @@ pub fn run(
         })?;
     }
     let mut report = match case {
+        "stderr-terminal" | "stderr-file" | "picker-stderr" => {
+            // Real application diagnostics exercise descriptor-level capture,
+            // rather than bypassing it by writing to the PTY from the observer.
+            h.key(b"\x1b[<65;115;10M")?;
+            h.paste("diagnostic-safe")?;
+            h.draft("diagnostic-safe")?;
+            assert!(
+                h.screen
+                    .text()
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .contains("design.pen")
+            );
+            assert!(!h.contains_bytes(b"LAZYPENCIL_INPUT_PROFILE"));
+            if case == "stderr-file" {
+                h.wait("live redirected diagnostics", 5.0, |_| {
+                    fs::read_to_string(root.join("terminal-errors.log"))
+                        .unwrap_or_default()
+                        .contains("LAZYPENCIL_INPUT_PROFILE")
+                })?;
+            }
+            no_agent(&h);
+            Value::Null
+        }
         "startup-existing" | "startup-new" => {
             h.visible(" send")?;
             h.key("起動後の入力".as_bytes())?;
@@ -739,6 +770,20 @@ pub fn run(
         }
     };
     h.finish()?;
+    if matches!(case, "stderr-terminal" | "picker-stderr") {
+        let leave = h
+            .output
+            .windows(b"\x1b[?1049l".len())
+            .position(|bytes| bytes == b"\x1b[?1049l")
+            .expect("Left the alternate screen");
+        let diagnostic = h
+            .output
+            .windows(b"LAZYPENCIL_INPUT_PROFILE".len())
+            .position(|bytes| bytes == b"LAZYPENCIL_INPUT_PROFILE")
+            .expect("Replayed captured diagnostics");
+        assert!(diagnostic > leave);
+        assert!(h.contains_bytes(b"Conversation:"));
+    }
     if case.starts_with("picker-") {
         let mut synchronized = false;
         let mut positions = 0;

@@ -283,7 +283,13 @@ impl Harness {
         command
             .stdin(Stdio::from(slave.try_clone()?))
             .stdout(Stdio::from(slave.try_clone()?))
-            .stderr(Stdio::from(errors));
+            .stderr(Stdio::from(
+                if matches!(case, "stderr-terminal" | "picker-stderr") {
+                    slave.try_clone()?
+                } else {
+                    errors
+                },
+            ));
         unsafe {
             command.pre_exec(|| {
                 if libc::setsid() < 0 {

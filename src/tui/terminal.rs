@@ -15,6 +15,9 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend, buffer::CellDiffOption};
 use std::io::{Stdout, Write};
 
+#[cfg(unix)]
+mod stderr;
+
 pub struct Screen {
     pub terminal: Terminal<CrosstermBackend<Stdout>>,
     pub picker: super::graphics::Backend,
@@ -24,6 +27,7 @@ pub struct Screen {
     preview_keys: bool,
     pointer_motion: bool,
     _theme: super::theme::Guard,
+    _restore: Restore,
 }
 /// Keep the terminal active while the picker hands off to the document workspace.
 pub(super) struct Startup {
@@ -37,6 +41,8 @@ pub(super) struct Startup {
 struct Restore {
     id: Option<u32>,
     tmux: bool,
+    #[cfg(unix)]
+    _stderr: Option<stderr::Capture>,
 }
 impl Drop for Restore {
     fn drop(&mut self) {
@@ -60,10 +66,14 @@ impl Startup {
         protocol: super::ImageProtocol,
         theme: crate::config::keys::Theme,
     ) -> Result<Self> {
+        #[cfg(unix)]
+        let stderr = stderr::Capture::enter().map_err(io)?;
         enable_raw_mode().map_err(io)?;
         let guard = Restore {
             id: None,
             tmux: false,
+            #[cfg(unix)]
+            _stderr: stderr,
         };
         execute!(std::io::stdout(), EnterAlternateScreen, cursor::Hide).map_err(io)?;
         if mouse {
@@ -104,7 +114,6 @@ impl Startup {
         )
         .map_err(io)?;
         guard.tmux = picker.tmux_detected();
-        std::mem::forget(guard);
         Ok(Screen {
             terminal,
             picker,
@@ -114,6 +123,7 @@ impl Startup {
             preview_keys: false,
             pointer_motion: false,
             _theme: theme,
+            _restore: guard,
         })
     }
 }
@@ -167,11 +177,6 @@ impl Screen {
         theme: crate::config::keys::Theme,
     ) -> Result<Self> {
         Startup::enter(mouse, protocol, theme)?.activate(id)
-    }
-}
-impl Drop for Screen {
-    fn drop(&mut self) {
-        restore(self.id, self.picker.tmux_detected());
     }
 }
 fn draw_terminal(

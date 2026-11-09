@@ -183,6 +183,7 @@ mod native {
         fn CGEventSetDoubleValueField(event: *mut c_void, field: u32, value: f64);
         fn CFRelease(object: *mut c_void);
         fn lp_pinch_decode(event: *mut c_void, delta: *mut f64, ended: *mut bool) -> bool;
+        fn lp_pinch_event_mask() -> u64;
         fn lp_scroll_decode(
             event: *mut c_void,
             dx: *mut f64,
@@ -190,6 +191,59 @@ mod native {
             modifiers: *mut u32,
             ended: *mut bool,
         ) -> bool;
+    }
+
+    #[test]
+    fn native_event_mask_uses_core_graphics_gesture_packets_instead_of_appkit_magnify() {
+        assert_eq!(unsafe { lp_pinch_event_mask() }, (1 << 29) | (1 << 22));
+    }
+
+    #[test]
+    fn native_decoder_declines_foreign_event_types_without_appkit_warnings() {
+        const CHILD: &str = "LAZYPENCIL_TEST_NATIVE_EVENT_TYPES";
+        if std::env::var_os(CHILD).is_none() {
+            // Isolate stderr so warnings emitted directly by AppKit fail the test.
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tui::gestures::tests::native::native_decoder_declines_foreign_event_types_without_appkit_warnings",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            assert!(output.stderr.is_empty(), "{output:?}");
+            return;
+        }
+        unsafe {
+            let (mut dx, mut dy, mut modifiers, mut ended) = (0.0, 0.0, 0, false);
+            assert!(!lp_pinch_decode(std::ptr::null_mut(), &mut dx, &mut ended));
+            assert!(!lp_scroll_decode(
+                std::ptr::null_mut(),
+                &mut dx,
+                &mut dy,
+                &mut modifiers,
+                &mut ended,
+            ));
+            for kind in [0, 1, 22, 30, 31] {
+                let event = CGEventCreate(std::ptr::null());
+                assert!(!event.is_null());
+                CGEventSetType(event, kind);
+                assert!(!lp_pinch_decode(event, &mut dx, &mut ended), "{kind}");
+                if kind != 22 {
+                    assert!(!lp_scroll_decode(
+                        event,
+                        &mut dx,
+                        &mut dy,
+                        &mut modifiers,
+                        &mut ended,
+                    ));
+                }
+                CFRelease(event);
+            }
+        }
     }
 
     #[test]

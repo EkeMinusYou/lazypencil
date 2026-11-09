@@ -8,6 +8,14 @@
 #include <stdlib.h>
 
 typedef bool (*PinchCallback)(void *, uint32_t, double, double, double, double, int32_t, uint32_t, bool);
+// CoreGraphics carries magnification inside a gesture packet, not event type 30.
+// NSEventType values belong to AppKit and must not select CGEventTap input.
+static const CGEventType LPEventGesture = 29;
+
+CGEventMask lp_pinch_event_mask(void) {
+    return CGEventMaskBit(LPEventGesture) | CGEventMaskBit(kCGEventScrollWheel);
+}
+
 typedef struct {
     pthread_t thread;
     pthread_mutex_t mutex;
@@ -47,6 +55,7 @@ void lp_pinch_pointer(double *x, double *y, int32_t *host, double *scale) {
 }
 
 bool lp_pinch_decode(CGEventRef event, double *delta, bool *ended) {
+    if (!event || CGEventGetType(event) != LPEventGesture) return false;
     @autoreleasepool { @try {
         NSEvent *native = [NSEvent eventWithCGEvent:event];
         if (native.type != NSEventTypeMagnify) return false;
@@ -57,6 +66,7 @@ bool lp_pinch_decode(CGEventRef event, double *delta, bool *ended) {
 }
 
 bool lp_scroll_decode(CGEventRef event, double *dx, double *dy, uint32_t *modifiers, bool *ended) {
+    if (!event || CGEventGetType(event) != kCGEventScrollWheel) return false;
     @autoreleasepool { @try {
         NSEvent *native = [NSEvent eventWithCGEvent:event];
         if (native.type != NSEventTypeScrollWheel || !native.hasPreciseScrollingDeltas) return false;
@@ -127,9 +137,7 @@ void *lp_pinch_start(PinchCallback callback, void *context) {
     if (!pinch) return NULL;
     pinch->callback = callback; pinch->context = context;
     pthread_mutex_init(&pinch->mutex,NULL);
-    // AppKit's public gesture/magnify event types are not part of the TTY mouse protocol.
-    CGEventMask mask = (1ULL << NSEventTypeGesture) | (1ULL << NSEventTypeMagnify) | CGEventMaskBit(kCGEventScrollWheel);
-    pinch->tap = CGEventTapCreate(kCGHIDEventTap,kCGHeadInsertEventTap,kCGEventTapOptionDefault,mask,receive,pinch);
+    pinch->tap = CGEventTapCreate(kCGHIDEventTap,kCGHeadInsertEventTap,kCGEventTapOptionDefault,lp_pinch_event_mask(),receive,pinch);
     if (!pinch->tap || pthread_create(&pinch->thread,NULL,run,pinch) != 0) {
         if (pinch->tap) { CFMachPortInvalidate(pinch->tap); CFRelease(pinch->tap); }
         pthread_mutex_destroy(&pinch->mutex); free(pinch); return NULL;
