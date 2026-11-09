@@ -2,46 +2,151 @@
 use super::*;
 use std::sync::{Arc, Mutex};
 
+const MAX_PENDING_REQUESTS: usize = 64;
+const MAX_PENDING_PER_DOCUMENT: usize = 32;
+const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
+const MAX_PENDING_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CLOSE_REQUESTS: usize = 8;
+const MAX_CLOSE_BYTES: usize = 4096;
+
 pub(super) struct Admission {
     total: Arc<tokio::sync::Semaphore>,
-    documents: Mutex<std::collections::HashMap<String, std::sync::Weak<tokio::sync::Semaphore>>>,
+    pending: Arc<Budget>,
+    inputs: Arc<Budget>,
+    closes: Arc<Budget>,
+    close_inputs: Arc<Budget>,
+    documents: Mutex<std::collections::HashMap<String, std::sync::Weak<DocumentAdmission>>>,
+}
+struct DocumentAdmission {
+    execution: Arc<tokio::sync::Semaphore>,
+    pending: Arc<Budget>,
+    inputs: Arc<Budget>,
+}
+pub(super) struct Registration {
+    _pending: Lease,
+    _inputs: Lease,
+    document: Option<DocumentRegistration>,
+    close: bool,
+}
+struct DocumentRegistration {
+    queue: Arc<DocumentAdmission>,
+    _pending: Lease,
+    _inputs: Lease,
 }
 pub(super) struct AdmissionPermit {
+    _registration: Registration,
     _document: Option<tokio::sync::OwnedSemaphorePermit>,
-    _connection: tokio::sync::OwnedSemaphorePermit,
+    _connection: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 impl Default for Admission {
     fn default() -> Self {
         Self {
             total: Arc::new(tokio::sync::Semaphore::new(16)),
+            pending: Budget::new(MAX_PENDING_REQUESTS),
+            inputs: Budget::new(MAX_PENDING_BYTES),
+            closes: Budget::new(MAX_CLOSE_REQUESTS),
+            close_inputs: Budget::new(MAX_CLOSE_REQUESTS * MAX_CLOSE_BYTES),
             documents: Mutex::default(),
         }
     }
 }
 impl Admission {
-    pub async fn reserve(
+    /// Reserve input before any await, including time spent outside execution admission.
+    pub fn register(
         &self,
         document: Option<&str>,
-        context: &tokio_util::sync::CancellationToken,
-        request: &tokio_util::sync::CancellationToken,
-    ) -> Result<AdmissionPermit> {
-        let document = if let Some(id) = document {
+        bytes: usize,
+        close: bool,
+    ) -> Result<Registration> {
+        if document.is_some_and(|id| id.len() > 128) {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "document_id exceeds 128 bytes",
+            ));
+        }
+        if close && bytes > MAX_CLOSE_BYTES {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "close_document input exceeds 4 KiB",
+            ));
+        }
+        let reserve = |budget: &Arc<Budget>, amount, scope| {
+            budget.reserve(amount).map_err(|error| {
+                Error::new("RESOURCE_LIMIT", "MCP pending input capacity is full; cancel pending requests or retry after they finish")
+                    .details(json!({"scope":scope,"budget":error.details}))
+            })
+        };
+        let pending = reserve(
+            if close { &self.closes } else { &self.pending },
+            1,
+            "connection_requests",
+        )?;
+        let inputs = reserve(
+            if close {
+                &self.close_inputs
+            } else {
+                &self.inputs
+            },
+            bytes,
+            "connection_input_bytes",
+        )?;
+        let document = if !close && let Some(id) = document {
             let queue = {
                 let mut documents = self.documents.lock().expect("document admission");
                 documents.retain(|_, queue| queue.strong_count() > 0);
                 let queue = documents
                     .get(id)
                     .and_then(std::sync::Weak::upgrade)
-                    .unwrap_or_else(|| Arc::new(tokio::sync::Semaphore::new(4)));
+                    .unwrap_or_else(|| {
+                        Arc::new(DocumentAdmission {
+                            execution: Arc::new(tokio::sync::Semaphore::new(4)),
+                            pending: Budget::new(MAX_PENDING_PER_DOCUMENT),
+                            inputs: Budget::new(MAX_PENDING_DOCUMENT_BYTES),
+                        })
+                    });
                 documents.insert(id.to_owned(), Arc::downgrade(&queue));
                 queue
             };
-            Some(acquire(queue, context, request).await?)
+            Some(DocumentRegistration {
+                _pending: reserve(&queue.pending, 1, "document_requests")?,
+                _inputs: reserve(&queue.inputs, bytes, "document_input_bytes")?,
+                queue,
+            })
         } else {
             None
         };
-        let connection = acquire(self.total.clone(), context, request).await?;
+        Ok(Registration {
+            _pending: pending,
+            _inputs: inputs,
+            document,
+            close,
+        })
+    }
+
+    pub async fn reserve(
+        &self,
+        registration: Registration,
+        context: &tokio_util::sync::CancellationToken,
+        request: &tokio_util::sync::CancellationToken,
+    ) -> Result<AdmissionPermit> {
+        if context.is_cancelled() || request.is_cancelled() {
+            return Err(Error::new(
+                "CANCELLED",
+                "The request was cancelled before admission",
+            ));
+        }
+        let document = if let Some(document) = &registration.document {
+            Some(acquire(document.queue.execution.clone(), context, request).await?)
+        } else {
+            None
+        };
+        let connection = if registration.close {
+            None
+        } else {
+            Some(acquire(self.total.clone(), context, request).await?)
+        };
         Ok(AdmissionPermit {
+            _registration: registration,
             _document: document,
             _connection: connection,
         })
@@ -124,6 +229,162 @@ impl Drop for Lease {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_registrations_bound_counts_per_document_and_connection() {
+        let admission = Admission::default();
+        let first = (0..MAX_PENDING_PER_DOCUMENT)
+            .map(|_| admission.register(Some("first"), 1, false).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            admission
+                .register(Some("first"), 1, false)
+                .err()
+                .unwrap()
+                .code,
+            "RESOURCE_LIMIT"
+        );
+        let second = (0..MAX_PENDING_PER_DOCUMENT)
+            .map(|_| admission.register(Some("second"), 1, false).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            admission
+                .register(Some("third"), 1, false)
+                .err()
+                .unwrap()
+                .code,
+            "RESOURCE_LIMIT"
+        );
+        let closes = (0..MAX_CLOSE_REQUESTS)
+            .map(|_| {
+                admission
+                    .register(Some("first"), MAX_CLOSE_BYTES, true)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            admission
+                .register(Some("first"), 1, true)
+                .err()
+                .unwrap()
+                .code,
+            "RESOURCE_LIMIT"
+        );
+        drop(closes);
+        drop(first);
+        drop(second);
+        assert_eq!(*admission.pending.used.lock().unwrap(), 0);
+        assert_eq!(*admission.inputs.used.lock().unwrap(), 0);
+        assert_eq!(*admission.closes.used.lock().unwrap(), 0);
+        assert_eq!(*admission.close_inputs.used.lock().unwrap(), 0);
+        admission.register(Some("first"), 1, false).unwrap();
+    }
+
+    #[test]
+    fn pending_inputs_bound_bytes_and_failed_reservations_release_capacity() {
+        let admission = Admission::default();
+        let mut inputs = Vec::new();
+        for document in ["first", "second", "third", "fourth"] {
+            inputs.push(
+                admission
+                    .register(Some(document), MAX_PENDING_DOCUMENT_BYTES, false)
+                    .unwrap(),
+            );
+            assert_eq!(
+                admission
+                    .register(Some(document), 1, false)
+                    .err()
+                    .unwrap()
+                    .code,
+                "RESOURCE_LIMIT"
+            );
+        }
+        assert_eq!(*admission.pending.used.lock().unwrap(), 4);
+        assert_eq!(*admission.inputs.used.lock().unwrap(), MAX_PENDING_BYTES);
+        assert_eq!(
+            admission.register(None, 1, false).err().unwrap().code,
+            "RESOURCE_LIMIT"
+        );
+        admission
+            .register(Some("first"), MAX_CLOSE_BYTES, true)
+            .unwrap();
+        assert_eq!(
+            admission
+                .register(None, MAX_CLOSE_BYTES + 1, true)
+                .err()
+                .unwrap()
+                .code,
+            "INVALID_ARGUMENT"
+        );
+        drop(inputs.pop());
+        admission
+            .register(None, MAX_PENDING_DOCUMENT_BYTES, false)
+            .unwrap();
+        drop(inputs);
+        assert_eq!(*admission.pending.used.lock().unwrap(), 0);
+        assert_eq!(*admission.inputs.used.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn pending_waiter_cancellation_releases_inputs_and_close_bypasses_execution() {
+        let admission = Admission::default();
+        let context = tokio_util::sync::CancellationToken::new();
+        let request = tokio_util::sync::CancellationToken::new();
+        let mut active = Vec::new();
+        for document in ["first", "second", "third", "fourth"] {
+            for _ in 0..4 {
+                active.push(
+                    admission
+                        .reserve(
+                            admission.register(Some(document), 17, false).unwrap(),
+                            &context,
+                            &request,
+                        )
+                        .await
+                        .unwrap(),
+                );
+            }
+        }
+        let waiting_cancel = tokio_util::sync::CancellationToken::new();
+        let waiting = admission.reserve(
+            admission.register(Some("first"), 100, false).unwrap(),
+            &context,
+            &waiting_cancel,
+        );
+        tokio::pin!(waiting);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut waiting)
+                .await
+                .is_err()
+        );
+        waiting_cancel.cancel();
+        assert_eq!(waiting.await.err().unwrap().code, "CANCELLED");
+        assert_eq!(*admission.pending.used.lock().unwrap(), 16);
+        assert_eq!(*admission.inputs.used.lock().unwrap(), 16 * 17);
+        let close = admission.reserve(
+            admission.register(Some("first"), 100, true).unwrap(),
+            &context,
+            &request,
+        );
+        tokio::time::timeout(Duration::from_millis(100), close)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(active);
+        assert_eq!(*admission.pending.used.lock().unwrap(), 0);
+        assert_eq!(*admission.inputs.used.lock().unwrap(), 0);
+        let cancelled = admission.register(Some("first"), 100, false).unwrap();
+        assert_eq!(
+            admission
+                .reserve(cancelled, &waiting_cancel, &request)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CANCELLED"
+        );
+        assert_eq!(*admission.inputs.used.lock().unwrap(), 0);
+    }
 
     #[test]
     fn reservations_are_shared_atomic_and_release_only_their_own_bytes() {

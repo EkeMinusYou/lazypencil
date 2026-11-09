@@ -55,6 +55,15 @@ pub(crate) fn check_response_size(
     cancel: Option<&CancellationToken>,
     limit_message: &str,
 ) -> Result<()> {
+    checked_serialized_size(value, limit, cancel, limit_message).map(|_| ())
+}
+
+pub(crate) fn checked_serialized_size(
+    value: &impl Serialize,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+    limit_message: &str,
+) -> Result<usize> {
     crate::cancel::check(cancel)?;
     let mut counter = Counter::new(limit, cancel);
     if serde_json::to_writer(&mut counter, value).is_err() {
@@ -67,7 +76,8 @@ pub(crate) fn check_response_size(
             "Cannot serialize query response",
         ));
     }
-    crate::cancel::check(cancel)
+    crate::cancel::check(cancel)?;
+    Ok(counter.used)
 }
 
 pub(crate) fn response(value: Value) -> Result<Value> {

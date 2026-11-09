@@ -247,7 +247,8 @@ fn document_queue_waits_for_capacity_and_cancels_waiting_edits() {
         std::thread::sleep(Duration::from_millis(5));
     }
     let mut pending = std::collections::HashSet::new();
-    for _ in 0..32 {
+    // Exceed execution admission while staying within the bounded pending-input pool.
+    for _ in 0..28 {
         pending.insert(
             client.start_request("tools/call", json!({"name":"get_history","arguments":{}})),
         );

@@ -52,6 +52,76 @@ fn wait_for_http(server: &http_image_reference::Server) {
 }
 
 #[test]
+fn pending_inputs_are_bounded_without_blocking_other_documents_or_close() {
+    for (requests, payload_bytes, scope) in [
+        (32, 0, "document_requests"),
+        (17, 1024 * 1024, "document_input_bytes"),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let server = http_image_reference::Server::new();
+        let a = temp.path().join("a.pen");
+        fs::write(&a, json!({"version":"2.22","children":[{"id":"image","type":"rectangle","width":16,"height":16,"fill":{"type":"image","url":format!("http://{}/network/http-image/blocked.png",server.address)}}]}).to_string()).unwrap();
+        let data = temp.path().join("data");
+        let b = Store::init(temp.path().join("b.pen"), Some(data.clone())).unwrap();
+        let mut client = Client::start(&a, &data);
+        let opened = client.data("open_document", json!({"path":b.path()}));
+        let blocked = client.start_request(
+            "tools/call",
+            json!({"name":"get_document","arguments":{"acquire_images":true}}),
+        );
+        wait_for_http(&server);
+        let mut abandoned = HashSet::from([blocked]);
+        for _ in 0..requests {
+            abandoned.insert(client.start_request(
+            "tools/call",
+            json!({"name":"read_nodes","arguments":{"name":"x".repeat(payload_bytes),"limit":1}}),
+        ));
+        }
+        let rejected = client
+            .messages
+            .recv_timeout(Duration::from_secs(5))
+            .expect("Excess inputs should fail before the blocked request completes");
+        assert!(
+            abandoned.contains(&rejected["id"].as_u64().unwrap()),
+            "{rejected}"
+        );
+        assert_eq!(
+            rejected["result"]["structuredContent"]["error"]["code"], "RESOURCE_LIMIT",
+            "{rejected}"
+        );
+        assert_eq!(
+            rejected["result"]["structuredContent"]["error"]["details"]["scope"],
+            scope
+        );
+        let other = client.start_request(
+            "tools/call",
+            json!({"name":"get_document","arguments":{"document_id":opened["document_id"]}}),
+        );
+        assert_ne!(wait_for(&mut client, other, &abandoned)["isError"], true);
+        let close = client.start_request(
+            "tools/call",
+            json!({"name":"close_document","arguments":{}}),
+        );
+        assert_eq!(
+            wait_for(&mut client, close, &abandoned)["structuredContent"]["closed"],
+            true
+        );
+        let reopened = client.start_request(
+            "tools/call",
+            json!({"name":"open_document","arguments":{"path":a}}),
+        );
+        let id =
+            wait_for(&mut client, reopened, &abandoned)["structuredContent"]["document_id"].clone();
+        let metadata = client.start_request(
+            "tools/call",
+            json!({"name":"get_document","arguments":{"document_id":id}}),
+        );
+        assert_ne!(wait_for(&mut client, metadata, &abandoned)["isError"], true);
+        finish(&mut client, &abandoned);
+    }
+}
+
+#[test]
 fn blocked_and_saturated_document_does_not_block_other_documents_or_close() {
     let temp = TempDir::new().unwrap();
     let server = http_image_reference::Server::new();
@@ -71,7 +141,8 @@ fn blocked_and_saturated_document_does_not_block_other_documents_or_close() {
     assert_eq!(workers.len(), 1);
     let opened = client.data("open_document", json!({"path":b}));
     let mut abandoned = HashSet::from([blocked]);
-    for _ in 0..32 {
+    // Saturate execution admission without overflowing the separate pending-input pool.
+    for _ in 0..28 {
         abandoned.insert(
             client.start_request("tools/call", json!({"name":"get_history","arguments":{}})),
         );

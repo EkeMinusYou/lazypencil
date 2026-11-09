@@ -183,17 +183,30 @@ impl ServerHandler for Server {
             return Err(ErrorData::invalid_params("Unknown tool", None));
         }
         let arguments = Value::Object(request.arguments.unwrap_or_default());
-        if let Err(error) = crate::query::check_response_size(
-            &arguments,
+        let input_bytes = match crate::query::checked_serialized_size(
+            &(&arguments, &context.meta, &context.id),
             MAX_TOOL_BYTES,
             None,
             "Tool input exceeds 4 MiB",
         ) {
-            return Ok(CallToolResult::structured_error(json!({"error":error})).into());
-        }
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return Ok(CallToolResult::structured_error(json!({"error":error})).into());
+            }
+        };
         if context.ct.is_cancelled() || cancel.is_cancelled() {
             return Ok(CallToolResult::structured_error(json!({"error":Error::new("CANCELLED","The request was cancelled before execution")})).into());
         }
+        let registration = match self.admission.register(
+            arguments.get("document_id").and_then(Value::as_str),
+            input_bytes,
+            request.name == "close_document",
+        ) {
+            Ok(registration) => registration,
+            Err(error) => {
+                return Ok(CallToolResult::structured_error(json!({"error":error})).into());
+            }
+        };
         // Capture the active turn before queueing, so cancelled requests cannot
         // append timing data to a later turn on the same connection.
         let usage = if let Some(access) = self.usage.clone() {
@@ -205,25 +218,19 @@ impl ServerHandler for Server {
         } else {
             Ok(None)
         };
-        // Close must remain available when a document fills all admitted slots.
-        let admission = if request.name == "close_document" {
-            None
-        } else {
+        // Close uses its own bounded input reserve and bypasses ordinary execution slots.
+        let admission = Some(
             match self
                 .admission
-                .reserve(
-                    arguments.get("document_id").and_then(Value::as_str),
-                    &context.ct,
-                    &cancel,
-                )
+                .reserve(registration, &context.ct, &cancel)
                 .await
             {
-                Ok(permit) => Some(permit),
+                Ok(permit) => permit,
                 Err(error) => {
                     return Ok(CallToolResult::structured_error(json!({"error":error})).into());
                 }
-            }
-        };
+            },
+        );
         let (reply, receiver) = oneshot::channel();
         let job = Job {
             _admission: admission,

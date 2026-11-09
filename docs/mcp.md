@@ -94,7 +94,11 @@ External MCP connections cannot discover or operate a running TUI.
 
 The implementation uses the [official Rust SDK](https://github.com/modelcontextprotocol/rust-sdk) at version 3.6.0. The currently advertised protocol is `2025-11-25`; other protocol revisions and broader real-agent workflows still require interoperability testing. Codex and Claude subscription workflows have been checked separately; see [agent integration](agents.md). MCP messages use stdout; startup errors use stderr. Closing stdin ends the server.
 
-Document work is serialized through a bounded queue. Requests that exceed its capacity wait for admission rather than immediately returning `BUSY`; cancelling a waiting request prevents it from being enqueued. Cancellation also remains available after admission. Keep edits sequential and reuse one retained calculation for parallel reads instead of launching independent calculations for every node.
+Document work is serialized through a bounded queue. Requests that exceed execution
+capacity wait within the pending-input limits described below; cancelling a waiting
+request prevents it from being enqueued. Cancellation also remains available after
+admission. Keep edits sequential and reuse one retained calculation for parallel reads
+instead of launching independent calculations for every node.
 
 When the CLI/TUI conversation host owns the server, it also binds design-resource metadata to the current prompt turn. Successful guide/style/catalogue queries are journaled before their results are returned, and the host appends those records to its transcript at turn end. Tool responses keep their existing shape. Ordinary external MCP connections have no host-owned usage journal. This records served resources rather than proving model comprehension; see [the record format and limits](agents.md#design-resource-records).
 
@@ -432,14 +436,21 @@ Each open document owns its layout, text and runtime state on its own thread. Na
 Skia paragraphs stay on the thread that created them. Requests execute serially per
 document, with at most two document operations executing per connection. Up to four
 requests per document and sixteen overall are admitted; additional requests wait with
-cancellation. Built-in catalogue, discovery and handle operations use the dispatcher.
+cancellation. Waiting and admitted ordinary requests together are limited to 32 per
+document and 64 per connection, with serialized input budgets of 16 MiB per document
+and 64 MiB per connection. Accounting includes arguments, request metadata and the
+request ID, and starts before audit work or admission waits. These byte counts are
+not process RSS limits. Excess requests return `RESOURCE_LIMIT` immediately; retry
+after earlier work finishes or is cancelled. Built-in catalogue, discovery and handle
+operations use the dispatcher.
 A blocked image acquisition in one document does not serialize another document's work.
 Copy/import acquisition happens before the save lock; revision and source verification
 are repeated inside the transaction. Checkpoint restore retains its locked lookup.
 
 `close_document` cancels running/queued requests for that handle and acknowledges only
 after its native snapshots, caches and owned child processes are released. It bypasses
-normal request admission so a saturated document can still be closed. Reopening the path
+normal request admission so a saturated document can still be closed, using a separate
+reserve of eight close requests, each limited to 4 KiB of input. Reopening the path
 creates a new ID; old calculation IDs and cursors cannot be reused. EOF/connection
 shutdown cancels and joins all document owners. Up to 64 open or retiring handles share
 one connection; closing handles releases this capacity without reconnecting.
