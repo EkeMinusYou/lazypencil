@@ -6,7 +6,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs::File,
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     time::Instant,
@@ -323,6 +323,9 @@ struct Window {
     total: u64,
     full: bool,
     text: String,
+    tail: Option<VecDeque<char>>,
+    tail_bytes: usize,
+    until: u64,
 }
 impl Window {
     fn new(skip: u64, limit: usize) -> Self {
@@ -332,6 +335,9 @@ impl Window {
             total: 0,
             full: false,
             text: String::new(),
+            tail: None,
+            tail_bytes: 0,
+            until: u64::MAX,
         }
     }
     fn character(&mut self, value: char) -> Result<()> {
@@ -340,6 +346,16 @@ impl Window {
         }
         let start = self.total;
         self.total += value.len_utf8() as u64;
+        if let Some(tail) = &mut self.tail {
+            if self.total <= self.until {
+                tail.push_back(value);
+                self.tail_bytes += value.len_utf8();
+                while self.tail_bytes > self.limit {
+                    self.tail_bytes -= tail.pop_front().expect("nonempty tail").len_utf8();
+                }
+            }
+            return Ok(());
+        }
         if start < self.skip && self.total > self.skip {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -452,6 +468,17 @@ fn formatted(
     limit: usize,
     budget: &Budget<'_>,
 ) -> Result<(Window, bool)> {
+    format_window(file, start, bytes, Window::new(skip, limit), false, budget)
+}
+
+fn format_window(
+    file: &mut File,
+    start: u64,
+    bytes: u64,
+    mut output: Window,
+    compact: bool,
+    budget: &Budget<'_>,
+) -> Result<(Window, bool)> {
     let mut metadata = Metadata::default();
     let valid = match scan(file, start, bytes, &mut metadata, budget) {
         Ok(()) => true,
@@ -471,7 +498,7 @@ fn formatted(
                 } else {
                     format!("\nYou:\nReferences: {}\n\n", get("references"))
                 };
-                suffix = "\n";
+                suffix = if compact { "\n\nAgent:\n" } else { "\n" };
                 selected = Some("prompt");
             }
             ("update", "agent_message_chunk") if metadata.present.contains("agent") => {
@@ -513,7 +540,6 @@ fn formatted(
             _ => structured = false,
         }
     }
-    let mut output = Window::new(skip, limit);
     if structured {
         output.write(&prefix)?;
         if let Some(field) = selected {
@@ -533,19 +559,90 @@ fn formatted(
         // This bound also bounds the number of fixed-size pages per turn.
         if output.total > bytes.saturating_mul(2) {
             structured = false;
-            output = Window::new(skip, limit);
+            output.text.clear();
+            output.total = 0;
+            output.full = false;
+            if let Some(tail) = &mut output.tail {
+                tail.clear();
+            }
+            output.tail_bytes = 0;
         }
     }
     if !structured {
-        raw(file, start, bytes, &mut output, budget)?;
+        if compact {
+            if !valid {
+                output.write("\n[Damaged saved event; inspect /logs]\n")?;
+            }
+        } else {
+            raw(file, start, bytes, &mut output, budget)?;
+        }
     }
-    if skip > output.total {
+    if output.skip > output.total {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "Display cursor exceeds its record",
         ));
     }
+    if let Some(tail) = output.tail.take() {
+        output.text = tail.into_iter().collect();
+    }
     Ok((output, !structured))
+}
+
+#[cfg(feature = "tui")]
+type PreviousBoundary = (u64, Option<u64>);
+
+/// A bounded suffix of formatted records, without replaying historical events.
+#[cfg(feature = "tui")]
+pub(super) fn previous(
+    file: &mut File,
+    before: Option<PreviousBoundary>,
+    limit: usize,
+    budget: &Budget<'_>,
+) -> Result<(String, Option<PreviousBoundary>)> {
+    let mut end = before.map_or(file.metadata().map_err(io)?.len(), |value| value.0);
+    let mut upper = before.and_then(|value| value.1);
+    let mut chunks = VecDeque::new();
+    let mut remaining = limit;
+    while end > 0 && remaining >= 4 {
+        budget.check()?;
+        // Exclude the record's final newline when looking for its start.
+        let mut position = end.saturating_sub(1);
+        let mut start = 0;
+        let mut buffer = [0; 8192];
+        while position > 0 {
+            budget.check()?;
+            let from = position.saturating_sub(buffer.len() as u64);
+            let count = (position - from) as usize;
+            file.seek(SeekFrom::Start(from)).map_err(io)?;
+            file.read_exact(&mut buffer[..count]).map_err(io)?;
+            if let Some(index) = buffer[..count].iter().rposition(|byte| *byte == b'\n') {
+                start = from + index as u64 + 1;
+                break;
+            }
+            position = from;
+        }
+        let mut window = Window::new(0, remaining);
+        window.tail = Some(VecDeque::new());
+        window.until = upper.unwrap_or(u64::MAX);
+        let (window, _) = format_window(file, start, end - start, window, true, budget)?;
+        let prefix = upper.unwrap_or(window.total).min(window.total);
+        let consumed = window.text.len() as u64;
+        remaining -= window.text.len();
+        chunks.push_front(window.text);
+        if consumed < prefix {
+            return Ok((
+                chunks.into_iter().collect(),
+                Some((end, Some(prefix - consumed))),
+            ));
+        }
+        end = start;
+        upper = None;
+    }
+    Ok((
+        chunks.into_iter().collect(),
+        (end > 0).then_some((end, upper)),
+    ))
 }
 
 fn record_end(file: &mut File, start: u64, budget: &Budget<'_>) -> Result<u64> {

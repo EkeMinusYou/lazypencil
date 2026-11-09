@@ -29,6 +29,8 @@ pub mod management;
 pub mod modes;
 mod preparation;
 pub(crate) mod references;
+#[cfg(feature = "tui")]
+mod resume;
 mod storage;
 mod transcript;
 use completion::Completion;
@@ -99,10 +101,19 @@ impl Conversation {
     /// Library hosts supply the real lazypencil binary for bound MCP servers
     /// and the adapter supervisor, rather than their embedding binary.
     pub fn open_with_executable(
-        mut args: PromptArgs,
+        args: PromptArgs,
         data_dir: Option<PathBuf>,
         executable: PathBuf,
     ) -> Result<Self> {
+        Self::open_local(args, data_dir, executable, false).map(|(conversation, _)| conversation)
+    }
+
+    fn open_local(
+        mut args: PromptArgs,
+        data_dir: Option<PathBuf>,
+        executable: PathBuf,
+        automatic_resume: bool,
+    ) -> Result<(Self, Option<String>)> {
         if args.fast.is_some() && args.agent != crate::prompt::AgentName::Codex {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -140,7 +151,17 @@ impl Conversation {
         for font in &mut args.fonts {
             *font = crate::paths::canonical(&*font)?;
         }
-        let session = Session::open(&store, &args, &command)?;
+        #[cfg(feature = "tui")]
+        let (session, notice) = if automatic_resume && args.session.is_none() && !args.create {
+            resume::open(&store, &args, &command)?
+        } else {
+            (Session::open(&store, &args, &command)?, None)
+        };
+        #[cfg(not(feature = "tui"))]
+        let (session, notice) = {
+            let _ = automatic_resume;
+            (Session::open(&store, &args, &command)?, None)
+        };
         let invocation_mode = args.mode.clone();
         let mut conversation = Self {
             store,
@@ -176,7 +197,7 @@ impl Conversation {
         if !conversation.args.prompt.is_empty() {
             conversation.set_draft(conversation.args.prompt.clone())?;
         }
-        Ok(conversation)
+        Ok((conversation, notice))
     }
     #[cfg(feature = "tui")]
     pub(crate) fn set_preview_control(&mut self, client: crate::preview_control::Client) {

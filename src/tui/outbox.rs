@@ -168,6 +168,11 @@ impl App {
             Err(error) => return Err(error),
         };
         self.outbox.steering = Some(SteeringPrompt { id, text });
+        if let Err(error) = self.conversation.remember_for_tui() {
+            self.append(&format!(
+                "\nCould not remember this conversation: {error}\n"
+            ));
+        }
         self.editor = editor("");
         self.outbox.draft = Some(String::new());
         self.outbox.save(self.conversation.directory())?;
@@ -316,6 +321,11 @@ impl App {
             return Err(error);
         }
         self.turn_pending = true;
+        if let Err(error) = self.conversation.remember_for_tui() {
+            self.append(&format!(
+                "\nCould not remember this conversation: {error}\n"
+            ));
+        }
         self.turn_sequence = self.turn_sequence.wrapping_add(1);
         self.turn_started = Some(Instant::now());
         self.outbox.draft = Some(self.editor.lines().join("\n"));

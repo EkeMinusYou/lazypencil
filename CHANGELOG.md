@@ -2,6 +2,7 @@
 
 ## 0.2.4
 
+- Restore each document's previous TUI conversation, draft, images and paged history automatically. Add `--new-conversation`, keep concurrent TUIs on separate conversation leases, and leave queued or interrupted requests unsent until explicit submission.
 - Validate boolean document properties before editing or resolving variables, including nested paints, effects and component overrides. Reject invalid values without changing the document or history.
 - Bound pending MCP requests by count and input bytes across each document and connection, release reservations on cancellation, and keep separate capacity for closing documents under load.
 - Keep document metadata overviews bounded and expose complete paginated roots, diagnostics, dependencies, image attachments and font diagnostics with revision-bound cursors and exact totals.

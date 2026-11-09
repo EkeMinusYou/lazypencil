@@ -26,6 +26,34 @@ start after selection; a compatible process is reused. A preparation failure doe
 prevent file selection. Explicit-file startup prepares the selected document session.
 Drafts and preloaded images remain unsent until submission.
 
+Opening a document automatically restores its last explicitly selected or submitted
+conversation, including its draft and images. Saved requests and responses appear in
+the Agent pane: recent text loads first on a cancellable background task, and scrolling
+up to the loaded boundary reads older pages. Recorded turn timestamps determine display
+order; legacy turns without timestamps use local file creation times (modification
+times when creation times are unavailable), with a notice.
+Historical events are display-only, and queued or interrupted input stays paused for
+explicit review and submission.
+An explicitly supplied startup prompt replaces the restored draft and remains unsent.
+
+Use `tui FILE --new-conversation`, `/new-conversation`, or **Conversation · New empty
+conversation…** to start fresh. Previous drafts, images and logs remain in their original
+conversation. `--new-conversation` conflicts with `--session` and `--restart-session`.
+An explicit `--session UUID` must open that exact compatible conversation or fail.
+With automatic selection, a busy, missing, damaged or incompatible previous conversation
+opens a new one and displays the reason. One conversation can be owned by only one TUI;
+separate conversations can still edit the same document under its existing revision checks.
+
+The resume selection is stored per document in the user data store, outside the `.pen`
+source. Explicit selection (including `--session`), explicit creation, and accepted
+message submissions update it atomically. A missing selection is initialized once on
+the first TUI open, so an initial unsent draft can also be restored. Automatic restoration,
+automatic fallback to an empty conversation, and closing a TUI do not update it.
+Concurrent explicit actions use the last committed selection; window closing order has
+no effect. Existing histories without a saved selection remain available through
+`/conversations`. CLI `prompt` keeps
+its explicit `--session` behavior.
+
 ## Workspace and prompt
 
 Nodes and Preview occupy the left/center panels. Agent contains history, image
@@ -456,7 +484,7 @@ Transcript pages contain up to 32 KiB of formatted requests, responses, thinking
 
 To select saved local state, highlight a conversation and press `u`; the same key in its turn/text view selects that conversation. `N` creates an empty local conversation, preserving the previous draft and images in their original session. The **New empty conversation** palette action does the same. These are explicit state changes, separate from read-only browsing. They require idle agent/input/document work. Selecting the current conversation closes the browser without resetting live state.
 
-A successful change restores the selected draft and images, closes the previous adapter, clears its permissions/events and resets displayed authentication. It leaves the document and preview position intact. The global header identifies the selected local session by its UUID prefix; exit prints its full UUID. Selection sends nothing. The selected session resumes in the background without submitting its draft. Busy, missing, foreign or incompatible agent/adapter/authentication targets leave the original selection and draft available. CLI `tui --session UUID` remains available with the corresponding settings.
+A successful change restores the selected draft, images and displayed history, closes the previous adapter, clears its permissions/events and resets displayed authentication. It leaves the document and preview position intact. The global header identifies the selected local session by its UUID prefix; exit prints its full UUID. Selection sends nothing. The selected session resumes in the background without submitting its draft. Busy, missing, foreign or incompatible agent/adapter/authentication targets leave the original selection and draft available. CLI `tui --session UUID` remains available with the corresponding settings.
 
 `d` reviews deletion of the selected inactive local conversation. The confirmation shows its full UUID, document, local size, draft and image counts; `y` permanently deletes that reviewed state, while `n`/Esc returns. The UUID and action keys stay pinned while arrows, PgUp/PgDn and Home/End scroll the review body, including at 50 columns × 16 rows and with long paths. A changed or busy target is refused; a stale-review error scrolls into view while the UUID/controls remain visible. The current conversation must first be closed or replaced with `u`/`N`; active agent/input/document operations also block deletion. Deleted local logs and images are separate from provider history, project assets and document checkpoints, which remain. The background task preserves the current draft, images and preview, and reports a committed deletion even when cancellation occurs after its atomic rename. Pending cleanup and filesystem-sync warnings remain visible. Interrupted cleanup is recoverable with `conversations cleanup FILE` or `cleanup --all` after the file moved. See [local deletion](agents.md#delete-local-conversation-data).
 

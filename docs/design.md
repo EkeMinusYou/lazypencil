@@ -104,8 +104,14 @@ and retains bounded local transcripts and drafts. Cancellation stops pending wor
 it does not undo already committed document edits.
 
 The document picker can warm an adapter transport without choosing a document.
-After opening a document or selecting a saved conversation, the TUI prepares its
-session in the background. Drafts are sent only by explicit submission. Node selection
+After opening a document, the TUI restores its last explicitly selected or submitted
+local conversation when available. Explicit new conversations bypass restoration;
+automatic restoration falls back visibly when the previous conversation is unavailable.
+Exclusive leases prevent two TUIs from owning the same conversation. Resume selections
+change on explicit choices and accepted submissions, never on automatic restoration or
+window closing. Saved transcript text loads backwards in chronological pages, separately
+from live events and permissions. The TUI prepares the selected provider session in the
+background. Drafts are sent only by explicit submission. Node selection
 controls viewing; explicit prompt references freeze targets for a request.
 
 The TUI keeps layout/calculation work off the input path and publishes completed

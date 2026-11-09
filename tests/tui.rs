@@ -9,6 +9,242 @@ mod fixture_support;
 mod terminal;
 
 #[test]
+fn real_pty_automatically_resumes_history_and_handles_busy_and_explicit_new_conversations() {
+    fn notice(h: &mut terminal::Harness, expected: &str) -> terminal::Result {
+        let expected: String = expected
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        h.wait("conversation startup notice", 15.0, |h| {
+            let text: String = h
+                .screen
+                .text()
+                .lines()
+                .filter_map(|line| line.rsplit('│').nth(1))
+                .flat_map(str::chars)
+                .filter(|character| !character.is_whitespace())
+                .collect();
+            text.contains(&expected)
+        })
+    }
+    fn run() -> terminal::Result {
+        let temp = TempDir::new()?;
+        let root = temp.path();
+        let document = root.join("design.pen");
+        std::fs::write(
+            &document,
+            r##"{"version":"2.21","children":[{"type":"rectangle","id":"box","width":80,"height":40,"fill":"#ff0000"}]}"##,
+        )?;
+        let configuration = root.join("configuration");
+        std::fs::create_dir(&configuration)?;
+        let environment = std::collections::BTreeMap::from([(
+            "LAZYPENCIL_CONFIG_DIR".into(),
+            configuration.into_os_string(),
+        )]);
+        let binary = std::env::var_os("LAZYPENCIL_TEST_TUI_BINARY")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_lazypencil").into());
+        let binary = binary.as_path();
+        let mut first = terminal::Harness::start(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+        )?;
+        first.visible("Describe a change")?;
+        first.key(b"\t")?;
+        first.visible(" send")?;
+        first.paste("Original request")?;
+        first.key(b"\r")?;
+        first.wait("first request completes", 15.0, |h| h.completed_turns(1))?;
+        first.paste("Unsent restored draft")?;
+        first.draft("Unsent restored draft")?;
+        let session = first.sessions()[0].clone();
+        let id = terminal::read_json(&session).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let pointer = session
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("last-conversation.json");
+        let pointer_bytes = std::fs::read(&pointer)?;
+        let turn_paths = terminal::files(&root.join("data"), |name| {
+            name.starts_with("turn-") && name.ends_with(".jsonl")
+        });
+        first.finish()?;
+
+        let mut restored = terminal::Harness::start(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+        )?;
+        restored.visible("Unsent restored draft")?;
+        restored.visible("Original request")?;
+        notice(&mut restored, "Resumed previous conversation")?;
+        assert!(
+            restored
+                .screen
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .contains(&id[..8])
+        );
+        assert_eq!(std::fs::read(&pointer)?, pointer_bytes);
+        assert_eq!(
+            terminal::files(&root.join("data"), |name| name.starts_with("turn-")
+                && name.ends_with(".jsonl")),
+            turn_paths
+        );
+
+        let mut busy = terminal::Harness::start(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+        )?;
+        notice(&mut busy, "in use by another TUI")?;
+        assert!(
+            !busy
+                .screen
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .contains(&id[..8])
+        );
+        assert!(!busy.screen.text().contains("Unsent restored draft"));
+        busy.finish()?;
+        assert_eq!(std::fs::read(&pointer)?, pointer_bytes);
+
+        let mut explicit_busy = terminal::Harness::start_with_arguments(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+            &["--session".as_ref(), id.as_ref()],
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = explicit_busy.child.try_wait()? {
+                break status;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "Explicit busy session must fail promptly"
+            );
+            explicit_busy.pump()?;
+        };
+        assert!(!status.success());
+        assert!(
+            std::fs::read_to_string(root.join("terminal-errors.log"))?.contains("already in use")
+        );
+        assert_eq!(std::fs::read(&pointer)?, pointer_bytes);
+
+        let mut fresh = terminal::Harness::start_with_arguments(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+            &["--new-conversation".as_ref()],
+        )?;
+        fresh.visible("Describe a change")?;
+        assert!(!fresh.screen.text().contains("Unsent restored draft"));
+        let selected: serde_json::Value = serde_json::from_slice(&std::fs::read(&pointer)?)?;
+        let fresh_id = selected["session"].as_str().unwrap().to_owned();
+        assert_ne!(fresh_id, id);
+        assert!(
+            fresh
+                .screen
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .contains(&fresh_id[..8])
+        );
+        fresh.finish()?;
+        restored.finish()?;
+        let selected: serde_json::Value = serde_json::from_slice(&std::fs::read(&pointer)?)?;
+        assert_eq!(selected["session"], fresh_id);
+        assert_eq!(
+            terminal::read_json(&session).unwrap()["draft"],
+            "Unsent restored draft"
+        );
+        let mut next = terminal::Harness::start(
+            binary,
+            root,
+            &document,
+            environment.clone(),
+            "session-resume",
+            None,
+        )?;
+        notice(&mut next, "Resumed previous conversation")?;
+        assert!(
+            next.screen
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .contains(&fresh_id[..8])
+        );
+        next.finish()?;
+        let mut explicit = terminal::Harness::start_with_arguments(
+            binary,
+            root,
+            &document,
+            environment,
+            "session-resume",
+            None,
+            &[
+                "--session".as_ref(),
+                id.as_ref(),
+                "Explicit startup draft".as_ref(),
+            ],
+        )?;
+        explicit.visible("Explicit startup draft")?;
+        assert!(
+            explicit
+                .screen
+                .text()
+                .lines()
+                .next()
+                .unwrap()
+                .contains(&id[..8])
+        );
+        assert_eq!(
+            terminal::read_json(&session).unwrap()["draft"],
+            "Explicit startup draft"
+        );
+        let selected: serde_json::Value = serde_json::from_slice(&std::fs::read(&pointer)?)?;
+        assert_eq!(selected["session"], id);
+        assert_eq!(
+            terminal::files(&root.join("data"), |name| name.starts_with("turn-")
+                && name.ends_with(".jsonl")),
+            turn_paths
+        );
+        explicit.finish()?;
+        Ok(())
+    }
+    run().unwrap();
+}
+
+#[test]
 fn real_pty_stderr_stays_off_the_workspace_and_preserves_explicit_redirection() {
     run_pty_case("stderr-terminal");
     run_pty_case("stderr-file");

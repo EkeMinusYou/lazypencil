@@ -121,6 +121,26 @@ impl Harness {
         case: &str,
         configuration: Option<PathBuf>,
     ) -> Result<Self> {
+        Self::start_with_arguments(
+            binary,
+            root,
+            document,
+            environment,
+            case,
+            configuration,
+            &[],
+        )
+    }
+
+    pub fn start_with_arguments(
+        binary: &Path,
+        root: &Path,
+        document: &Path,
+        environment: BTreeMap<OsString, OsString>,
+        case: &str,
+        configuration: Option<PathBuf>,
+        arguments: &[&std::ffi::OsStr],
+    ) -> Result<Self> {
         let image_case = if case.starts_with("theme-") || case == "background-direct-kitty" {
             "kitty"
         } else if let Some(protocol) = case.strip_prefix("background-") {
@@ -281,6 +301,7 @@ impl Harness {
             command.arg("--create");
         }
         command
+            .args(arguments)
             .stdin(Stdio::from(slave.try_clone()?))
             .stdout(Stdio::from(slave.try_clone()?))
             .stderr(Stdio::from(

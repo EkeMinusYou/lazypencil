@@ -114,6 +114,10 @@ The normal atomic edit operations then reference the returned asset URI. Unknown
 
 ## Conversations and events
 
+The [TUI](tui.md#opening-a-document) automatically restores its last explicitly selected
+or submitted conversation for each document. `tui FILE --new-conversation` bypasses this
+selection; CLI `prompt` continues to require an explicit `--session` for reuse.
+
 Every invocation prints a local conversation UUID. Resume it with the same document, adapter arguments, and requested authentication mode:
 
 ```sh

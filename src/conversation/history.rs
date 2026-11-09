@@ -21,6 +21,8 @@ pub const MAX_PAGE_BYTES: usize = 64 * 1024;
 
 mod display;
 pub use display::view;
+#[cfg(feature = "tui")]
+pub(crate) mod timeline;
 
 struct Budget<'a> {
     started: Instant,
@@ -49,7 +51,7 @@ struct Cursor {
     before: bool,
 }
 
-fn uuid(value: &str) -> Result<()> {
+pub(super) fn uuid(value: &str) -> Result<()> {
     if uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value) {
         Ok(())
     } else {
@@ -71,7 +73,7 @@ fn directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn open(path: &Path) -> Result<File> {
+pub(super) fn open(path: &Path) -> Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -301,6 +303,10 @@ fn transcript(store: &Store, conversation: &str, turn: &str) -> Result<File> {
 }
 
 fn header(file: &mut File, store: &Store, session: &str, turn: &str) -> Result<()> {
+    header_value(file, store, session, turn).map(|_| ())
+}
+
+fn header_value(file: &mut File, store: &Store, session: &str, turn: &str) -> Result<Value> {
     file.seek(SeekFrom::Start(0))
         .map_err(|e| Error::new("IO_ERROR", e.to_string()))?;
     let mut bytes = Vec::new();
@@ -323,7 +329,7 @@ fn header(file: &mut File, store: &Store, session: &str, turn: &str) -> Result<(
             "Transcript belongs to a different document, conversation or turn",
         ));
     }
-    Ok(())
+    Ok(value)
 }
 
 fn revision(file: &mut File, budget: &Budget<'_>) -> Result<String> {

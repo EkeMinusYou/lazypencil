@@ -13,6 +13,7 @@ mod events;
 mod footer;
 mod gestures;
 mod graphics;
+mod history;
 mod images;
 mod input;
 mod markdown;
@@ -81,6 +82,9 @@ pub enum ImageProtocol {
 pub struct TuiArgs {
     #[command(flatten)]
     pub prompt: PromptArgs,
+    /// Start an empty conversation instead of restoring the previous one.
+    #[arg(long, conflicts_with_all = ["session", "restart_session"])]
+    pub new_conversation: bool,
     /// Select the image protocol; auto probes the terminal before reading input.
     #[arg(long, value_enum, default_value = "auto")]
     pub image_protocol: ImageProtocol,
@@ -176,11 +180,16 @@ pub fn run_with_selection(
         ));
     }
     let settings = crate::config::keys::load_tui()?;
-    let mut conversation = Conversation::open(args.prompt.clone(), data)?;
+    let (mut conversation, notice) =
+        Conversation::open_tui(args.prompt.clone(), data, args.new_conversation)?;
     if let Some(host) = prepared {
         conversation.set_prepared_agent(host);
     }
     let mut app = App::new(conversation);
+    app.apply_startup_prompt(&args.prompt.prompt)?;
+    if let Some(notice) = notice {
+        app.append(&format!("\n{notice}\n"));
+    }
     app.attach_startup_images(&args.prompt.images)?;
     // Reserve two slots each for exact and temporary camera frames. The low
     // bit selects the slot; the high bit identifies temporary feedback.
@@ -284,6 +293,10 @@ struct App {
     searching: bool,
     preview_search: preview_search::Search,
     log: String,
+    saved_log: String,
+    saved_history: Option<crate::conversation::history::timeline::Reader>,
+    saved_history_task: Option<history::Task>,
+    history_requested: bool,
     tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
     turn_sequence: u64,
     history: Option<Paragraph<'static>>,
@@ -318,6 +331,15 @@ struct App {
     ) -> Result<InputContent>,
 }
 impl App {
+    fn apply_startup_prompt(&mut self, prompt: &str) -> Result<()> {
+        if !prompt.is_empty() {
+            self.editor = editor(prompt);
+            self.draft_changed = true;
+            self.save_draft()?;
+        }
+        Ok(())
+    }
+
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
         let agent = agent_status::Status::new(conversation.settings().fast == Some(true));
@@ -370,6 +392,10 @@ impl App {
             searching: false,
             preview_search: Default::default(),
             log: String::new(),
+            saved_log: String::new(),
+            saved_history: None,
+            saved_history_task: None,
+            history_requested: false,
             tool_calls: Default::default(),
             turn_sequence: 0,
             history: None,
@@ -399,6 +425,7 @@ impl App {
             input_reader: read_input,
         };
         app.restore_outbox();
+        app.restore_history();
         app
     }
     async fn event_loop(&mut self, screen: &mut terminal::Screen, worker: &Worker) -> Result<()> {
@@ -423,6 +450,7 @@ impl App {
             let _pool = crate::native_memory::AutoreleasePool::new();
             self.sync_turn(worker);
             self.permission_progress();
+            self.load_older_history();
             if let Err(error) = self.send_queued().await {
                 self.outbox.paused = true;
                 self.error(error);
@@ -594,6 +622,9 @@ impl App {
                     self.input.take();
                     if self.accept_prepared(content) { self.request(worker, false, false); }
                     self.dirty = true;
+                },
+                output = async { (&mut self.saved_history_task.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("IO_ERROR", format!("Conversation history worker stopped: {error}")))) }, if self.saved_history_task.is_some() => {
+                    self.accept_history(output);
                 },
                 output = async { (&mut self.document_task.as_mut().unwrap().receiver).await.unwrap_or_else(|error| Err(Error::new("IO_ERROR", format!("Document worker stopped: {error}")))) }, if self.document_task.is_some() => {
                     let modal = self.has_modal();
@@ -1278,12 +1309,16 @@ impl App {
             saved::SessionChange::New => None,
         };
         let changed = self.conversation.select(id).await?;
+        let remember_error = self.conversation.remember_for_tui().err();
         self.modal = None;
         self.permission_ui = None;
         self.saved_return = None;
         self.restore_return = None;
         if !changed {
             self.set_status("This local conversation is already selected".into());
+            if let Some(error) = remember_error {
+                self.error(error);
+            }
             return Ok(());
         }
         self.editor = editor(self.conversation.draft());
@@ -1299,13 +1334,20 @@ impl App {
         self.agent = agent_status::Status::new(self.conversation.settings().fast == Some(true));
         self.connect_pending = true;
         self.log.clear();
+        self.restore_history();
         self.tool_calls.clear();
         self.scroll = 0;
         self.set_status(format!(
             "Selected conversation {} · sends only on submit",
             self.conversation.id()
         ));
-        self.append("\nSelected saved local state. Open saved logs to read earlier turns. The session connects automatically; your draft is sent only on submit.\n");
+        self.append("\nSelected conversation. Saved history is loading; the session connects automatically. Your draft is sent only on submit.\n");
+        if let Some(error) = remember_error {
+            self.append(&format!(
+                "\nCould not remember this conversation: {error}\n"
+            ));
+            self.error(error);
+        }
         self.request(worker, false, false);
         Ok(())
     }

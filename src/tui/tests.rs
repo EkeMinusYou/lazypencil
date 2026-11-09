@@ -206,6 +206,7 @@ include!("tests/images.rs");
 include!("tests/navigation.rs");
 include!("tests/mouse.rs");
 include!("tests/saved.rs");
+include!("tests/resume.rs");
 
 include!("tests/commands.rs");
 

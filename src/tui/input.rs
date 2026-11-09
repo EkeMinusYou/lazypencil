@@ -475,9 +475,9 @@ impl App {
             }
             Focus::Conversation => {
                 if action(Nav::ScrollUp) {
-                    self.scroll = self.scroll.saturating_add(5);
+                    self.scroll_history(true, 5);
                 } else if action(Nav::ScrollDown) {
-                    self.scroll = self.scroll.saturating_sub(5);
+                    self.scroll_history(false, 5);
                 } else if action(Nav::FollowOutput) {
                     self.scroll = 0;
                 }

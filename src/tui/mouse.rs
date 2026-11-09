@@ -904,11 +904,8 @@ impl App {
         } else {
             match target {
                 Target::History => {
-                    self.scroll = if backwards {
-                        self.scroll.saturating_add(step).min(self.history_metrics.2)
-                    } else {
-                        self.scroll.saturating_sub(step)
-                    };
+                    self.scroll_history(backwards, step);
+                    self.scroll = self.scroll.min(self.history_metrics.2);
                 }
                 Target::Help => scroll(&mut self.help_scroll),
                 Target::DiagnosticDetails => self.scroll_diagnostic_details(backwards, step),

@@ -244,11 +244,12 @@ impl App {
             vertical: 0,
         });
         self.pointer.add(sections[0], mouse::Target::History);
-        let paragraph = if self.log.is_empty() {
+        let paragraph = if self.log.is_empty() && self.saved_log.is_empty() {
             None
         } else {
             Some(self.history.take().unwrap_or_else(|| {
-                Paragraph::new(history_text(&self.log, &self.tool_calls)).wrap(Wrap { trim: false })
+                let log = format!("{}{}", self.saved_log, self.log);
+                Paragraph::new(history_text(&log, &self.tool_calls)).wrap(Wrap { trim: false })
             }))
         };
         let lines = paragraph.as_ref().map_or(0, |paragraph| {
@@ -586,7 +587,7 @@ fn history_text(
             body.push_str(message.trim_start());
             body.push('\n');
             continue;
-        } else if matches!(line, "Codex:" | "Claude:") {
+        } else if matches!(line, "Codex:" | "Claude:" | "Agent:") {
             flush_body(&mut body, &mut lines, true, user);
             user = false;
             continue;
@@ -677,6 +678,26 @@ fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn restored_transcript_keeps_user_and_agent_styling_separate() {
+        let rendered = history_text(
+            "You:\nSaved request\n\nAgent:\nSaved response\n",
+            &Default::default(),
+        );
+        let request = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string() == "Saved request")
+            .unwrap();
+        let response = rendered
+            .lines
+            .iter()
+            .find(|line| line.to_string() == "Saved response")
+            .unwrap();
+        assert_eq!(request.style.bg, Some(theme::colors().user_background));
+        assert_ne!(response.style.bg, Some(theme::colors().user_background));
+    }
 
     #[test]
     fn failed_tools_keep_the_error_body_visible_across_status_updates() {
