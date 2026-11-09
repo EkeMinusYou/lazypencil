@@ -11,7 +11,9 @@ fn large_document_overviews_page_complete_entries_and_scope_their_cursors() {
     let source = document.to_string();
     assert!(source.len() > 4 * 1024 * 1024);
     fs::write(&file, &source).unwrap();
-    let mut client = Client::start(&file, &data);
+    // Parsing and refreshing this oversized fixture can exceed the ordinary
+    // response deadline when other consumers share the CI runner.
+    let mut client = Client::start_with_response_timeout(&file, &data, Duration::from_secs(60));
     let overview = client.data("get_document", json!({}));
     assert!(overview.to_string().len() < 256 * 1024);
     assert_eq!(overview["node_count"], 10000);
