@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.61";
+const VERSION: &str = "1.0.62";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -191,7 +191,7 @@ pub fn list_styles(use_case: Option<&str>, limit: usize, cursor: Option<&str>) -
 
 pub(crate) fn style_document(id: &str) -> Result<crate::document::Document> {
     let source = match id {
-        "standard-ui" => include_str!("../examples/welcome.pen"),
+        "standard-ui" => include_str!("../examples/standard-ui.pen"),
         "dense-workspace" => include_str!("../examples/dense-workspace.pen"),
         "content-page" => include_str!("../examples/content-page.pen"),
         _ => return Err(Error::new("INVALID_ARGUMENT", "Unknown bundled style")),

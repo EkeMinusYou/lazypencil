@@ -1,0 +1,122 @@
+{
+  "version": "2.21",
+  "variables": {
+    "color.canvas": {"type": "color", "value": "#F8FAFC"},
+    "color.surface": {"type": "color", "value": "#FFFFFF"},
+    "color.text": {"type": "color", "value": "#0F172A"},
+    "color.secondary": {"type": "color", "value": "#475569"},
+    "color.border": {"type": "color", "value": "#CBD5E1"},
+    "color.accent": {"type": "color", "value": "#2563EB"}
+  },
+  "children": [
+    {
+      "id": "screen", "type": "frame", "name": "Workspace controls",
+      "width": 960, "height": 640, "layout": "vertical", "padding": 48,
+      "gap": 24, "fill": "$color.canvas",
+      "children": [
+        {
+          "id": "breadcrumbs", "type": "frame", "name": "Breadcrumbs", "reusable": true,
+          "layout": "horizontal", "width": "fit_content", "height": 24,
+          "gap": 8, "alignItems": "center",
+          "children": [
+            {
+              "id": "breadcrumb-parent", "type": "text", "name": "Parent label",
+              "content": "ワークスペース", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+              "fontSize": 14, "lineHeight": 1.5, "fill": "$color.secondary"
+            },
+            {
+              "id": "breadcrumb-separator", "type": "icon", "name": "Breadcrumb separator",
+              "library": "lucide", "icon": "chevron-right", "width": 14, "height": 14,
+              "fill": "$color.secondary"
+            },
+            {
+              "id": "breadcrumb-current", "type": "text", "name": "Current label",
+              "content": "設定", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+              "fontSize": 14, "fontWeight": "500", "lineHeight": 1.5, "fill": "$color.text"
+            }
+          ]
+        },
+        {
+          "id": "heading", "type": "text", "name": "Workspace name",
+          "content": "プロダクトチーム", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+          "fontSize": 32, "fontWeight": "700", "lineHeight": 1.25, "fill": "$color.text"
+        },
+        {
+          "id": "description", "type": "text", "name": "Workspace description",
+          "content": "チームのルームとメンバーを管理します。", "textGrowth": "fixed-width",
+          "width": "fill_container", "fontFamily": "Noto Sans JP", "fontSize": 16,
+          "lineHeight": 1.5, "fill": "$color.secondary"
+        },
+        {
+          "id": "room-section", "type": "frame", "name": "Room actions",
+          "layout": "vertical", "width": "fill_container", "height": "fit_content",
+          "padding": 24, "gap": 16, "fill": "$color.surface", "cornerRadius": 12,
+          "children": [
+            {
+              "id": "room-heading", "type": "text", "name": "Room section title",
+              "content": "ルームとメンバー", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+              "fontSize": 20, "fontWeight": "700", "lineHeight": 1.5, "fill": "$color.text"
+            },
+            {
+              "id": "actions", "type": "frame", "name": "Related controls",
+              "layout": "horizontal", "width": "fill_container", "height": 44,
+              "gap": 16, "alignItems": "center",
+              "children": [
+                {
+                  "id": "button-with-icon", "type": "frame", "name": "Button with icon", "reusable": true,
+                  "layout": "horizontal", "width": "fit_content", "height": 44,
+                  "padding": [0, 16], "gap": 8, "cornerRadius": 8,
+                  "justifyContent": "center", "alignItems": "center", "fill": "$color.text",
+                  "children": [
+                    {
+                      "id": "button-with-icon-icon", "type": "icon", "name": "Action icon",
+                      "library": "lucide", "icon": "user-plus", "width": 16, "height": 16,
+                      "fill": "#FFFFFF"
+                    },
+                    {
+                      "id": "button-with-icon-label", "type": "text", "name": "Action label",
+                      "content": "メンバーを追加", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+                      "fontSize": 14, "fontWeight": "500", "lineHeight": 1.5, "fill": "#FFFFFF"
+                    }
+                  ]
+                },
+                {
+                  "id": "sort-control", "type": "frame", "name": "Compact sort action", "reusable": true,
+                  "layout": "horizontal", "width": "fit_content", "height": 44,
+                  "padding": [0, 12], "gap": 8, "cornerRadius": 8,
+                  "alignItems": "center", "fill": "$color.surface",
+                  "stroke": "$color.border", "strokeWidth": 1, "strokeAlignment": "inner",
+                  "children": [
+                    {
+                      "id": "sort-label", "type": "text", "name": "Sort label",
+                      "content": "更新が新しい順", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+                      "fontSize": 14, "lineHeight": 1.5, "fill": "$color.secondary"
+                    },
+                    {
+                      "id": "sort-chevron", "type": "icon", "name": "Sort chevron",
+                      "library": "lucide", "icon": "chevron-down", "width": 14, "height": 14,
+                      "fill": "$color.secondary"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {"id": "spacer", "type": "frame", "name": "Flexible space", "width": 0, "height": "fill_container"},
+        {
+          "id": "button", "type": "frame", "name": "Primary action", "reusable": true,
+          "layout": "horizontal", "width": 224, "height": 44, "padding": [0, 16], "cornerRadius": 8,
+          "justifyContent": "center", "alignItems": "center", "fill": "$color.accent",
+          "children": [
+            {
+              "id": "button-label", "type": "text", "name": "Primary action label",
+              "content": "変更を保存", "textGrowth": "auto", "fontFamily": "Noto Sans JP",
+              "fontSize": 14, "fontWeight": "500", "lineHeight": 1.5, "fill": "#FFFFFF"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

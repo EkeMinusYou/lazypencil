@@ -184,3 +184,94 @@ fn all_style_examples_have_resolved_layouts_and_render_without_overflow() {
         assert!(png.height >= 600, "{id}");
     }
 }
+
+#[cfg(feature = "rendering")]
+#[test]
+fn control_examples_follow_changed_labels_and_keep_fixed_width_buttons_centered() {
+    use lazypencil::{layout, operations, project::Project, text::Fonts};
+    let temp = tempfile::TempDir::new().unwrap();
+    let style = guidance::get_style("standard-ui").unwrap();
+    let template = Document::parse(style["example"]["document"].to_string()).unwrap();
+    let mut fonts = Fonts::new(&[]).unwrap();
+    for label in ["設定", "Workspace settings", "ワークスペースの設定を変更"] {
+        for fixed_width in [false, true] {
+            let mut edits = vec![];
+            for target in [
+                "button-label",
+                "button-with-icon-label",
+                "breadcrumb-parent",
+                "sort-label",
+            ] {
+                edits.push(json!({"op":"update","target":target,"set":{"content":label}}));
+            }
+            if fixed_width {
+                edits.push(json!({"op":"update","target":"button-with-icon","set":{"width":360}}));
+            }
+            let edits: Vec<operations::Operation> =
+                serde_json::from_value(Value::Array(edits)).unwrap();
+            let (document, _) = operations::apply(&template, &edits).unwrap();
+            let path = temp.path().join("controls.pen");
+            std::fs::write(&path, document.text()).unwrap();
+            let project = Project::from_document(&path, document, &[]).unwrap();
+            let snapshot = layout::compute(project.resolve().unwrap(), &mut fonts).unwrap();
+            assert!(
+                snapshot
+                    .items
+                    .iter()
+                    .all(|item| item.record.diagnostics.is_empty())
+            );
+            let record = |id: &str| {
+                &snapshot
+                    .items
+                    .iter()
+                    .find(|item| item.record.id == id)
+                    .unwrap()
+                    .record
+            };
+            let near = |actual: f32, expected: f32| {
+                assert!(
+                    (actual - expected).abs() < 0.01,
+                    "{label}: {actual} != {expected}"
+                );
+            };
+            for id in [
+                "button-label",
+                "button-with-icon-label",
+                "breadcrumb-parent",
+                "sort-label",
+            ] {
+                let item = record(id);
+                let metrics = item.text.as_ref().unwrap();
+                assert_eq!(metrics.line_count, 1);
+                near(item.rect.width, metrics.intrinsic_width);
+            }
+            let button = record("button").rect;
+            let label_rect = record("button-label").rect;
+            near(label_rect.x, (button.width - label_rect.width) / 2.0);
+            let button = record("button-with-icon").rect;
+            let icon = record("button-with-icon-icon").rect;
+            let label_rect = record("button-with-icon-label").rect;
+            near(label_rect.x - icon.right(), 8.0);
+            near(icon.x, button.width - label_rect.right());
+            near(icon.y + icon.height / 2.0, button.height / 2.0);
+            near(label_rect.y + label_rect.height / 2.0, button.height / 2.0);
+            if fixed_width {
+                near(button.width, 360.0);
+            } else {
+                near(icon.x, 16.0);
+            }
+            let parent = record("breadcrumb-parent").rect;
+            let separator = record("breadcrumb-separator").rect;
+            let current = record("breadcrumb-current").rect;
+            near(parent.x, 0.0);
+            near(separator.x - parent.right(), 8.0);
+            near(current.x - separator.right(), 8.0);
+            near(record("breadcrumbs").rect.width, current.right());
+            let label_rect = record("sort-label").rect;
+            let chevron = record("sort-chevron").rect;
+            near(label_rect.x, 12.0);
+            near(chevron.x - label_rect.right(), 8.0);
+            near(record("sort-control").rect.width - chevron.right(), 12.0);
+        }
+    }
+}

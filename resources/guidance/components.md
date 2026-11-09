@@ -22,6 +22,17 @@ Use import_component with an explicit mode. link creates a reference to a local 
 
 Sources can select a declared library with {"library_alias":"ui","node_id":"button"}, a project file with {"uri":"ui.lib.pen","import_alias":"ui","node_id":"button"}, or a bundled style with {"style_id":"standard-ui","node_id":"button"}. Read the style's editable example before selecting an ID. Use expected_source_revision when the source document hash is known. File sources remain within allowed project roots. copy leaves no new source import; link keeps the source live.
 
+When the document has no suitable control, get_style with id `standard-ui` provides these reusable starting points:
+
+| Component ID | Pattern |
+| --- | --- |
+| `button` | Fixed-width action with a content-sized label centered inside it. |
+| `button-with-icon` | Content-sized action with the icon and label centered together. A fixed instance width keeps that group centered. |
+| `breadcrumbs` | Content-sized labels and a separator in reading order, with layout-managed gaps. |
+| `sort-control` | Compact content-sized label and chevron with a small gap; not a full-width select field. |
+
+Use the existing document's components first. These examples are fallbacks, not a mandatory design system. Read their children before overriding labels or icons, adapt their tokens and spacing to the document, and reuse one definition for repeated controls. Keep the layout relationships when changing copy instead of assigning new fixed label widths or child coordinates. Long constrained labels may need a different sizing treatment; follow `layout` rather than forcing every control to hug its content.
+
 Copy name collisions fail by default. variable_prefix and component_prefix can give a kit its own names. Per-source variables, components, and themes maps can explicitly rename a source name or reuse a local target. Error details identify the source_key. Reused variables require the same type; reused themes must contain all source values. Reuse must also satisfy the importer's dependency constraints; do not bypass a refusal by flattening the component.
 
 Explicit component reuse can replace a reusable definition contained in a copied parent. Its placement becomes a fresh local ref; the chosen existing definition supplies its body, appearance, metadata and code. The source's placement and dimensions stay as instance overrides, and later edits to the target remain live. id_map reports the placed ID; reused_components reports the selected definition. When descendant IDs differ, supply component_paths for that reused source key, for example {"ui:badge":{"source-label":"local-label"}}. Both paths must exist in their respective definitions. Stored children and full-node replacements keep their own authored bodies. Paths to their new children follow the effective instance boundaries, including when reuse changes a ref into an ordinary group or introduces a new ref. Stored and generated refs use the same translation. Colliding destinations fail atomically. Keep missing-path and execution-context composition errors visible; do not guess which target child the user intended.

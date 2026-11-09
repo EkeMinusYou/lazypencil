@@ -5,7 +5,7 @@
   "styles": [
     {
       "id": "standard-ui",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "name": "Standard UI",
       "description": "A restrained, readable starting point for application screens.",
       "use_cases": [
@@ -21,7 +21,7 @@
         "components",
         "verification"
       ],
-      "example": "welcome.pen",
+      "example": "standard-ui.pen",
       "tokens": {
         "fontFamily": "Noto Sans JP",
         "fontSizes": [
@@ -57,7 +57,7 @@
         "controlHeight": 44,
         "cardRadius": 12
       },
-      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example demonstrates composition and measured text; do not copy its stored IDs into an editing batch."
+      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example includes reusable button, button-with-icon, breadcrumbs, and sort-control definitions with content-sized labels and layout-managed spacing. Prefer existing components; import these fallbacks only when useful and adapt their tokens. Do not copy their stored IDs into an editing batch."
     },
     {
       "id": "dense-workspace",
