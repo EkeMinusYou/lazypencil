@@ -2118,18 +2118,17 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
             && h.screen.text().contains("second-checkpoint")
     })?;
     h.key(b"\x1b[B\r")?;
-    h.visible("Restore selected checkpoint?")?;
+    h.visible("[Enter Restore]")?;
     assert_eq!(
         read_json(&h.document).unwrap()["children"][0]["fill"],
         "#2563EB"
     );
     h.key(b"\x1b")?;
     h.wait("cancelled review", 15.0, |h| {
-        h.screen.text().contains("Checkpoints")
-            && !h.screen.text().contains("Restore selected checkpoint?")
+        h.screen.text().contains("Checkpoints") && !h.screen.text().contains("[Enter Restore]")
     })?;
     h.key(b"\r")?;
-    h.visible("Restore selected checkpoint?")?;
+    h.visible("[Enter Restore]")?;
     if h.case == "restore-conflict" {
         let external = edit(h, "#D946EF", "external-edit")?;
         h.key(b"\r")?;
@@ -2152,8 +2151,8 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
         })?;
         h.key(b"\x1b[B\x1b[B\r")?;
         h.wait("fresh checkpoint review", 15.0, |h| {
-            h.screen.text().contains("Restore selected checkpoint?")
-                && h.screen.text().contains("Checkpoint #1")
+            h.screen.text().contains("[Enter Restore]")
+                && h.screen.text().contains("Restore checkpoint #1?")
         })?;
     }
     h.key(b"\r")?;
@@ -2359,9 +2358,8 @@ fn navigation(h: &mut Harness) -> Result<Value> {
         h.screen
             .text()
             .contains("Clipboard access happens only on explicit paste.")
-            && h.screen
-                .text()
-                .contains("protocols do not provide clipboard access.")
+            && h.screen.text().contains("protocols do not")
+            && h.screen.text().contains("provide clipboard access.")
     })?;
     h.key(b"\x1b[H")?;
     h.visible("switch Nodes, Preview, Prompt")?;

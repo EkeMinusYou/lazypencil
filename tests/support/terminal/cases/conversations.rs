@@ -112,11 +112,13 @@ fn highlight(h: &mut Harness, target: &str, first: &str, second: &str) -> Result
     let mut order = [first, second];
     order.sort();
     let text = h.screen.text();
-    let header = text.lines().next().unwrap_or_default();
     let current = order
         .iter()
-        .position(|id| header.contains(&format!(" · {} · ", &id[..8])))
-        .expect("Actual current session in the global header");
+        .position(|id| {
+            text.lines()
+                .any(|line| line.contains("▏›") && line.contains(*id))
+        })
+        .expect("Actual selected conversation in the modal list");
     let target_index = order.iter().position(|id| *id == target).unwrap();
     arrow(h, target_index as isize - current as isize)?;
     h.wait("target conversation highlighted", 15.0, |h| {
@@ -224,7 +226,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
         let text = h.screen.text();
         text.contains("Delete local conversation?")
             && text.contains(&archived_id)
-            && text.contains("y confirms")
+            && text.contains("y Delete")
     };
     h.key(b"d")?;
     h.wait("review before confirmation", 15.0, review)?;
@@ -235,7 +237,8 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
             review(h)
                 && h.screen
                     .text()
-                    .contains("Project assets and provider history are kept.")
+                    .contains("Project assets and provider history")
+                && h.screen.text().contains("kept.")
         })?;
         h.save_screen("session-deletion-scrolled-screen.txt")?;
         h.key(b"\x1b[H")?;
@@ -244,7 +247,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
                 && !h
                     .screen
                     .text()
-                    .contains("Project assets and provider history are kept.")
+                    .contains("Project assets and provider history")
         })?;
     }
     h.key(b"n")?;
@@ -274,7 +277,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     h.key(b"y")?;
     h.wait("reviewed deletion committed", 15.0, |h| {
         !archived_path.parent().unwrap().exists()
-            && h.screen.text().contains("Deleted local conversation")
+            && h.screen.text().contains("Local deletion committed")
     })?;
     let current = read_json(&current_path).unwrap();
     assert_eq!(current["id"], current_id);
