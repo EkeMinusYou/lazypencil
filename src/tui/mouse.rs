@@ -43,6 +43,7 @@ pub(super) enum Target {
     Row(ListTarget, usize),
     Branch(usize),
     History,
+    CommandCompletion(Option<usize>),
     Help,
     DiagnosticDetails,
     SavedText,
@@ -426,7 +427,7 @@ impl App {
             return "menu".into();
         }
         format!(
-            "workspace:{}:{}:{}:{}:{}",
+            "workspace:{}:{}:{}:{}:{}:{:?}",
             self.conversation.id(),
             self.preview
                 .as_ref()
@@ -434,7 +435,11 @@ impl App {
                 .unwrap_or(""),
             self.filter,
             self.pending_images().len(),
-            self.outbox.references.len()
+            self.outbox.references.len(),
+            (self.focus == Focus::Prompt)
+                .then(|| commands::completion::query(&self.editor))
+                .flatten()
+                .filter(|prefix| !commands::completion::candidates(prefix).is_empty())
         )
     }
     pub(super) fn scroll_modal_list(&mut self, list: ListTarget, backwards: bool, step: u16) {
@@ -959,6 +964,7 @@ impl App {
             },
             Target::DiagnosticDetails => self.pointer_focus(Focus::Nodes, worker),
             Target::History => self.pointer_focus(Focus::Conversation, worker),
+            Target::CommandCompletion(Some(index)) => self.complete_command(index),
             Target::Row(list, index) => match list {
                 ListTarget::Nodes => {
                     self.nodes.select(Some(index));

@@ -59,9 +59,15 @@ fn rule(frame: &mut Frame, area: Rect) {
 
 fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<'static> {
     let colors = theme::colors();
+    let slash_equivalent = command.slash_enabled() && command.action != Action::Help;
+    let usage = if command.action == Action::Help {
+        command.label.to_owned()
+    } else {
+        command.usage()
+    };
     if compact {
         return Text::from(vec![
-            Line::styled(command.usage(), Style::default().fg(colors.preview)),
+            Line::styled(usage, Style::default().fg(colors.preview)),
             Line::styled(
                 unavailable.map_or_else(
                     || command.description.to_owned(),
@@ -85,15 +91,22 @@ fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<
         Line::default(),
         Line::styled(command.description, Style::default().fg(colors.secondary)),
         Line::default(),
-        Line::styled("COMMAND", Style::default().fg(colors.secondary).bold()),
         Line::styled(
-            command.usage(),
+            if slash_equivalent {
+                "SLASH COMMAND"
+            } else {
+                "ACTION"
+            },
+            Style::default().fg(colors.secondary).bold(),
+        ),
+        Line::styled(
+            usage,
             Style::default()
                 .fg(colors.preview)
                 .bg(colors.user_background),
         ),
     ];
-    if !command.aliases.is_empty() {
+    if command.slash_enabled() && !command.aliases.is_empty() {
         lines.push(Line::default());
         lines.push(Line::styled(
             format!(

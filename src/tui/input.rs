@@ -43,14 +43,14 @@ impl App {
             || self.searching
             || self.preview_search.editing
             || matches!(self.modal, Some(checkpoints::Modal::CommandInput(_)));
-        let global = |action| {
+        let global = |navigation: &crate::config::keys::NavigationKeys, action| {
             if typing {
-                self.navigation.matches_while_typing(action, key)
+                navigation.matches_while_typing(action, key)
             } else {
-                self.navigation.matches(action, key)
+                navigation.matches(action, key)
             }
         };
-        if global(Nav::Commands) {
+        if global(&self.navigation, Nav::Commands) {
             self.help = false;
             if self.modal.take().is_some() {
                 self.saved_return = None;
@@ -67,8 +67,9 @@ impl App {
             self.finish_pending_session(worker).await?;
             return Ok(exit);
         }
-        if global(Nav::Help) {
+        if global(&self.navigation, Nav::Help) {
             self.help = !self.help;
+            self.slash_help = false;
             self.help_scroll = 0;
             return Ok(false);
         }
@@ -76,9 +77,14 @@ impl App {
             self.help_input(key);
             return Ok(false);
         }
-        if global(Nav::ToggleNodesPanel) || global(Nav::ToggleAgentPanel) {
+        if self.complete_command_key(key) {
+            return Ok(false);
+        }
+        if global(&self.navigation, Nav::ToggleNodesPanel)
+            || global(&self.navigation, Nav::ToggleAgentPanel)
+        {
             self.toggle_panel(
-                if global(Nav::ToggleNodesPanel) {
+                if global(&self.navigation, Nav::ToggleNodesPanel) {
                     Nav::ToggleNodesPanel
                 } else {
                     Nav::ToggleAgentPanel
@@ -96,24 +102,29 @@ impl App {
             return Ok(false);
         }
         let section = self.focus.in_conversation()
-            && (global(Nav::PreviousSection) || global(Nav::NextSection));
+            && (global(&self.navigation, Nav::PreviousSection)
+                || global(&self.navigation, Nav::NextSection));
         let return_to_prompt = matches!(
             self.focus,
             Focus::Attachments | Focus::References | Focus::Conversation
         ) && key.code == KeyCode::Esc;
-        if section || return_to_prompt || global(Nav::NextPanel) || global(Nav::PreviousPanel) {
+        if section
+            || return_to_prompt
+            || global(&self.navigation, Nav::NextPanel)
+            || global(&self.navigation, Nav::PreviousPanel)
+        {
             let was_attachment = self.focus == Focus::Attachments;
             self.focus = if return_to_prompt {
                 Focus::Prompt
             } else if section {
                 self.focus.next_section(
-                    global(Nav::PreviousSection),
+                    global(&self.navigation, Nav::PreviousSection),
                     !self.pending_images().is_empty(),
                     !self.outbox.references.is_empty(),
                 )
             } else {
                 self.focus.next(
-                    global(Nav::PreviousPanel),
+                    global(&self.navigation, Nav::PreviousPanel),
                     self.nodes_collapsed,
                     self.agent_collapsed,
                 )
@@ -238,8 +249,7 @@ impl App {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
 
-        if key.code == KeyCode::Enter
-            && key.modifiers.is_empty()
+        if ((key.code == KeyCode::Enter && key.modifiers.is_empty()) || self.keys.submits(key))
             && self.editor.lines().len() == 1
             && self.editor.lines()[0].starts_with('/')
         {

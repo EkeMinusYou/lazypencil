@@ -76,6 +76,14 @@ fn command(h: &mut Harness, label: &str) -> Result {
     }
     Err(format!("Command is not available in the palette: {label}").into())
 }
+fn command_input(h: &mut Harness, label: &str, input: &str) -> Result {
+    command(h, label)?;
+    h.visible("Arguments")?;
+    h.paste(input)?;
+    h.key(b"\r")?;
+    h.hidden("Arguments")
+}
+
 fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
     let inspected = h.cli(&["inspect".as_ref(), h.document.as_os_str()])?;
     let revision = inspected["revision"].as_str().unwrap();
@@ -697,6 +705,10 @@ pub fn run(
         }
         "oversized-preview" => {
             oversized_preview(&mut h, &design)?;
+            Value::Null
+        }
+        "slash-completion" => {
+            conversations::completion(&mut h)?;
             Value::Null
         }
         "session-selection" => conversations::selection(&mut h)?,
@@ -1351,12 +1363,10 @@ fn ui_theme(h: &mut Harness) -> Result {
         _ => [250, 250, 252, 255],
     };
     assert_eq!(&h.frames.images[0].rgba()[..4], &canvas);
-    h.paste("/theme light")?;
-    h.key(b"\r")?;
+    command_input(h, "Theme", "light")?;
     h.visible("UI theme: Light")?;
     theme_canvas(h, [250, 250, 252, 255])?;
-    h.paste("/theme dark")?;
-    h.key(b"\r")?;
+    command_input(h, "Theme", "dark")?;
     h.visible("UI theme: Dark")?;
     theme_canvas(h, [30, 30, 46, 255])?;
     // The shared command palette opens theme arguments without sending a prompt.
@@ -2298,13 +2308,11 @@ fn collapsible_panels(h: &mut Harness) -> Result {
     h.key(b"\x15")?;
     h.paste("/time invalid")?;
     h.key(b"\r")?;
-    h.visible("Usage: /time <nonnegative seconds>")?;
+    h.visible("Use the command palette")?;
     h.key(b"\t\tr")?;
     h.pump_for(4.2)?;
     assert!(
-        h.screen
-            .text()
-            .contains("Usage: /time <nonnegative seconds>"),
+        h.screen.text().contains("Use the command palette"),
         "A preview refresh or notice timer cannot clear an unrelated error"
     );
     h.key(b"\t\x15")?;

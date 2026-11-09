@@ -500,7 +500,7 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         ] {
             app.editor = editor(text);
             assert_eq!(
-                app.command(&worker).await.unwrap_err().code,
+                palette_command(&mut app, text, &worker).unwrap_err().code,
                 "INVALID_ARGUMENT"
             );
             assert_eq!(app.playback.deadline(), deadline);
@@ -556,14 +556,14 @@ fn playback_preserves_input_pauses_on_seek_errors_and_static_output_and_drops_la
         assert!(!app.playback.active());
         assert!((app.view.time - 3.1).abs() < 1e-10);
         app.editor = editor("/play 3");
-        app.command(&worker).await.unwrap();
+        palette_command(&mut app, "/play 3", &worker).unwrap();
         assert_eq!(app.playback.fps(), Some(3));
         press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await;
         assert!(!app.playback.active());
         press(&mut app, KeyCode::Char('p'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.playback.fps(), Some(5));
         app.editor = editor("/pause");
-        app.command(&worker).await.unwrap();
+        palette_command(&mut app, "/pause", &worker).unwrap();
         assert!(!app.playback.active());
         app.start_playback(5, now).unwrap();
         app.accept_preview(preview::Output {
@@ -649,7 +649,7 @@ fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_pre
         let saved = std::fs::read(store.path()).unwrap();
         let worker = Worker::start(store, vec![], Backend::halfblocks(), 134).unwrap();
         app.editor = editor("/time 1.25");
-        app.command(&worker).await.unwrap();
+        palette_command(&mut app, "/time 1.25", &worker).unwrap();
         assert_eq!(app.view.time, 1.25);
         assert_eq!(app.conversation.draft(), "");
         assert!(!app.conversation.active());
@@ -664,7 +664,7 @@ fn time_commands_validate_without_sending_or_saving_and_view_keys_keep_input_pre
         ] {
             app.editor = editor(text);
             assert_eq!(
-                app.command(&worker).await.unwrap_err().code,
+                palette_command(&mut app, text, &worker).unwrap_err().code,
                 "INVALID_ARGUMENT"
             );
             assert_eq!(app.editor.lines(), &[text]);

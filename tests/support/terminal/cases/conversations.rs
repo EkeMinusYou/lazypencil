@@ -1,5 +1,53 @@
 use super::*;
 
+pub fn completion(h: &mut Harness) -> Result {
+    h.wait("initial complete preview", 15.0, |h| {
+        !h.frames.images.is_empty()
+    })?;
+    let original = h.frames.images.last().unwrap().clone();
+    h.paste("/")?;
+    h.visible("/ Commands")?;
+    h.key(b"con")?;
+    h.visible("/conversations")?;
+    h.key(b"\t")?;
+    h.draft("/conversations")?;
+    h.hidden("/ Commands")?;
+    assert!(!h.root.join("sent-turn.txt").exists());
+    assert_eq!(h.frames.images.last(), Some(&original));
+    h.key(b"\x15")?;
+    h.paste("/att")?;
+    h.key(b"\r")?;
+    h.draft("/attach ")?;
+    assert_eq!(state(h)["pending_attachments"], json!([]));
+    h.save_screen("slash-completion-arguments-screen.txt")?;
+    h.key(b"\x15")?;
+    h.paste("/theme light")?;
+    h.key(b"\r")?;
+    h.visible("Use the command palette")?;
+    h.draft("/theme light")?;
+    assert_eq!(h.frames.images.last(), Some(&original));
+    command_input(h, "Theme", "light")?;
+    h.visible("UI theme: Light")?;
+    h.draft("/theme light")?;
+    h.key(b"\x15")?;
+    h.paste("/help")?;
+    h.key(b"\r")?;
+    h.visible("Conversation commands")?;
+    assert!(!h.screen.text().contains("Preview: pan"));
+    h.key(b"\x1b")?;
+    h.resize(50, 16)?;
+    h.paste("/")?;
+    for _ in 0..11 {
+        h.key(b"\x1b[B")?;
+    }
+    h.key(b"\t")?;
+    h.draft("/help")?;
+    h.save_screen("slash-completion-small-screen.txt")?;
+    assert_eq!(h.count("start"), 0);
+    assert!(!h.root.join("sent-turn.txt").exists());
+    Ok(())
+}
+
 pub fn steering(h: &mut Harness) -> Result {
     h.paste("First request")?;
     h.key(b"\r")?;

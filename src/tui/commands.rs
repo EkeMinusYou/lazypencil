@@ -1,6 +1,7 @@
 //! Shared workspace actions for the palette, slash commands and help.
 use super::*;
 
+pub(super) mod completion;
 pub(super) mod palette;
 
 #[derive(Clone, Copy, Debug)]
@@ -96,7 +97,7 @@ commands! {
         "checkpoints", ["history"], "", 0, 0, Checkpoints;
     Commands, "General", "Command palette", "Browse workspace actions by category.",
         "commands", [], "", 0, 0, Always;
-    Help, "General", "Help", "Show keyboard controls and workspace commands.",
+    Help, "General", "Help", "Show help and available commands.",
         "help", [], "", 0, 0, Always;
     Quit, "General", "Quit", "Stop the conversation and exit.",
         "quit", [], "", 0, 0, Always;
@@ -112,10 +113,32 @@ impl Action {
 }
 
 impl Command {
+    pub fn slash_enabled(&self) -> bool {
+        matches!(
+            self.action,
+            Action::Permissions
+                | Action::NewConversation
+                | Action::Logs
+                | Action::Conversations
+                | Action::Queue
+                | Action::ResumeQueue
+                | Action::ClearQueue
+                | Action::Attach
+                | Action::PasteImage
+                | Action::ResizeImage
+                | Action::ClearImages
+                | Action::Help
+        )
+    }
+
     pub fn usage(&self) -> String {
         format!(
-            "/{}{}{}",
-            self.name,
+            "{}{}{}",
+            if self.slash_enabled() {
+                format!("/{}", self.name)
+            } else {
+                self.label.trim_end_matches('…').to_owned()
+            },
             if self.arguments.is_empty() { "" } else { " " },
             self.arguments
         )
@@ -151,16 +174,25 @@ pub(super) fn parse(line: &str) -> Result<(&'static Command, Vec<String>)> {
         .ok_or_else(|| {
             Error::new(
                 "INVALID_ARGUMENT",
-                "Unknown command; use /commands or /help to browse workspace actions",
+                "Unknown conversation command; use /help or the command palette",
             )
         })?;
+    if !command.slash_enabled() {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            format!(
+                "Use the command palette: {} → {}",
+                command.category, command.label
+            ),
+        ));
+    }
     Ok((command, command.parse_arguments(text)?))
 }
 
 pub(super) fn help() -> String {
-    let mut text = String::from("\nWorkspace commands\n");
+    let mut text = String::from("\nConversation commands\n");
     let mut category = "";
-    for command in COMMANDS {
+    for command in COMMANDS.iter().filter(|command| command.slash_enabled()) {
         if category != command.category {
             category = command.category;
             text.push_str(&format!("\n{category}\n"));
@@ -410,7 +442,7 @@ impl App {
                     self.set_theme(theme, worker);
                 } else {
                     self.set_status(format!(
-                        "UI theme: {:?} · /theme auto|dark|light|monochrome",
+                        "UI theme: {:?} · choose View → Theme in the command palette",
                         self.theme
                     ));
                 }

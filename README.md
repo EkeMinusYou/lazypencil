@@ -163,9 +163,9 @@ lazypencil tui new.pen --agent codex
 ```
 
 Attach a reference with `--image reference.png` at launch, or use `/attach` inside
-the TUI. `/checkpoints` opens committed edits for review and restoration, `/logs`
-opens the current conversation log, and `/conversations` browses saved conversations.
-`/history` remains an alias for `/checkpoints`.
+the TUI. Type `/` to complete conversation commands: `/logs` opens the current
+conversation log and `/conversations` browses saved conversations. The command palette
+(`Alt+P`) lists all workspace actions, including checkpoint review and restoration.
 See [TUI controls](docs/tui.md) and [image attachments](docs/image-attachments.md).
 
 ## MCP and AI prompts

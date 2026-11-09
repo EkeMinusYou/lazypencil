@@ -64,8 +64,7 @@ pub fn page(h: &mut Harness) -> Result {
     })?;
     let started = Instant::now();
     let first = h.frames.images.len();
-    h.paste("/play 2")?;
-    h.key(b"\r")?;
+    command_input(h, "Play", "2")?;
     h.wait("retained browser-only DOM advances to blue", 15.0, |h| {
         h.last_color(BLUE) && h.screen.text().contains("playing")
     })?;
@@ -126,8 +125,7 @@ pub fn idle(h: &mut Harness) -> Result {
     assert_eq!(observed(h), original);
     h.key(b"\t")?;
     frames = h.frames.images.len();
-    h.paste("/time 1")?;
-    h.key(b"\r")?;
+    command_input(h, "Seek shader time", "1")?;
     h.wait("time command changes actual shader pixels", 15.0, |h| {
         h.frames.images.len() > frames
             && h.last_color(YELLOW)
@@ -142,8 +140,7 @@ pub fn idle(h: &mut Harness) -> Result {
         frames,
         "Unchanged time must not repaint"
     );
-    h.paste("/time 0")?;
-    h.key(b"\r")?;
+    command_input(h, "Seek shader time", "0")?;
     h.wait("time command restores shader pixels", 15.0, |h| {
         h.frames.images.len() > frames
             && dynamic_pixels(h, MAGENTA, BLUE)
@@ -152,8 +149,7 @@ pub fn idle(h: &mut Harness) -> Result {
     assert_eq!(observed(h), original);
     frames = h.frames.images.len();
     let started = Instant::now();
-    h.paste("/play 2")?;
-    h.key(b"\r")?;
+    command_input(h, "Play", "2")?;
     h.wait("playback advances shader pixels and clock", 15.0, |h| {
         timeline(h) >= 1.0
             && h.screen.text().contains("playing")

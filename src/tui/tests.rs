@@ -209,5 +209,20 @@ include!("tests/saved.rs");
 include!("tests/resume.rs");
 
 include!("tests/commands.rs");
+include!("tests/slash.rs");
 
 include!("tests/permissions.rs");
+
+fn palette_parse(line: &str) -> Result<(&'static commands::Command, Vec<String>)> {
+    let (name, input) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+    let command = commands::COMMANDS
+        .iter()
+        .find(|command| command.name == name.trim_start_matches('/'))
+        .unwrap();
+    Ok((command, command.parse_arguments(input)?))
+}
+
+fn palette_command(app: &mut App, line: &str, worker: &Worker) -> Result<bool> {
+    let (command, args) = palette_parse(line)?;
+    app.execute_command(command.action, &args, worker)
+}

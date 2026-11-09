@@ -161,6 +161,7 @@ impl Harness {
             "user-font-config",
             "script-config",
             "user-navigation-config",
+            "slash-completion",
             "collapsible-panels",
             "oversized-preview",
             "ime-commit",

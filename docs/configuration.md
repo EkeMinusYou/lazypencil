@@ -16,8 +16,7 @@ show_node_names = true
 ```
 
 The default is `true`. Use `false` to start with names hidden. Toggle them during a
-session with `View · Toggle node names` in the command palette, `/toggle-node-names`,
-or `Node names` in the View controls menu. Session changes do not rewrite the file.
+session with `View · Toggle node names` in the command palette or `Node names` in the View controls menu. Session changes do not rewrite the file.
 Hidden names reserve no title padding when fitting the whole document. This setting
 only affects the terminal preview; exported images keep their document contents.
 Like other TUI preferences, it cannot be set in project `lazypencil.toml`.
@@ -83,7 +82,7 @@ lazypencil fonts list --file design.pen
 
 `config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime]`, `[agents]`, `[attachments]`, `[conversations.retention]`, `[tui]` (`theme`), `[tui.layout]`, `[tui.keys]` and `[tui.navigation]`; project design instructions are rejected there. Project agent preferences require the separate execution grant described below. Shortcut and [panel width settings](tui.md#panel-widths) remain user-only. See [TUI keys](tui.md#keys-and-commands) for replacement, validation and focus rules. `show --user` reports the effective prompt keys and `schema --user` describes them, including builds without TUI support.
 
-TUI `theme` defaults to `"auto"`, which adapts to the terminal background. Presets are `"dark"`, `"light"` and `"monochrome"`. `tui --theme NAME` overrides it for one launch; the command palette and `/theme NAME` switch within the current session. Themes are user-only and do not affect document rendering or export. See [UI themes](tui.md#ui-themes).
+TUI `theme` defaults to `"auto"`, which adapts to the terminal background. Presets are `"dark"`, `"light"` and `"monochrome"`. `tui --theme NAME` overrides it for one launch; the command palette switches the theme within the current session. Themes are user-only and do not affect document rendering or export. See [UI themes](tui.md#ui-themes).
 
 On macOS and Linux, the user configuration is `$XDG_CONFIG_HOME/lazypencil/config.toml`. When `XDG_CONFIG_HOME` is unset, empty, or relative, it defaults to `~/.config/lazypencil/config.toml`. `LAZYPENCIL_CONFIG_DIR` takes precedence over both and overrides the directory, not the filename; a relative explicit override resolves against the invoking directory. `doctor` reports the selected path; `config show --user` reports the requested/physical paths and source hash. The former macOS location, `~/Library/Application Support/dev.lazypencil.lazypencil/config.toml`, is no longer read or automatically migrated. This changes configuration discovery only; application data and caches keep their existing locations. The deferred Windows implementation retains `%APPDATA%\\lazypencil\\lazypencil\\config\\config.toml` and still requires platform verification.
 

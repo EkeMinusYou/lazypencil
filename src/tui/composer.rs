@@ -456,6 +456,7 @@ impl App {
                 input,
             );
         }
+        self.draw_command_completion(frame, inner, prompt);
     }
 }
 

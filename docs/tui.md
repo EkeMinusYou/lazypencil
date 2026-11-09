@@ -100,7 +100,7 @@ available through MCP `validate_document`; attachment or selection is not requir
 ## Initial terminal support
 
 The released platform is macOS Apple Silicon, with the [README terminal baseline](../README.md#supported-environment).
-Kitty and Sixel are pixel transports; halfblocks and `/open-preview` provide fallbacks.
+Kitty and Sixel are pixel transports; halfblocks and the palette's Open preview externally action provide fallbacks.
 Terminal versions, IMEs, multiplexers and SSH forwarding require separate checks.
 Linux/Windows backends are retained for future support, and Intel Mac is unsupported.
 
@@ -116,7 +116,7 @@ readable screen size based on terminal cell metrics. Further zooming keeps that
 size constant. Text is rasterized directly at each size. Long names are clipped
 with an ellipsis to their frame width rather than shrinking to fit or overlapping
 adjacent titles. These titles decorate the preview only and are not added to exports.
-Use `View · Toggle node names` in the command palette, `/toggle-node-names`, or
+Use `View · Toggle node names` in the command palette or
 `Node names` in View controls to show or hide them for the current session. Set
 `[tui.preview] show_node_names = false` in the user `config.toml` to start with names
 hidden (the default is `true`). Whole-document fitting reserves no title space while
@@ -132,12 +132,12 @@ the workspace background. Terminal background images and window opacity are not
 reproduced inside the preview. Auto uses the dark theme when the terminal reports
 neither a background color nor a valid `COLORFGBG` hint. Pan/zoom feedback uses the
 same background. Document fills and CLI PNG exports keep their original colors
-and transparency; `/open-preview` opens the completed preview with its canvas background.
+and transparency; **Preview · Open preview externally** opens the completed preview with its canvas background.
 
 Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
-Preview `p` or `/play [fps]` starts at 5 fps by default (1–10); `/pause` stops new
-frames. `/time SECONDS` and `Alt+[`/`Alt+]` seek shader time, not page JavaScript or document
-script execution. Runtime expiry, policy changes, failures and eviction can reset DOM.
+Preview `p` or **Preview · Play…** in the palette starts at 5 fps by default (1–10);
+**Preview · Pause** stops new frames. **Preview · Seek shader time…** and
+`Alt+[`/`Alt+]` seek shader time, not page JavaScript or document script execution. Runtime expiry, policy changes, failures and eviction can reset DOM.
 See [dynamic content](dynamic-content.md) for capture identity and limits.
 
 `--image-protocol kitty|sixel|halfblocks` selects a transport explicitly. Auto recognizes
@@ -163,8 +163,7 @@ otherwise it falls back to the dark theme so the UI and preview keep matching
 surfaces. The document picker uses the same theme as the workspace.
 
 Open `View · Theme…` in the command palette (Alt+P) and enter `auto`, `dark`,
-`light` or `monochrome`, or use
-`/theme light` while editing. `/theme` shows the current selection. These changes last
+`light` or `monochrome`. Submitting empty theme arguments shows the current selection. These changes last
 for the current TUI session. For a persistent preference, set the user configuration:
 
 ```toml
@@ -364,8 +363,8 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |
 | Preview: `p` | Play/pause page captures and the shader timeline at a maximum of 5 fps |
-| Prompt: `/play [fps]`, `/pause` then Enter | Start bounded playback (1–10 fps) or stop requesting frames |
-| Prompt: `/time <nonnegative seconds>` then Enter | Seek shader time without modifying the document |
+| Palette: Preview · Play… / Pause | Start bounded playback (1–10 fps) or stop requesting frames |
+| Palette: Preview · Seek shader time… | Seek shader time without modifying the document |
 | Nodes: `/` | Search names and IDs; Enter keeps the filter, Esc clears it |
 | Nodes: `j` / `k`, Up / Down | Select the next/previous visible node |
 | Nodes: `l` / Right, `h` / Left | Expand/enter a branch, or close its parent branch and select it |
@@ -378,17 +377,19 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Attachments: `d`, Delete, Backspace | Remove a pending image without changing its source |
 | Agent history: PgUp/PgDn, End | Scroll or follow new output |
 | Outside Prompt: `r` | Refresh, including browser captures |
-| Outside Prompt: `o`, or `/open-preview` | Open a saved complete PNG in the OS viewer |
+| Outside Prompt: `o`, or Preview · Open preview externally in the palette | Open a saved complete PNG in the OS viewer |
 | `F1`, or `/help` | Show help |
-| `Alt+P`, or `/commands` | Open the command palette; Ctrl+P is previous-line editing |
-| `/checkpoints` (or `/history`) then Enter | Browse checkpoints without starting an agent |
+| `Alt+P` | Open the command palette; Ctrl+P is previous-line editing |
+| Palette: Checkpoints · Browse and restore checkpoints… | Browse checkpoints without starting an agent |
 | `/logs`, `/conversations` then Enter | Read current saved turns or browse saved conversations |
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
-| Outside Prompt: `q`, or `/quit` | Stop the conversation and exit |
+| Outside Prompt: `q`, or General · Quit in the palette | Stop the conversation and exit |
 
 The command palette groups workspace actions by Conversation, Send queue, Images,
-Preview, View, Checkpoints and General. Every action has a slash command and a
-shared description. Select a row to see its command syntax and description, or the
+Preview, View, Checkpoints and General. It lists every workspace action. Conversation
+management, send queues, images and `/help` also have slash commands; preview, view,
+checkpoint and general workspace actions are available through the palette and their
+existing keyboard controls. Select a row to see its command syntax and description, or the
 reason it is unavailable. Enter runs the action; unavailable actions stay in the
 palette. Home/End and PgUp/PgDn navigate longer lists, including at 50×16.
 
@@ -404,13 +405,25 @@ is ready; it does not replace or send the current draft.
 
 | Category | Slash commands |
 | --- | --- |
-| Conversation | `/new-conversation`, `/logs` (current conversation), `/conversations` (saved conversations) |
+| Conversation | `/permissions` (alias `/mode`), `/new-conversation`, `/logs`, `/conversations` |
 | Send queue | `/queue <text>`, `/resume-queue`, `/clear-queue` |
 | Images | `/attach <quoted path> [WIDTHxHEIGHT\|original]`, `/paste-image [WIDTHxHEIGHT\|original]`, `/resize-image <number> <WIDTHxHEIGHT\|original>`, `/clear-images` |
-| Preview | `/refresh`, `/open-preview`, `/play [fps]`, `/pause`, `/time <nonnegative seconds>` |
-| View | `/toggle-nodes`, `/toggle-agent`, `/toggle-node-names`, `/view-controls`, `/enable-pinch` |
-| Checkpoints | `/checkpoints` (`/history` is a compatibility alias) |
-| General | `/commands`, `/help`, `/quit` |
+| Help | `/help` lists conversation commands; F1 and palette Help show workspace help |
+
+Type `/` in the single-line Prompt to show conversation command candidates. Continue
+typing to filter by command name (or `/mode`), use Up/Down to select, and Tab or Enter
+to fill the name, or click a candidate. Completion preserves existing arguments, supports
+Undo, and never executes an action.
+Enter on an exact command executes it; commands needing arguments receive a trailing
+space when completed. Esc hides candidates until the query changes. With arguments or
+multiline text, ordinary editing and panel navigation remain available. Candidates stay
+inside Agent and leave the prompt's IME caret visible, including at 50×16.
+
+Former workspace slash commands, including `/theme`, `/play`, `/checkpoints`, `/history`,
+`/commands` and `/quit`, are rejected with their palette category/action and the current
+palette shortcut. They remain in the draft and are not submitted to the agent, including
+with configured submit keys. The palette retains all actions and preserves the Prompt
+draft when running them.
 
 During a conversation, requests such as “show the login button”, “show both screens”, “zoom out a little” or “center the heading at this scale” can operate Preview. The agent searches names/types through the existing `read_nodes` tool, uses `get_preview_state` for the selected node and current camera, and calls the TUI-only `set_preview` tool. It can target one or multiple nodes, the entire document, a region or a point, and adjust absolute/relative zoom or pan. “Show both” fits their combined bounds without moving design elements. State queries distinguish the requested view from the last complete frame and its revision. They do not expose draft text.
 
@@ -492,7 +505,7 @@ A successful change restores the selected draft, images and displayed history, c
 
 Explicit local retention and cleanup are described in [checkpoints and retention](checkpoints.md).
 
-Choose **Checkpoints · Browse and restore checkpoints…** in the command palette, or use `/checkpoints` (`/history` remains an alias). The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads up to 50 entries per byte-bounded page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
+Choose **Checkpoints · Browse and restore checkpoints…** in the command palette. The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads up to 50 entries per byte-bounded page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
 
 Select an entry with arrows and press Enter to review its ID and current/target revisions. The review does not change the document. Esc returns to the list; a second Enter requests restoration. The shared CLI/MCP service validates the checkpoint and both captured revision preconditions, then restores it as a new history entry. The submitted draft, pending images, and source files are preserved. Referenced assets use their current contents; restoration does not roll back external asset edits.
 

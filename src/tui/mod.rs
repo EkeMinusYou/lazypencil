@@ -316,6 +316,8 @@ struct App {
     saved_return: Option<Box<saved::Page>>,
     pending_session: Option<saved::SessionChange>,
     help: bool,
+    slash_help: bool,
+    completion: commands::completion::State,
     help_scroll: u16,
     dirty: bool,
     draft_changed: bool,
@@ -415,6 +417,8 @@ impl App {
             saved_return: None,
             pending_session: None,
             help: false,
+            slash_help: false,
+            completion: Default::default(),
             help_scroll: 0,
             dirty: true,
             draft_changed: false,
@@ -1185,9 +1189,16 @@ impl App {
     }
 
     fn help_text(&self) -> String {
+        if self.slash_help {
+            return format!(
+                "{}\nType / to browse; ↑/↓ select; Tab/Enter complete; Esc dismisses.\n{}: all workspace actions\n",
+                commands::help(),
+                self.navigation.label(Nav::Commands)
+            );
+        }
         let label = |action| self.navigation.label(action);
         let mut text = format!(
-            "{} / {}: switch Nodes, Preview, Prompt (right / left)\n{}: command palette; /checkpoints: committed edits\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
+            "{} / {}: switch Nodes, Preview, Prompt (right / left)\n{}: command palette, including document checkpoints\nPrompt: {} sends; Alt+Enter / Shift+Enter inserts a newline\n{}: paste image, copied image files, or text\n",
             label(Nav::NextPanel),
             label(Nav::PreviousPanel),
             label(Nav::Commands),
@@ -1289,6 +1300,7 @@ impl App {
 
     fn show_help(&mut self) {
         self.help = true;
+        self.slash_help = false;
         self.help_scroll = 0;
     }
 
@@ -1322,6 +1334,7 @@ impl App {
             return Ok(());
         }
         self.editor = editor(self.conversation.draft());
+        self.completion = Default::default();
         self.outbox = Default::default();
         self.restore_outbox();
         self.draft_changed = false;
@@ -1410,8 +1423,19 @@ impl App {
             return Ok(false);
         }
         let line = self.editor.lines().join("\n");
-        let (command, args) = commands::parse(&line)?;
-        let exit = self.execute_command(command.action, &args, worker)?;
+        let (command, args) = commands::parse(&line).map_err(|mut error| {
+            error
+                .message
+                .push_str(&format!(" ({})", self.navigation.label(Nav::Commands)));
+            error
+        })?;
+        let exit = if command.action == commands::Action::Help {
+            self.show_help();
+            self.slash_help = true;
+            false
+        } else {
+            self.execute_command(command.action, &args, worker)?
+        };
         // A new conversation must save the existing draft before switching.
         if self.pending_session.is_some() {
             self.finish_pending_session(worker).await?;

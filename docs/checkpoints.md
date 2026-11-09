@@ -19,7 +19,7 @@ Listings are newest first. Follow `next_before_sequence` until it is null.
 with large edit results can contain fewer entries while still returning a cursor.
 CLI, MCP and the TUI checkpoint browser use the same bounded pages. MCP reads
 through `get_history` and restores through `restore_checkpoint`; the TUI uses
-`/checkpoints` (with `/history` retained as an alias).
+**Checkpoints · Browse and restore checkpoints…** in the command palette (`Alt+P`).
 
 ## Explicit retention
 

@@ -427,6 +427,11 @@ fn real_pty_command_palette_inputs_preserve_drafts_validate_and_keep_unicode_cur
 }
 
 #[test]
+fn real_pty_slash_commands_complete_without_execution_and_palette_keeps_workspace_actions() {
+    run_pty_case("slash-completion");
+}
+
+#[test]
 fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent() {
     run_pty_case("saved-history");
 }
@@ -448,14 +453,10 @@ fn real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_a
 
 fn run_pty_case(case: &str) {
     let temp = TempDir::new().unwrap();
-    let result = std::panic::catch_unwind(|| {
-        terminal::run(
-            Path::new(env!("CARGO_BIN_EXE_lazypencil")),
-            temp.path(),
-            case,
-            &[],
-        )
-    });
+    let binary = std::env::var_os("LAZYPENCIL_TEST_TUI_BINARY")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_lazypencil").into());
+    let result = std::panic::catch_unwind(|| terminal::run(&binary, temp.path(), case, &[]));
     let success = matches!(&result, Ok(Ok(())));
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
         && (!success

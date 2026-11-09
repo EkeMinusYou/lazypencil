@@ -4,26 +4,25 @@
 fn workspace_commands_keep_legacy_names_and_literal_queue_text() {
     use commands::Action;
     for (name, action) in [
-        ("history", Action::Checkpoints),
-        ("checkpoints", Action::Checkpoints),
-        ("logs", Action::Logs),
-        ("conversations", Action::Conversations),
-        ("resume-queue", Action::ResumeQueue),
-        ("clear-queue", Action::ClearQueue),
-        ("clear-images", Action::ClearImages),
-        ("open-preview", Action::OpenPreview),
-        ("pause", Action::Pause),
-        ("enable-pinch", Action::EnablePinch),
-        ("enable-native-input", Action::EnablePinch),
-        ("commands", Action::Commands),
+        ("permissions", Action::Permissions), ("mode", Action::Permissions),
+        ("new-conversation", Action::NewConversation), ("logs", Action::Logs),
+        ("conversations", Action::Conversations), ("resume-queue", Action::ResumeQueue),
+        ("clear-queue", Action::ClearQueue), ("clear-images", Action::ClearImages),
         ("help", Action::Help),
-        ("quit", Action::Quit),
     ] {
-        assert_eq!(
-            commands::parse(&format!("/{name}")).unwrap().0.action,
-            action
-        );
+        assert_eq!(commands::parse(&format!("/{name}")).unwrap().0.action, action);
         assert!(commands::parse(&format!("/{name} extra")).is_err());
+    }
+    assert_eq!(commands::COMMANDS.iter().filter(|command| command.slash_enabled()).count(), 12);
+    assert_eq!(commands::COMMANDS.len(), 26);
+    for command in commands::COMMANDS.iter().filter(|command| !command.slash_enabled()) {
+        for name in std::iter::once(&command.name).chain(command.aliases.iter()) {
+            let error = commands::parse(&format!("/{name}")).unwrap_err();
+            assert!(error.message.contains(command.category));
+            assert!(error.message.contains(command.label));
+            assert!(!commands::help().contains(&format!("/{name}:")));
+            assert!(!command.usage().starts_with('/'));
+        }
     }
     let (_, args) = commands::parse("/attach '画像 samples/reference.png' 800x600").unwrap();
     assert_eq!(args, ["画像 samples/reference.png", "800x600"]);
@@ -187,10 +186,10 @@ fn workspace_command_palette_and_slash_share_playback_and_image_actions() {
         assert!(!app.playback.active());
         assert_eq!(app.editor.lines(), ["Retain this draft"]);
         app.editor = editor("/play 3");
-        app.command(&worker).await.unwrap();
+        palette_command(&mut app, "/play 3", &worker).unwrap();
         assert_eq!(app.playback.fps(), Some(3));
         app.editor = editor("/pause");
-        app.command(&worker).await.unwrap();
+        palette_command(&mut app, "/pause", &worker).unwrap();
         assert!(!app.playback.active());
         app.conversation.close().await.unwrap();
     });
@@ -230,18 +229,13 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
             app.command_unavailable(commands::Action::ViewControls.command())
                 .is_some()
         );
-        assert!(
-            app.help_text()
-                .contains("/checkpoints: Browse committed edits")
-        );
-        assert!(app.help_text().contains("/history: alias for /checkpoints"));
+        assert!(!app.help_text().contains("/checkpoints:"));
+        assert!(!app.help_text().contains("/history:"));
+        assert!(app.help_text().contains("/conversations:"));
         for category in [
             "Conversation",
             "Send queue",
             "Images",
-            "Preview",
-            "View",
-            "Checkpoints",
             "General",
         ] {
             assert!(app.help_text().contains(&format!("\n{category}\n")));
@@ -264,7 +258,7 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
                 .map(|cell| cell.symbol())
                 .collect::<String>();
             assert!(rendered.contains("GENERAL") && rendered.contains("Quit"));
-            assert!(rendered.contains("/quit"));
+            assert!(!rendered.contains("/quit"));
             let rows = (0..height)
                 .map(|y| {
                     (0..width)
@@ -273,7 +267,7 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
                 })
                 .collect::<Vec<_>>();
             let selected = rows.iter().position(|row| row.contains("Quit")).unwrap();
-            let usage = rows.iter().position(|row| row.contains("/quit")).unwrap();
+            let usage = rows.iter().rposition(|row| row.contains("Quit")).unwrap();
             if width < 100 {
                 assert!(
                     usage > selected,
@@ -311,9 +305,9 @@ fn workspace_checkpoint_commands_keep_review_and_busy_operation_guards() {
             173,
         )
         .unwrap();
-        for name in ["/checkpoints", "/history"] {
-            app.editor = editor(name);
-            app.command(&worker).await.unwrap();
+        for _ in 0..2 {
+            app.modal = Some(command_modal(commands::Action::Checkpoints));
+            app.activate_modal(&worker).unwrap();
             assert!(app.document_task.is_some());
             app.modal = Some(command_modal(commands::Action::NewConversation));
             app.activate_modal(&worker).unwrap();
@@ -375,15 +369,15 @@ fn theme_commands_share_the_palette_preserve_drafts_and_reject_invalid_values() 
         assert_eq!(app.editor.lines(), ["Keep this draft"]);
         assert_eq!(app.conversation.draft(), "Keep this draft");
         for name in ["monochrome", "auto", "dark"] {
-            let (command, args) = commands::parse(&format!("/theme {name}")).unwrap();
+            let (command, args) = palette_parse(&format!("/theme {name}")).unwrap();
             app.execute_command(command.action, &args, &worker).unwrap();
             crate::tui::test_artifacts::snapshot(&mut app, &format!("theme-{name}"));
         }
         assert_eq!(app.theme, Theme::Dark);
-        let (command, args) = commands::parse("/theme invalid").unwrap();
+        let (command, args) = palette_parse("/theme invalid").unwrap();
         assert_eq!(app.execute_command(command.action, &args, &worker).unwrap_err().code, "INVALID_ARGUMENT");
         assert_eq!(app.theme, Theme::Dark);
-        assert!(commands::parse("/theme dark extra").is_err());
+        assert!(palette_parse("/theme dark extra").is_err());
         app.execute_command(command.action, &[], &worker).unwrap();
         assert!(app.status.contains("UI theme: Dark"));
         assert_eq!(app.editor.lines(), ["Keep this draft"]);
@@ -551,7 +545,7 @@ fn workspace_command_palette_layouts_keep_details_and_availability_readable() {
                         .collect::<String>();
                     assert!(text.contains("Commands"));
                     assert!(text.contains(if action == commands::Action::Theme {
-                        "/theme"
+                        "Theme"
                     } else {
                         "/resize-image"
                     }));
