@@ -2,6 +2,10 @@
 use super::*;
 use ratatui::{layout::Margin, style::Stylize};
 
+pub(in crate::tui) fn area(workspace: Rect) -> Rect {
+    centered(workspace, 120, 35)
+}
+
 /// Return command indices and their label rows; category headings are not selectable.
 pub(in crate::tui) fn rows(first: usize, height: u16) -> Vec<(usize, u16)> {
     let mut rows = Vec::new();
@@ -129,11 +133,14 @@ impl App {
         let colors = theme::colors();
         // Dim the workspace without changing its focus, selection or theme.
         for cell in &mut frame.buffer_mut().content {
-            cell.fg = dim(cell.fg, colors.canvas);
+            // Kitty placeholder foregrounds encode image IDs, not text colors.
+            if !cell.symbol().contains('\u{10eeee}') {
+                cell.fg = dim(cell.fg, colors.canvas);
+            }
             cell.bg = dim(cell.bg, colors.canvas);
         }
         self.pointer.overlay();
-        let popup = centered(frame.area(), 120, 35);
+        let popup = area(frame.area());
         frame.render_widget(Clear, popup);
         let block = Block::bordered()
             .border_set(ratatui::symbols::border::ROUNDED)

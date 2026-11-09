@@ -393,6 +393,129 @@ fn theme_commands_share_the_palette_preserve_drafts_and_reject_invalid_values() 
 }
 
 #[test]
+fn workspace_command_palette_preserves_native_preview_outside_the_popup() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        command_palette_preview(&mut app, true).await;
+        app.insert_text("Keep this draft");
+        let initial = command_palette_frame(&mut app);
+        let canvas = app.pointer.area(mouse::Target::Canvas).unwrap();
+        assert!(initial[(0, 0)].symbol().contains("a=p,"));
+
+        app.modal = Some(checkpoints::Modal::commands());
+        let palette = command_palette_frame(&mut app);
+        let popup = centered(palette.area, 120, 35);
+        let wire = palette[(0, 0)].symbol();
+        // The palette covers the full canvas width, leaving strips above and below.
+        assert!(popup.x <= canvas.x && popup.right() >= canvas.right());
+        for part in [
+            Rect::new(canvas.x, canvas.y, canvas.width, popup.y - canvas.y),
+            Rect::new(
+                canvas.x,
+                popup.bottom(),
+                canvas.width,
+                canvas.bottom() - popup.bottom(),
+            ),
+        ] {
+            assert!(!part.is_empty());
+            assert!(wire.contains(&format!("\x1b[{};{}H\x1b_Ga=p,", part.y + 1, part.x + 1)));
+            assert!(wire.contains(&format!("c={},r={},", part.width, part.height)));
+            assert!(wire.contains(&format!(
+                ",x=0,y={},w={},h={};",
+                u32::from(part.y - canvas.y) * 20,
+                u32::from(part.width) * 10,
+                u32::from(part.height) * 20,
+            )));
+        }
+        assert_eq!(wire.matches("a=p,").count(), 2);
+        assert!(
+            !wire.contains("a=t,"),
+            "Opening the palette must reuse the image"
+        );
+        let serial = app.presentation.serial();
+        command_palette_frame(&mut app);
+        assert_eq!(app.presentation.serial(), serial);
+
+        app.modal = None;
+        let restored = command_palette_frame(&mut app);
+        let wire = restored[(0, 0)].symbol();
+        assert_eq!(wire.matches("a=p,").count(), 1);
+        assert!(wire.contains(&format!("c={},r={},", canvas.width, canvas.height)));
+        assert!(wire.contains("a=d,"));
+        assert!(!wire.contains("a=t,"));
+        assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn workspace_command_palette_preserves_kitty_placeholder_image_ids() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        command_palette_preview(&mut app, false).await;
+        let initial = command_palette_frame(&mut app);
+        app.modal = Some(checkpoints::Modal::commands());
+        let palette = command_palette_frame(&mut app);
+        let popup = centered(palette.area, 120, 35);
+        let mut placeholders = 0;
+        for position in palette.area.positions().filter(|p| !popup.contains(*p)) {
+            let before = &initial[position];
+            if before.symbol().contains('\u{10eeee}') {
+                let after = &palette[position];
+                assert!(after.symbol().contains('\u{10eeee}'));
+                assert_eq!(after.fg, before.fg, "Kitty foregrounds encode image IDs");
+                assert_eq!(after.underline_color, before.underline_color);
+                placeholders += 1;
+            }
+        }
+        assert!(placeholders > 0);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+fn command_palette_frame(app: &mut App) -> ratatui::buffer::Buffer {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 50)).unwrap();
+    let mut buffer = None;
+    terminal
+        .draw(|frame| {
+            app.draw(frame);
+            buffer = Some(frame.buffer_mut().clone());
+        })
+        .unwrap();
+    buffer.unwrap()
+}
+
+async fn command_palette_preview(app: &mut App, native: bool) {
+    command_palette_frame(app);
+    app.cells = app.pointer.area(mouse::Target::Canvas).unwrap().as_size();
+    let picker = Backend::native_for_test();
+    let worker =
+        Worker::start(app.conversation.store().clone(), vec![], picker.clone(), 42).unwrap();
+    app.request(&worker, false, false);
+    app.accept_preview(
+        tokio::time::timeout(Duration::from_secs(15), worker.next())
+            .await
+            .unwrap(),
+    );
+    if !native {
+        let preview = app.preview.as_mut().unwrap();
+        preview.protocol = graphics::Encoded::Protocol(
+            picker
+                .encode(
+                    image::DynamicImage::ImageRgba8(preview.image.bitmap().unwrap()),
+                    app.cells,
+                    42,
+                )
+                .unwrap(),
+        );
+    }
+    app.presentation.rectangular(native);
+}
+
+#[test]
 fn workspace_command_palette_layouts_keep_details_and_availability_readable() {
     use crate::config::keys::Theme;
     runtime().block_on(async {

@@ -1857,14 +1857,19 @@ impl App {
         self.draw_agent_permissions(frame);
         self.pointer.finish();
         self.native_input.retain_canvas(self.gesture_canvas());
+        // Keep native preview pixels outside the command palette's popup visible.
+        let command_palette = matches!(self.modal, Some(checkpoints::Modal::Commands { .. }));
         let modal = self.help
-            || self.modal.is_some()
+            || (self.modal.is_some() && !command_palette)
             || self.permission_ui.is_some()
             || !self.permissions.is_empty();
-        let overlay = self
-            .pointer
-            .more
-            .then(|| Self::pointer_menu_area(workspace.header));
+        let overlay = if command_palette {
+            Some(commands::palette::area(area))
+        } else {
+            self.pointer
+                .more
+                .then(|| Self::pointer_menu_area(workspace.header))
+        };
         self.presentation
             .finish_with_overlay(frame.buffer_mut(), modal, overlay);
         Size::new(inner.width, inner.height)
