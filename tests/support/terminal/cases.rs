@@ -78,10 +78,10 @@ fn command(h: &mut Harness, label: &str) -> Result {
 }
 fn command_input(h: &mut Harness, label: &str, input: &str) -> Result {
     command(h, label)?;
-    h.visible("Arguments")?;
+    h.visible("[Enter Run]")?;
     h.paste(input)?;
     h.key(b"\r")?;
-    h.hidden("Arguments")
+    h.hidden("[Enter Run]")
 }
 
 fn edit(h: &Harness, color: &str, request: &str) -> Result<Value> {
@@ -391,11 +391,8 @@ pub fn run(
         for (width, height) in [(80, 24), (50, 16), (130, 34)] {
             h.resize(width, height)?;
             h.wait("resized picker footer", 10.0, |h| {
-                h.screen
-                    .text()
-                    .lines()
-                    .last()
-                    .is_some_and(|line| line.contains("Ctrl+C"))
+                let text = h.screen.text();
+                text.contains("Ctrl+C") && text.contains("[Enter Open]")
             })?;
             h.visible("Open a .pen file")?;
         }
@@ -440,7 +437,7 @@ pub fn run(
                     text.contains("Loading nodes…")
                         && text.contains("Loading preview…")
                         && text.contains("design.pen")
-                        && !text.contains("Filter ›")
+                        && !text.contains("Type to filter files")
                         && !text.contains("Opening…")
                         && !text.contains("Open a .pen file")
                 })?;
@@ -992,13 +989,13 @@ fn command_palette(h: &mut Harness) -> Result {
     h.visible("INVALID_ARGUMENT")?;
     assert_eq!(state(h)["draft"], draft);
     h.key(b"\x7f\x7f\x7f1.25\r")?;
-    h.hidden("Arguments")?;
+    h.hidden("[Enter Run]")?;
     assert_eq!(state(h)["draft"], draft);
 
     for (width, height) in [(130, 34), (50, 16)] {
         h.resize(width, height)?;
         command(h, "Attach image file")?;
-        h.visible("Arguments")?;
+        h.visible("[Enter Run]")?;
         h.paste("画像.png")?;
         h.wait("Unicode command input cursor", 15.0, |h| {
             h.screen
@@ -1013,7 +1010,7 @@ fn command_palette(h: &mut Harness) -> Result {
         })?;
         h.key(b"\x1b")?;
         h.visible("Commands")?;
-        h.hidden("Arguments")?;
+        h.hidden("[Enter Run]")?;
         h.key(b"\x1b[F")?;
         h.visible("GENERAL")?;
         h.visible("Quit")?;
@@ -1371,7 +1368,7 @@ fn ui_theme(h: &mut Harness) -> Result {
     theme_canvas(h, [30, 30, 46, 255])?;
     // The shared command palette opens theme arguments without sending a prompt.
     command(h, "Theme")?;
-    h.visible("Arguments")?;
+    h.visible("[Enter Run]")?;
     h.paste("light")?;
     h.key(b"\r")?;
     h.visible("UI theme: Light")?;

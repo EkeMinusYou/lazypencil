@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::path::{Path, PathBuf};
 
@@ -66,9 +66,11 @@ impl View<'_> {
             pointer.clear();
             return;
         }
+        let input_height = if inner.height >= 10 { 3 } else { 1 };
         let sections = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(u16::from(inner.height >= 12)),
+            Constraint::Length(input_height),
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(if self.notice.is_empty() { 1 } else { 3 }),
@@ -84,20 +86,45 @@ impl View<'_> {
         );
         let input = self.path.unwrap_or(self.filter);
         let label = if self.path.is_some() {
-            "Path › "
+            "Path"
         } else {
-            "Filter › "
+            "Filter"
         };
-        let label_width = Line::raw(label).width();
-        let available = usize::from(sections[2].width).saturating_sub(label_width + 1);
+        let colors = theme::colors();
+        let block = if input_height == 3 {
+            Block::bordered()
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(colors.frame))
+                .padding(Padding::horizontal(1))
+        } else {
+            Block::default().padding(Padding::horizontal(1))
+        };
+        let input_area = block.inner(sections[2]);
+        frame.render_widget(block.style(theme::base()), sections[2]);
+        let label_width = Line::raw(label).width() + 2;
+        let available = usize::from(input_area.width).saturating_sub(label_width + 1);
         let input = input_tail(input, available);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(label, Style::default().fg(theme::colors().secondary)),
-                Span::raw(input.clone()),
+                Span::styled(
+                    format!("{label}  "),
+                    Style::default().fg(colors.key).add_modifier(Modifier::BOLD),
+                ),
+                if input.is_empty() {
+                    Span::styled(
+                        if self.path.is_some() {
+                            "Enter a file or folder path…"
+                        } else {
+                            "Type to filter files…"
+                        },
+                        Style::default().fg(colors.muted),
+                    )
+                } else {
+                    Span::raw(input.clone())
+                },
             ]))
-            .style(Style::default().bg(theme::colors().prompt_background)),
-            sections[2],
+            .style(theme::base()),
+            input_area,
         );
         state.select((!self.paths.is_empty()).then_some(self.selected));
         if self.paths.is_empty() {
@@ -108,10 +135,10 @@ impl View<'_> {
             };
             frame.render_widget(
                 Paragraph::new(message).style(Style::default().fg(theme::colors().secondary)),
-                sections[3],
+                sections[4],
             );
         } else {
-            let width = usize::from(sections[3].width).saturating_sub(2);
+            let width = usize::from(sections[4].width).saturating_sub(2);
             let items: Vec<_> = self
                 .paths
                 .iter()
@@ -125,7 +152,7 @@ impl View<'_> {
             pointer.list(
                 frame,
                 List::new(items).highlight_style(theme::node_selected(true)),
-                sections[3],
+                sections[4],
                 state,
                 (1, super::super::mouse::ListTarget::Documents),
             );
@@ -162,12 +189,12 @@ impl View<'_> {
         }
         frame.render_widget(
             Paragraph::new(messages).wrap(Wrap { trim: false }),
-            sections[4],
+            sections[5],
         );
         frame.render_widget(
             Paragraph::new(vec![
-                hints(&[("↑/↓", " select"), ("Enter", " open")]),
-                hints(&[("Ctrl+L", " path / folder"), ("Esc", " clear")]),
+                modal::hints(&[("↑/↓", "Select"), ("Esc", "Clear")]),
+                modal::hints(&[("Ctrl+L", "Path"), ("Ctrl+C", "Quit")]),
             ]),
             shell.footer,
         );
@@ -185,11 +212,11 @@ impl View<'_> {
             super::super::mouse::Action::DocumentPath,
         );
         pointer.finish();
-        if sections[2].width > 0 && sections[2].height > 0 {
+        if input_area.width > 0 && input_area.height > 0 {
             let x = label_width + Line::raw(input).width();
             frame.set_cursor_position((
-                sections[2].x + x.min(usize::from(sections[2].width - 1)) as u16,
-                sections[2].y,
+                input_area.x + x.min(usize::from(input_area.width - 1)) as u16,
+                input_area.y,
             ));
         }
     }
@@ -444,10 +471,7 @@ mod tests {
             let _theme = theme::activate(preset, Some(background));
             let (buffer, cursor) = render(130, 34, &format!("document-picker-theme-{name}"));
             assert!(text(&buffer).contains("Open a .pen file"));
-            assert_eq!(
-                buffer[(cursor.x, cursor.y)].bg,
-                theme::colors().prompt_background
-            );
+            assert_eq!(buffer[(cursor.x, cursor.y)].bg, theme::colors().canvas);
             assert!(buffer.content.iter().any(|cell| {
                 cell.bg == theme::colors().selected_background
                     && cell.fg == theme::colors().node_selection
@@ -490,10 +514,7 @@ mod tests {
         );
         assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
         assert!(popup.contains(cursor));
-        assert_eq!(
-            buffer[(cursor.x, cursor.y)].bg,
-            theme::colors().prompt_background
-        );
+        assert_eq!(buffer[(cursor.x, cursor.y)].bg, theme::colors().canvas);
         assert!(popup.x > 0 && popup.y > 1 && popup.bottom() < buffer.area.bottom() - 1);
     }
 
@@ -549,7 +570,7 @@ mod tests {
         let cursor = terminal.get_cursor_position().unwrap();
         assert_eq!(
             terminal.backend().buffer()[(cursor.x, cursor.y)].bg,
-            theme::colors().prompt_background
+            theme::colors().canvas
         );
         crate::tui::test_artifacts::artifact(terminal.backend().buffer(), "document-picker-error");
         view.done = false;

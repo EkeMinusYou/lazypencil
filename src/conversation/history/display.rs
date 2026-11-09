@@ -326,6 +326,9 @@ struct Window {
     tail: Option<VecDeque<char>>,
     tail_bytes: usize,
     until: u64,
+    kind: &'static str,
+    prefix: usize,
+    suffix: usize,
 }
 impl Window {
     fn new(skip: u64, limit: usize) -> Self {
@@ -338,6 +341,9 @@ impl Window {
             tail: None,
             tail_bytes: 0,
             until: u64::MAX,
+            kind: "record",
+            prefix: 0,
+            suffix: 0,
         }
     }
     fn character(&mut self, value: char) -> Result<()> {
@@ -577,6 +583,25 @@ fn format_window(
             raw(file, start, bytes, &mut output, budget)?;
         }
     }
+    if structured {
+        output.kind = match (get("kind"), get("update")) {
+            ("user_prompt", _) => "user",
+            ("update", "agent_message_chunk") => "agent",
+            ("update", "agent_thought_chunk") => "thought",
+            ("update", "tool_call" | "tool_call_update") => "tool",
+            ("failed", _) => "error",
+            ("start", _) => "turn",
+            _ => "status",
+        };
+        if selected.is_some() && output.kind != "tool" {
+            output.prefix = if output.kind == "user" {
+                "\nYou:\n".len()
+            } else {
+                prefix.len()
+            };
+            output.suffix = suffix.len();
+        }
+    }
     if output.skip > output.total {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -693,6 +718,31 @@ pub fn view(
     limit: usize,
     cancel: Option<&CancellationToken>,
 ) -> Result<Value> {
+    view_impl(store, conversation, turn, cursor, limit, cancel, false)
+}
+
+/// Preserve record roles and boundaries for the saved-conversation reader.
+#[cfg(feature = "tui")]
+pub(crate) fn view_for_tui(
+    store: &Store,
+    conversation: &str,
+    turn: &str,
+    cursor: Option<&str>,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+) -> Result<Value> {
+    view_impl(store, conversation, turn, cursor, limit, cancel, true)
+}
+
+fn view_impl(
+    store: &Store,
+    conversation: &str,
+    turn: &str,
+    cursor: Option<&str>,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+    presentation: bool,
+) -> Result<Value> {
     if !(4..=MAX_PAGE_BYTES).contains(&limit) {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -770,6 +820,7 @@ pub fn view(
     }
     let mut text = String::new();
     let mut raw_records = 0;
+    let mut records = Vec::new();
     while position.record < length {
         budget.check()?;
         let end = record_end(&mut file, position.record, &budget)?;
@@ -789,6 +840,19 @@ pub fn view(
         )?;
         raw_records += usize::from(raw);
         let advanced = window.text.len() as u64;
+        if presentation && !window.text.is_empty() {
+            // Intersect the body with this UTF-8-aligned display window. Prefixes
+            // split over pages must never reappear as message text or headings.
+            let start = (window.prefix as u64)
+                .saturating_sub(position.byte)
+                .min(advanced) as usize;
+            let end = window
+                .total
+                .saturating_sub(window.suffix as u64)
+                .saturating_sub(position.byte)
+                .min(advanced) as usize;
+            records.push(json!({"kind":window.kind,"text":window.text.get(start..end).unwrap_or(""),"start":position.byte == 0,"end":window.total <= position.byte + advanced}));
+        }
         text.push_str(&window.text);
         if window.total > position.byte + advanced {
             position.byte += advanced;
@@ -806,11 +870,13 @@ pub fn view(
             "Saved transcript changed while displaying it",
         ));
     }
-    Ok(
-        json!({"session":conversation,"turn":turn,"revision":before,"text":text,"page_cursor":current,
+    let mut result = json!({"session":conversation,"turn":turn,"revision":before,"text":text,"page_cursor":current,
         "next_cursor":(position.record < length).then(|| encode(&position)),"raw_offset":raw_offset,"raw_records":raw_records,
-        "complete":position.record == length,"mode":"formatted"}),
-    )
+        "complete":position.record == length,"mode":"formatted"});
+    if presentation {
+        result["records"] = Value::Array(records);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -846,6 +912,62 @@ mod tests {
         Budget {
             started: Instant::now(),
             cancel: None,
+        }
+    }
+
+    #[test]
+    fn presentation_pages_preserve_roles_and_body_bytes_across_prefix_and_unicode_boundaries() {
+        let temp = TempDir::new().unwrap();
+        let c = conversation(&temp);
+        let mut t = turn(&c);
+        let user = "日本語🙂\nYou:\nliteral role";
+        let thought = "**Redesigning role cards**";
+        let agent = "## Result\n**Improved** spacing.\n";
+        for record in [
+            json!({"type":"user_prompt","text":user}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"**Redesigning "}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"role cards**"}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":agent}}}}),
+            json!({"type":"complete"}),
+        ] {
+            t.record(&record).unwrap();
+        }
+        for _ in 0..100 {
+            t.record(&json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":""}}}})).unwrap();
+        }
+        t.barrier().unwrap().blocking_recv().unwrap().unwrap();
+        for limit in [4, 7, 128] {
+            let mut cursor = None;
+            let mut bodies = BTreeMap::<String, String>::new();
+            loop {
+                let page = view_impl(
+                    c.store(),
+                    c.id(),
+                    &t.id,
+                    cursor.as_deref(),
+                    limit,
+                    None,
+                    true,
+                )
+                .unwrap();
+                let plain = view(c.store(), c.id(), &t.id, cursor.as_deref(), limit, None).unwrap();
+                assert_eq!(page["text"], plain["text"]);
+                let records = page["records"].as_array().unwrap();
+                assert!(records.len() <= page["text"].as_str().unwrap().len());
+                for record in records {
+                    bodies
+                        .entry(record["kind"].as_str().unwrap().into())
+                        .or_default()
+                        .push_str(record["text"].as_str().unwrap());
+                }
+                cursor = page["next_cursor"].as_str().map(str::to_owned);
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            assert_eq!(bodies["user"], user);
+            assert_eq!(bodies["thought"], thought);
+            assert_eq!(bodies["agent"], agent);
         }
     }
 

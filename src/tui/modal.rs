@@ -107,10 +107,7 @@ impl Shell {
 
 pub(super) fn action_style() -> Style {
     let colors = theme::colors();
-    Style::default()
-        .fg(colors.preview)
-        .bg(colors.user_background)
-        .bold()
+    Style::default().fg(colors.preview).bold()
 }
 
 pub(super) fn action(frame: &mut Frame, footer: Rect, label: &str, pointer: &mut mouse::Pointer) {
@@ -136,10 +133,7 @@ pub(super) fn hints(items: &[(&str, &str)]) -> Line<'static> {
         }
         spans.push(Span::styled(
             (*key).to_owned(),
-            Style::default()
-                .fg(colors.key)
-                .bg(colors.user_background)
-                .bold(),
+            Style::default().fg(colors.key).bold(),
         ));
         spans.push(Span::styled(
             format!(" {label}"),

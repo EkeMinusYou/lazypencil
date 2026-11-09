@@ -22,6 +22,8 @@ pub const MAX_PAGE_BYTES: usize = 64 * 1024;
 mod display;
 pub use display::view;
 #[cfg(feature = "tui")]
+pub(crate) use display::view_for_tui;
+#[cfg(feature = "tui")]
 pub(crate) mod timeline;
 
 struct Budget<'a> {

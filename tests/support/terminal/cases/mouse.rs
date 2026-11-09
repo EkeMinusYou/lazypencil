@@ -33,8 +33,15 @@ fn button(h: &mut Harness, label: &str) -> Result {
         h.visible("View controls")?;
     }
     h.visible(label)?;
+    let modal_toggle = matches!(label, "[N]" | "[A]") && h.screen.text().contains("View controls");
     let point = h.screen.find_text(label).ok_or("Missing mouse button")?;
-    click(h, point)
+    click(h, point)?;
+    if modal_toggle {
+        // Wait for the toggle, rather than mistaking panes hidden behind the
+        // modal for panes that the application has already collapsed.
+        h.hidden("View controls")?;
+    }
+    Ok(())
 }
 
 fn zoom(h: &Harness) -> Option<u32> {
@@ -57,7 +64,7 @@ pub fn picker(h: &mut Harness) -> Result {
     h.pump_for(0.12)?;
     assert!(h.screen.text().contains("Open a .pen file"));
     assert!(files(&h.root, |name| name == "session.json").is_empty());
-    button(h, "[Open]")?;
+    button(h, "[Enter Open]")?;
     h.hidden("Open a .pen file")
 }
 

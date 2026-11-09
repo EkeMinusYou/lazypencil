@@ -553,3 +553,52 @@ fn checkpoint_history_pages_cover_the_boundary_without_duplicates_or_missing_ent
         assert_eq!(page.cursors, vec![None]);
     });
 }
+
+
+#[test]
+fn saved_conversation_reader_renders_roles_markdown_and_adapter_events_without_changing_raw_logs() {
+    use crate::config::keys::Theme;
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        let id = "00000000-0000-0000-0000-000000000099";
+        let path = saved_log(&app, 99, "seed");
+        let records = [
+            json!({"type":"start","session":app.conversation.id(),"turn":id,"document":app.conversation.store().path()}),
+            json!({"type":"user_prompt","text":"管理者とメンバーの説明を読みやすくしてください。"}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"session_info_update","_meta":{"codex":{"threadStatus":{"type":"active"}}}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"**Redesigning "}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"role cards**"}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"## Updated design\n\n- **管理者**の操作を整理\n- メンバーとの違いを明確にしました。"}}}}),
+            json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call_update","status":"completed","title":"Read document"}}}),
+            json!({"type":"complete"}),
+        ];
+        let original = records.into_iter().map(|record| record.to_string() + "\n").collect::<String>();
+        std::fs::write(&path, &original).unwrap();
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 203).unwrap();
+        app.open_saved(saved::Page::current(app.conversation.id().into()), None).unwrap();
+        document_result(&mut app, &worker).await;
+        app.activate_modal(&worker).unwrap();
+        document_result(&mut app, &worker).await;
+        assert!(saved_page(&app).data["records"].is_array());
+        for theme in [Theme::Dark, Theme::Light, Theme::Monochrome] {
+            let _theme = theme::activate(theme, None);
+            app.theme = theme;
+            for (width, height) in [(130, 34), (80, 24), (50, 16)] {
+                let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+                terminal.draw(|frame| { app.draw(frame); }).unwrap();
+                let buffer = terminal.backend().buffer();
+                let screen = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
+                assert!(screen.contains("YOU"), "{screen}");
+                assert!(!screen.contains("sessionUpdate") && !screen.contains("**"), "{screen}");
+                if width == 130 { for label in ["THINKING", "ASSISTANT", "Redesigning role cards", "Updated design", "Read document"] { assert!(screen.contains(label), "{screen}"); } }
+                crate::tui::test_artifacts::artifact(buffer, &format!("saved-conversation-reader-{theme:?}-{width}x{height}"));
+            }
+        }
+        press(&mut app, KeyCode::Char('v'), KeyModifiers::NONE, &worker).await;
+        document_result(&mut app, &worker).await;
+        assert!(saved_page(&app).data["text"].as_str().unwrap().contains("session_info_update"));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+        app.conversation.close().await.unwrap();
+    });
+}

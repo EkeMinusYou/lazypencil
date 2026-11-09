@@ -10,6 +10,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::Value;
 use std::borrow::Cow;
 
+mod render;
+
 const PAGE_BYTES: usize = 32 * 1024;
 const MAX_TEXT_PAGES: usize = 8192;
 
@@ -175,7 +177,7 @@ impl Page {
                     session,
                     turn,
                     raw: false,
-                } => history::view(
+                } => history::view_for_tui(
                     &store,
                     session,
                     turn,
@@ -590,24 +592,19 @@ pub fn draw(
                 if *raw { "raw JSONL" } else { "formatted" }
             ),
             format!(
-                "Session {session}\nTurn {turn} · revision {}",
-                page.data["revision"]
-                    .as_str()
-                    .unwrap_or("")
-                    .chars()
-                    .take(12)
-                    .collect::<String>()
+                "Session {} · Turn {} · Read-only",
+                session.chars().take(8).collect::<String>(),
+                turn.chars().take(8).collect::<String>()
             ),
         ),
     };
     let shell = super::modal::Shell::draw(frame, area, &title, 3);
     shell.close(frame, pointer);
     let inner = shell.body;
-    let raw_records = page.data["raw_records"].as_u64().unwrap_or(0);
     let mut notice = if page.deletion_completed {
         format!("{context}\nLocal deletion committed · browsing sends no requests")
-    } else if raw_records > 0 {
-        format!("{context}\n{raw_records} structured/unfinished records shown as original text")
+    } else if matches!(page.location, Location::Text { .. }) {
+        context
     } else {
         format!("{context}\nBrowsing sends no requests · saved data is unchanged")
     };
@@ -646,10 +643,20 @@ pub fn draw(
             }
             text = Cow::Owned(visible);
         }
-        let details = super::modal::detail_surface(frame, regions[1]);
+        let raw = matches!(page.location, Location::Text { raw: true, .. });
+        let details = if raw {
+            super::modal::detail_surface(frame, regions[1])
+        } else {
+            regions[1]
+        };
         // Raw records can contain terminal controls; decode only into cells.
         let clean = super::clean(&text);
-        let paragraph = Paragraph::new(clean).wrap(Wrap { trim: false });
+        let content = if raw {
+            ratatui::text::Text::raw(clean)
+        } else {
+            render::conversation(&page.data)
+        };
+        let paragraph = Paragraph::new(content).wrap(Wrap { trim: false });
         page.maximum_scroll = paragraph
             .line_count(details.width)
             .saturating_sub(details.height as usize)

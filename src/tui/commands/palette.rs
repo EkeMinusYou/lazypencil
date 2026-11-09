@@ -255,21 +255,9 @@ impl App {
         .split(footer);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "↑ ↓",
-                    Style::default()
-                        .fg(colors.key)
-                        .bg(colors.user_background)
-                        .bold(),
-                ),
+                Span::styled("↑ ↓", Style::default().fg(colors.key).bold()),
                 Span::styled(" Navigate  ", Style::default().fg(colors.secondary)),
-                Span::styled(
-                    "Esc",
-                    Style::default()
-                        .fg(colors.key)
-                        .bg(colors.user_background)
-                        .bold(),
-                ),
+                Span::styled("Esc", Style::default().fg(colors.key).bold()),
                 Span::styled(" Close", Style::default().fg(colors.secondary)),
             ])),
             parts[0],
@@ -285,11 +273,6 @@ impl App {
                         colors.muted
                     } else {
                         colors.preview
-                    })
-                    .bg(if unavailable.is_some() {
-                        colors.prompt_background
-                    } else {
-                        colors.user_background
                     })
                     .bold(),
             ),
