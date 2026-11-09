@@ -81,6 +81,11 @@ known property name when possible. Unknown fields remain stored without changing
 their spelling or values; arbitrary keys inside metadata and script inputs are not
 treated as node properties. Review warnings before claiming a requested edit worked.
 
+Known boolean attributes reject strings such as `"false"` instead of silently using
+their default. Variable-capable booleans also check the resolved value's type;
+instance overrides and paint/effect `enabled` flags follow the same rule. Metadata
+and script input maps retain their own open-key semantics.
+
 Owned CLI/TUI conversations use the same open-document API; private attachment and
 usage grants continue to restrict their connection to the host's selected document.
 Their server name is `lazypencil_bound_<UUID>`, separate from a user's configured

@@ -70,6 +70,9 @@ fn operations(value: Value) -> Vec<Operation> {
 #[path = "support/fixture.rs"]
 mod fixture_support;
 
+#[path = "support/boolean_properties.rs"]
+mod boolean_properties;
+
 #[test]
 fn cli_document_versions_create_validate_edit_and_preserve_source() {
     let temp = TempDir::new().unwrap();

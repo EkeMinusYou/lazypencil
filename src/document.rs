@@ -11,10 +11,12 @@ use std::collections::{BTreeMap, HashSet};
 mod codec;
 mod properties;
 mod property_diagnostics;
+mod property_types;
 pub use codec::{Codec, SUPPORTED_DOCUMENT_VERSIONS};
 pub(crate) use properties::PropertyEdit;
 #[cfg(feature = "rendering")]
 pub(crate) use property_diagnostics::node_property_diagnostics;
+pub(crate) use property_types::{validate_authored_booleans, validate_resolved_booleans};
 
 pub const DOCUMENT_VERSION: &str = Codec::DEFAULT.version();
 pub const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;

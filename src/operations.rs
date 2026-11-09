@@ -268,6 +268,7 @@ pub(crate) fn validate_local_with_cancellation(
         if !NODE_TYPES.contains(&kind) {
             continue;
         }
+        crate::document::validate_authored_booleans(node, id)?;
         if kind == "ref" {
             let target = node["ref"]
                 .as_str()

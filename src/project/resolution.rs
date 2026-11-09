@@ -519,6 +519,9 @@ impl Project {
             let origin = node.property_sources.get(key).unwrap_or(&node.source_path);
             *value = self.resolve_value_bounded(origin, value, &theme, &mut Vec::new(), budget)?;
         }
+        if crate::document::NODE_TYPES.contains(&node.kind()) {
+            crate::document::validate_resolved_booleans(&node.properties, &node.id())?;
+        }
         for child in &mut node.children {
             self.resolve_properties(child, &theme, budget)?;
         }
