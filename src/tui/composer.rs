@@ -371,12 +371,19 @@ impl App {
             self.draw_references(frame, sections[5]);
         }
         if let Some(activity) = activity {
+            let left_padding = 3.min(
+                sections[2]
+                    .width
+                    .saturating_sub(activity.spans[0].width() as u16 + 1),
+            );
             frame.render_widget(
-                Paragraph::new(activity),
-                sections[2].inner(Margin {
-                    horizontal: 1,
-                    vertical: 0,
-                }),
+                Paragraph::new(activity).block(Block::default().padding(Padding::new(
+                    left_padding,
+                    1,
+                    0,
+                    0,
+                ))),
+                sections[2],
             );
         }
         let prompt = sections[7];
