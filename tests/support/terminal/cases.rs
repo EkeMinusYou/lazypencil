@@ -2055,13 +2055,16 @@ fn basic(h: &mut Harness) -> Result {
     h.draft(text)?;
     no_agent(h);
     h.key(b"\r")?;
-    h.wait("first completed turn", 15.0, |h| h.completed_turns(1))?;
-    h.wait("visible turn completion", 15.0, |h| {
-        h.screen.contains_words("Request", "complete")
+    h.wait("first saved turn and visible response", 15.0, |h| {
+        h.completed_turns(1) && h.screen.text().contains("完了 1")
     })?;
+    assert!(!h.screen.text().contains("Request complete"));
     h.paste("次の依頼")?;
     h.key(b"\x13")?;
-    h.wait("second completed turn", 15.0, |h| h.completed_turns(2))?;
+    h.wait("second saved turn and visible response", 15.0, |h| {
+        h.completed_turns(2) && h.screen.text().contains("完了 2")
+    })?;
+    assert!(!h.screen.text().contains("Request complete"));
     assert!(
         read_json(&h.root.join("received-turn-1.json")).unwrap()["text"]
             .as_array()
