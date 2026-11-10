@@ -49,7 +49,7 @@ impl Project {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.expansion_budget(),
             )?;
             // Input handles depend on the effective theme at their target,
             // including selections inside the referenced component. Derive

@@ -104,7 +104,7 @@ impl Project {
         let mut values = Map::new();
         let mut sources = Map::new();
         let mut diagnostics = Vec::new();
-        let mut budget = Expansion::default();
+        let mut budget = self.expansion_budget();
         for name in names.iter().skip(offset).take(request.limit) {
             self.check_cancelled()?;
             let (source, definition) = self.lookup_variable_ref(&scope, name)?;
@@ -179,7 +179,7 @@ impl Project {
             None,
             &[],
             &mut Vec::new(),
-            &mut Expansion::default(),
+            &mut self.expansion_budget(),
         )?;
         assign_addresses(&mut root, None, &[]);
         fn find<'a>(

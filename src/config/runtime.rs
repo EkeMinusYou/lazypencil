@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 pub(super) const TEMPLATE: &str = concat!(
     "\n# Omitted runtime fields inherit user preferences and built-in limits.\n",
+    "# [runtime.document]\n# expansion_mib = 256\n",
     "# [runtime.javascript]\n# timeout_ms = 2000\n# heap_mib = 64\n# idle_seconds = 60\n# layout_timeout_ms = 10000\n# max_evaluations = 128\n# max_passes = 8\n",
     "\n# [runtime.browser]\n# timeout_ms = 30000\n# launch_timeout_ms = 15000\n# idle_seconds = 60\n# wait_until = \"load\"\n# ready_selector = \"\"\n# selector_state = \"visible\"\n# additional_wait_ms = 0\n# animation_policy = \"running\"\n# network_policy = \"online\"\n",
     "# Restrict HTTP image requests (including redirects) to these exact origins.\n# image_origins = [\"https://assets.example.com\"]\n# An empty list denies HTTP image requests; omit to inherit.\n",
@@ -19,6 +20,7 @@ pub(super) const TEMPLATE: &str = concat!(
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeSettings {
+    pub document: DocumentSettings,
     pub javascript: ScriptSettings,
     pub browser: BrowserSettings,
     pub shader: ShaderSettings,
@@ -27,10 +29,40 @@ pub struct RuntimeSettings {
 
 impl RuntimeSettings {
     pub fn validate(&self) -> Result<()> {
+        self.document.validate()?;
         self.javascript.validate()?;
         self.browser.validate()?;
         self.shader.validate()?;
         self.dynamic.validate()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentSettings {
+    /// Allocation-work budget shared by all roots and generated outputs, not process RSS.
+    #[schemars(range(min = 1, max = 16384))]
+    pub expansion_mib: usize,
+}
+
+impl Default for DocumentSettings {
+    fn default() -> Self {
+        Self { expansion_mib: 256 }
+    }
+}
+
+impl DocumentSettings {
+    pub fn validate(&self) -> Result<()> {
+        if !(1..=16384).contains(&self.expansion_mib) {
+            return Err(invalid(
+                "runtime.document.expansion_mib must be within 1..16384",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn expansion_bytes(&self) -> usize {
+        self.expansion_mib * 1024 * 1024
     }
 }
 
@@ -293,10 +325,17 @@ impl DynamicSettings {
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct RuntimeOverrides {
+    document: DocumentOverrides,
     javascript: ScriptOverrides,
     browser: BrowserOverrides,
     shader: ShaderOverrides,
     dynamic: DynamicOverrides,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct DocumentOverrides {
+    expansion_mib: Option<usize>,
 }
 
 #[derive(Default, Deserialize)]
@@ -344,6 +383,7 @@ struct ScriptOverrides {
 
 pub(super) fn origins() -> BTreeMap<&'static str, &'static str> {
     [
+        "document.expansion_mib",
         "javascript.timeout_ms",
         "javascript.heap_mib",
         "javascript.idle_seconds",
@@ -406,6 +446,7 @@ impl RuntimeOverrides {
                 }
             };
         }
+        apply!(document, expansion_mib);
         apply!(javascript, timeout_ms);
         apply!(javascript, heap_mib);
         apply!(javascript, idle_seconds);

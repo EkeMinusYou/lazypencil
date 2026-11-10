@@ -61,7 +61,7 @@ impl Project {
         }
     }
     pub(super) fn resolve_impl(&self, icons: bool) -> Result<ResolvedScene> {
-        self.resolve_bounded(icons, &mut Expansion::default())
+        self.resolve_bounded(icons, &mut self.expansion_budget())
     }
 
     pub(super) fn resolve_bounded(
@@ -754,7 +754,7 @@ impl Project {
         theme: &BTreeMap<String, String>,
         active: &mut Vec<(PathBuf, String)>,
     ) -> Result<Value> {
-        self.resolve_value_bounded(origin, value, theme, active, &mut Expansion::default())
+        self.resolve_value_bounded(origin, value, theme, active, &mut self.expansion_budget())
     }
 
     pub(super) fn resolve_value_bounded(

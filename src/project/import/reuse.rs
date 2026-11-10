@@ -152,7 +152,7 @@ impl Copier<'_> {
             None,
             &[],
             &mut Vec::new(),
-            &mut Expansion::default(),
+            &mut self.project.expansion_budget(),
         )?;
         let mut source = Source::default();
         index_source(self.project, &original, &mut source, &mut self.reused.bytes)?;

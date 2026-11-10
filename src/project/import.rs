@@ -118,6 +118,7 @@ impl Project {
                 ));
             }
         }
+        let expansion = self.expansion_budget();
         let mut graph = Copier {
             project: self,
             options,
@@ -126,7 +127,10 @@ impl Project {
             roots: BTreeSet::new(),
             queue: VecDeque::from([selected.clone()]),
             ids: BTreeMap::new(),
-            reused: reuse::State::default(),
+            reused: reuse::State {
+                expansion,
+                ..Default::default()
+            },
             names: BTreeMap::new(),
             vars: BTreeMap::new(),
             var_values: BTreeMap::new(),
@@ -728,7 +732,7 @@ impl Copier<'_> {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.project.expansion_budget(),
             )?;
             for (path, changes) in overrides {
                 if changes.get("type").is_none() {
@@ -967,7 +971,7 @@ impl Copier<'_> {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.project.expansion_budget(),
             )?;
             let mut remapped = Map::new();
             let mapped_paths =

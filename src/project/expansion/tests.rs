@@ -97,7 +97,7 @@ fn public_resolution_rejects_small_source_with_excessive_instance_expansion() {
         Some(temp.path().join("data")),
     )
     .unwrap();
-    let text = "x".repeat(1024 * 1024);
+    let text = "x".repeat(16 * 1024);
     let mut children = vec![
         json!({"id":"card","type":"frame","reusable":true,"children":[
             {"id":"text","type":"text","content":text,"fontSize":12}
@@ -108,15 +108,44 @@ fn public_resolution_rejects_small_source_with_excessive_instance_expansion() {
     }
     let document = json!({"version":"2.21","children":children}).to_string();
     fs::write(store.path(), &document).unwrap();
+    let configuration = temp.path().join("lazypencil.toml");
+    fs::write(&configuration, "[runtime.document]\nexpansion_mib=1\n").unwrap();
     let project = Project::load(&store).unwrap();
     let error = project.resolve().err().unwrap();
     assert_eq!(error.code, "RESOURCE_LIMIT");
+    assert_eq!(error.details.as_ref().unwrap()["limit_bytes"], 1024 * 1024);
     assert_eq!(
-        error.details.as_ref().unwrap()["limit_bytes"],
-        MAX_EXPANSION_BYTES
+        project.expanded_library_roots(None).err().unwrap().code,
+        "RESOURCE_LIMIT"
+    );
+    assert_eq!(
+        project.validate_structure().unwrap_err().code,
+        "RESOURCE_LIMIT"
     );
     assert_eq!(fs::read_to_string(store.path()).unwrap(), document);
     project.verify_unchanged().unwrap();
+    let metadata = crate::service::document_metadata(&store).unwrap();
+    assert_eq!(
+        metadata["capabilities"]["document_expansion"]["allocation_budget_bytes"],
+        1024 * 1024
+    );
+    fs::write(&configuration, "[runtime.document]\nexpansion_mib=32\n").unwrap();
+    assert_eq!(
+        project.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    let project = Project::load(&store).unwrap();
+    assert_eq!(project.resolve().unwrap().roots.len(), 257);
+    assert_eq!(project.expanded_library_roots(None).unwrap().len(), 257);
+    project.validate_structure().unwrap();
+    fs::remove_file(configuration).unwrap();
+    assert_eq!(
+        Project::load(&store)
+            .unwrap()
+            .document_settings()
+            .expansion_bytes(),
+        256 * 1024 * 1024
+    );
 }
 
 #[test]
@@ -145,6 +174,49 @@ fn inherited_raw_properties_are_bounded_even_when_values_are_not_resolved() {
         "Stored reads and structural edits bypassed the aggregate limit"
     );
     project.verify_unchanged().unwrap();
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn configured_expansion_budget_bounds_static_layout_and_preview() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::init(
+        temp.path().join("scene.pen"),
+        Some(temp.path().join("data")),
+    )
+    .unwrap();
+    fs::write(store.path(), json!({"version":"2.21","children":[
+        {"id":"first","type":"rectangle","width":4,"height":4,"metadata":{"payload":"x".repeat(600000)}},
+        {"id":"second","type":"rectangle","width":4,"height":4,"metadata":{"payload":"x".repeat(600000)}}
+    ]}).to_string()).unwrap();
+    let configuration = temp.path().join("lazypencil.toml");
+    for limit in [1, 8] {
+        fs::write(
+            &configuration,
+            format!("[runtime.document]\nexpansion_mib={limit}\n"),
+        )
+        .unwrap();
+        let result = crate::service::layout_snapshot(&store, &[], None, None);
+        if limit == 1 {
+            let error = result.err().unwrap();
+            assert_eq!(error.code, "RESOURCE_LIMIT");
+            assert_eq!(error.details.unwrap()["limit_bytes"], 1024 * 1024);
+        } else {
+            assert!(result.is_ok(), "{:?}", result.err());
+        }
+        #[cfg(feature = "tui")]
+        {
+            let mut runtime = crate::script::ScriptRuntime::current().unwrap();
+            let result = crate::service::preview_layout_snapshot(&store, &[], &mut runtime);
+            if limit == 1 {
+                let error = result.err().unwrap();
+                assert_eq!(error.code, "RESOURCE_LIMIT");
+                assert_eq!(error.details.unwrap()["limit_bytes"], 1024 * 1024);
+            } else {
+                assert!(result.is_ok(), "{:?}", result.err());
+            }
+        }
+    }
 }
 
 #[cfg(feature = "rendering")]

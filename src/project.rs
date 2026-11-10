@@ -27,7 +27,7 @@ pub(crate) use browser_resources::filesystem as secure_filesystem;
 pub use browser_resources::{BrowserResourceRoot, BrowserResources};
 mod detach;
 mod expansion;
-pub(crate) use expansion::{Expansion, MAX_EXPANSION_BYTES};
+pub(crate) use expansion::Expansion;
 #[cfg(feature = "rendering")]
 mod failed_code;
 pub(crate) mod font_files;
@@ -406,7 +406,7 @@ impl Project {
                 "An instance path requires a root instance",
             ));
         }
-        let mut count = Expansion::default();
+        let mut count = self.expansion_budget();
         let mut expanded = self.expand(origin, node, None, &[], &mut Vec::new(), &mut count)?;
         assign_addresses(&mut expanded, None, &[]);
         if address.instance_path.is_empty() {
@@ -429,7 +429,7 @@ impl Project {
 
     pub fn expanded_library_roots(&self, alias: Option<&str>) -> Result<Vec<ResolvedNode>> {
         let origin = self.library_path(alias)?;
-        let mut count = Expansion::default();
+        let mut count = self.expansion_budget();
         self.documents[origin].value()["children"]
             .as_array()
             .expect("parsed document")
@@ -444,7 +444,7 @@ impl Project {
     }
 
     pub(crate) fn validate_structure(&self) -> Result<()> {
-        let mut count = Expansion::default();
+        let mut count = self.expansion_budget();
         for node in self.root_document().value()["children"]
             .as_array()
             .expect("parsed document")

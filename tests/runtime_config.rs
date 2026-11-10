@@ -204,6 +204,132 @@ impl Fixture {
 }
 
 #[test]
+fn document_expansion_budget_inherits_and_rejects_invalid_declarations() {
+    let f = Fixture::new();
+    let builtin = f.snapshot().unwrap();
+    assert_eq!(builtin.settings.runtime.document.expansion_mib, 256);
+    assert_eq!(
+        builtin.summary()["runtime_origins"]["document.expansion_mib"],
+        "builtin"
+    );
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.document]\nexpansion_mib=512\n",
+    )
+    .unwrap();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .document
+            .expansion_mib,
+        512
+    );
+    assert_eq!(
+        f.snapshot().unwrap().summary()["runtime_origins"]["document.expansion_mib"],
+        "user"
+    );
+    fs::write(f.project.join("lazypencil.toml"), "[runtime.document]\n").unwrap();
+    assert_eq!(
+        f.snapshot()
+            .unwrap()
+            .settings
+            .runtime
+            .document
+            .expansion_mib,
+        512
+    );
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.document]\nexpansion_mib=256\n",
+    )
+    .unwrap();
+    let captured = f.snapshot().unwrap();
+    assert_eq!(captured.settings.runtime.document.expansion_mib, 256);
+    assert_eq!(
+        captured.summary()["runtime_origins"]["document.expansion_mib"],
+        "project"
+    );
+    assert_eq!(
+        builtin.verify_unchanged().unwrap_err().code,
+        "REVISION_CONFLICT"
+    );
+    for entry in [
+        "expansion_mib=0",
+        "expansion_mib=16385",
+        "expansion_mib=-1",
+        "expansion_mib=1.5",
+        "expansion_mib='large'",
+        "unknown=1",
+    ] {
+        // A valid project override must not hide invalid user declarations.
+        fs::write(
+            f.user.join("config.toml"),
+            format!("[runtime.document]\n{entry}\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            f.snapshot().err().unwrap().code,
+            "CONFIGURATION_ERROR",
+            "{entry}"
+        );
+    }
+    fs::write(
+        f.user.join("config.toml"),
+        "[runtime.document]\nexpansion_mib=1\n",
+    )
+    .unwrap();
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[runtime.document]\nexpansion_mib=0\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[cfg(feature = "rendering")]
+#[test]
+fn document_expansion_budget_bounds_script_outputs_and_recovers_after_increase() {
+    let f = Fixture::new();
+    fs::write(f.project.join("generator.js"), "/** @schema 2.21 */\nreturn [{type:'rectangle',width:4,height:4,metadata:{payload:'x'.repeat(300000)}}];").unwrap();
+    fs::write(
+        &f.document,
+        json!({"version":"2.21","children":[
+            {"id":"first","type":"script","scriptUri":"generator.js","width":4,"height":4},
+            {"id":"second","type":"script","scriptUri":"generator.js","width":4,"height":4}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let store =
+        lazypencil::store::Store::open(&f.document, Some(f.temp.path().join("data"))).unwrap();
+    let mut runtime = lazypencil::script::ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil"));
+    for limit in [1, 8] {
+        fs::write(
+            f.project.join("lazypencil.toml"),
+            format!("[runtime.document]\nexpansion_mib={limit}\n"),
+        )
+        .unwrap();
+        let result = lazypencil::service::layout_snapshot_with_runtime(
+            &store,
+            &[],
+            None,
+            None,
+            &mut runtime,
+        );
+        if limit == 1 {
+            let error = result.err().unwrap();
+            assert_eq!(error.code, "RESOURCE_LIMIT", "{error:?}");
+            assert_eq!(error.details.unwrap()["limit_bytes"], 1024 * 1024);
+        } else {
+            let (_, snapshot) = result.unwrap();
+            assert_eq!(snapshot.script_executions.len(), 2);
+        }
+    }
+}
+
+#[test]
 fn runtime_limits_inherit_per_field_and_explicit_defaults_and_zero_override_users() {
     let f = Fixture::new();
     assert_eq!(
@@ -831,6 +957,9 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     for arguments in [vec!["config", "schema"], vec!["config", "schema", "--user"]] {
         let schema = f.cli(&arguments);
         assert!(schema["properties"]["runtime"].is_object());
+        let field = &schema["$defs"]["DocumentSettings"]["properties"]["expansion_mib"];
+        assert_eq!(field["minimum"].as_f64(), Some(1.0));
+        assert_eq!(field["maximum"].as_f64(), Some(16384.0));
         let fields = &schema["$defs"]["ScriptSettings"]["properties"];
         assert_eq!(fields["timeout_ms"]["minimum"].as_f64(), Some(1.0));
         assert_eq!(fields["timeout_ms"]["maximum"].as_f64(), Some(60000.0));
@@ -876,6 +1005,8 @@ fn runtime_schema_and_templates_expose_limits_without_overriding_inheritance() {
     }
     f.cli(&["config", "init", "--user"]);
     let template = fs::read_to_string(f.user.join("config.toml")).unwrap();
+    assert!(template.contains("# [runtime.document]"));
+    assert!(template.contains("# expansion_mib = 256"));
     assert!(template.contains("# [runtime.javascript]"));
     assert!(template.contains("# [runtime.browser]"));
     assert!(template.contains("# wait_until = \"load\""));

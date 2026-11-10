@@ -50,7 +50,10 @@ pub fn compute(
         for node in &scene.roots {
             validate_tree(node, 0, &mut count)?;
         }
-        let mut expansion_budget = Expansion::scene(&scene.roots)?;
+        let mut expansion_budget = Expansion::scene(
+            &scene.roots,
+            Expansion::new(project.document_settings().expansion_bytes()),
+        )?;
         let mut snapshot = layout::compute_checked(scene.clone(), fonts, &check)?;
         check()?;
         let sizes = snapshot

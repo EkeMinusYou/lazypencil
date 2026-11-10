@@ -115,7 +115,7 @@ impl Paths<'_> {
                         None,
                         &[],
                         &mut Vec::new(),
-                        &mut Expansion::default(),
+                        &mut self.project.expansion_budget(),
                     )?;
                     let mut contexts = BTreeMap::new();
                     self.capture(&root, "", "", &mut contexts)?;

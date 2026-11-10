@@ -117,6 +117,19 @@ These font paths are explicit data inputs. Design trust authorizes instruction u
 
 The conversation host also pins the absolute `LAZYPENCIL_CONFIG_DIR` in its bound MCP descriptor. Changing the adapter/MCP working directory to a nested document directory does not select another user file. This does not modify the user's global environment or external agent configuration.
 
+## Document expansion budget
+
+Both user `config.toml` and project `lazypencil.toml` accept:
+
+```toml
+[runtime.document]
+expansion_mib = 256
+```
+
+The default is 256 MiB; accepted values are whole MiB within 1..16,384. Explicit project values override explicit user values, and omitted fields inherit. `config show FILE` reports the effective value and its scope as `runtime_origins.document.expansion_mib`.
+
+This budget bounds allocation work when expanding component instances and resolving properties, including strings and map bookkeeping. All roots and script-generated outputs share the budget in a calculation. Preview and ordinary layout calculations use the same setting, including elements outside the viewport. It is not a bound on process RSS or the saved file size. Exceeding it returns `RESOURCE_LIMIT` with the effective `limit_bytes`; document metadata reports the effective `capabilities.document_expansion.allocation_budget_bytes`. Configuration changes invalidate retained calculations and apply on the next calculation. The separate 128 MiB project dependency limit and node-count limits are unchanged.
+
 ## JavaScript execution limits
 
 Both user and project files accept these data-only settings:

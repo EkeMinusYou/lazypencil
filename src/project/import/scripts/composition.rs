@@ -133,7 +133,7 @@ impl Copier<'_> {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.project.expansion_budget(),
             )?;
             let mut paths = Map::new();
             let mut contexts = Map::new();

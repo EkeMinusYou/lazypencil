@@ -1,27 +1,29 @@
 use super::*;
 
-/// Bound allocation work, not process RSS. Count values before cloning them,
-/// including nested strings and map entries, across every root in an operation.
-pub(crate) const MAX_EXPANSION_BYTES: usize = 128 * 1024 * 1024;
-
+/// Bound allocation work, not process RSS, across every root in an operation.
 pub(crate) struct Expansion {
     pub nodes: usize,
     remaining: usize,
+    limit: usize,
 }
 
 impl Default for Expansion {
     fn default() -> Self {
-        Self {
-            nodes: 0,
-            remaining: MAX_EXPANSION_BYTES,
-        }
+        Self::new(crate::config::runtime::DocumentSettings::default().expansion_bytes())
     }
 }
 
 impl Expansion {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            nodes: 0,
+            remaining: limit,
+            limit,
+        }
+    }
+
     #[cfg(feature = "rendering")]
-    pub fn scene(roots: &[ResolvedNode]) -> Result<Self> {
-        let mut budget = Self::default();
+    pub fn scene(roots: &[ResolvedNode], mut budget: Self) -> Result<Self> {
         for root in roots {
             budget.node(root)?;
         }
@@ -58,7 +60,7 @@ impl Expansion {
                 "RESOURCE_LIMIT",
                 "Expanded document exceeds its allocation budget",
             )
-            .details(json!({"limit_bytes": MAX_EXPANSION_BYTES}))
+            .details(json!({"limit_bytes": self.limit}))
         })?;
         Ok(())
     }

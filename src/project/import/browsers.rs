@@ -21,7 +21,7 @@ impl Copier<'_> {
             None,
             &[],
             &mut Vec::new(),
-            &mut Expansion::default(),
+            &mut self.project.expansion_budget(),
         )?;
         self.dynamic_info_resolved(
             resolved,

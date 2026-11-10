@@ -99,6 +99,18 @@ impl Project {
         &self.font_settings
     }
 
+    pub fn document_settings(&self) -> crate::config::runtime::DocumentSettings {
+        self.configuration
+            .as_ref()
+            .map_or_else(Default::default, |configuration| {
+                configuration.settings.runtime.document
+            })
+    }
+
+    pub(super) fn expansion_budget(&self) -> Expansion {
+        Expansion::new(self.document_settings().expansion_bytes())
+    }
+
     pub fn script_settings(&self) -> crate::config::runtime::ScriptSettings {
         self.configuration
             .as_ref()

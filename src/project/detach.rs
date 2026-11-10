@@ -243,7 +243,7 @@ impl Project {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.expansion_budget(),
             )?)
         } else {
             None
@@ -312,7 +312,7 @@ impl Project {
                 None,
                 &[],
                 &mut Vec::new(),
-                &mut Expansion::default(),
+                &mut self.expansion_budget(),
             )?;
             let mut relocated = Map::new();
             for (path, changes) in overrides {
