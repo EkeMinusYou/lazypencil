@@ -33,6 +33,9 @@ pub(super) fn conversation(data: &Value) -> Text<'static> {
         }
         flush(&mut lines, kind, &mut body);
         kind = "";
+        if next == "status" && text.trim() == "Request complete" {
+            continue;
+        }
         if next == "record" {
             if let Some(summary) = event_summary(&text) {
                 if summary != last_event {
@@ -57,7 +60,7 @@ pub(super) fn conversation(data: &Value) -> Text<'static> {
             let colors = theme::colors();
             let color = if next == "error" || text.contains("[failed]") {
                 colors.error
-            } else if text.trim() == "Request complete" || text.trim().starts_with("[completed]") {
+            } else if text.trim().starts_with("[completed]") {
                 colors.success
             } else {
                 colors.secondary
@@ -79,7 +82,6 @@ pub(super) fn conversation(data: &Value) -> Text<'static> {
             } else {
                 let message = match next {
                     "error" => format!("✕ Request failed: {}", text.trim()),
-                    "status" if text.trim() == "Request complete" => "✓ Request complete".into(),
                     _ => text.trim().to_owned(),
                 };
                 event(&mut lines, &message, color);
@@ -194,7 +196,13 @@ mod tests {
         ] {
             assert!(text.contains(expected), "{text}");
         }
-        for hidden in ["sessionUpdate", "_meta", "internal-uuid", "**"] {
+        for hidden in [
+            "sessionUpdate",
+            "_meta",
+            "internal-uuid",
+            "**",
+            "Request complete",
+        ] {
             assert!(!text.contains(hidden), "{text}");
         }
         assert!(

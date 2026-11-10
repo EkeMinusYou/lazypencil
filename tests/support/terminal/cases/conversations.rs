@@ -404,8 +404,9 @@ pub fn history(h: &mut Harness) -> Result<Value> {
         })?;
     }
     h.key(b"\x1b[F")?;
-    h.wait("complete response and completion", 15.0, |h| {
-        h.screen.text().contains("PAGE END 日本語") && h.screen.text().contains("Request complete")
+    h.wait("complete response without completion marker", 15.0, |h| {
+        let text = h.screen.text();
+        text.contains("PAGE END 日本語") && !text.contains("Request complete")
     })?;
     snapshot(h, "end", &mut offsets)?;
     h.key(b"p")?;

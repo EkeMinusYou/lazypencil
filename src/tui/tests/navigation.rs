@@ -251,9 +251,10 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
         app.append(transcript);
         terminal.draw(|frame| { app.draw(frame); }).unwrap();
         let rendered = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
-        for content in ["Keep this message", "Codex", "Agent response", "read nodes", "Request complete"] {
+        for content in ["Keep this message", "Codex", "Agent response", "read nodes"] {
             assert!(rendered.contains(content), "{content}");
         }
+        assert!(!rendered.contains("Request complete"));
         assert!(!rendered.contains("[in_progress]"));
         assert!(!rendered.contains("[0 images]"));
         assert_eq!(app.log, transcript);

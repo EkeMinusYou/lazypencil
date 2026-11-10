@@ -576,7 +576,7 @@ fn history_text(
             }
             continue;
         }
-        if line == "[0 images]" {
+        if matches!(line, "[0 images]" | "Request complete") {
             continue;
         }
         if !activity.is_empty() && line.trim().is_empty() {
@@ -599,11 +599,6 @@ fn history_text(
             flush_body(&mut body, &mut lines, true, user);
             user = false;
             continue;
-        } else if line == "Request complete" {
-            Line::styled(
-                format!("✓ {line}"),
-                Style::default().fg(theme::colors().success),
-            )
         } else if line.starts_with("Request failed:") {
             Line::styled(
                 format!("✕ {line}"),
@@ -785,7 +780,7 @@ mod tests {
         assert!(text.contains("│ [0 images]"));
         assert!(text.contains("│ **literal code**"));
         assert_eq!(text.matches("[0 images]").count(), 1);
-        assert!(text.contains("✓ Request complete"));
+        assert!(!text.contains("Request complete"));
         assert!(!text.contains("› You") && !text.contains("◆ Codex"));
         assert_eq!(
             rendered.lines[0].style.bg,
