@@ -4,13 +4,13 @@
 
 ## Demo
 
-[![Recorded TUI session showing node selection and fitting, preview panning and zooming, and a successful agent edit reflected in the preview.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
+[![Recorded light-mode TUI session showing node selection and fitting, preview panning and zooming, and a successful agent edit reflected in the preview.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
 
 [Watch or download the MP4](docs/media/lazypencil-demo.mp4).
 
 Select a node to fit it in Preview, pan and zoom, then ask Codex to recolor the
-visible project cards and watch the changes appear. Recorded in Herdr; agent
-waiting time is shortened.
+visible project cards and watch the changes appear. Recorded in Herdr with the
+light UI theme; agent waiting time is shortened.
 
 lazypencil is an open-source editor for `.pen` files, the design document format
 used by Pencil. Describe a screen or a change to Codex or Claude, then review the
@@ -48,7 +48,7 @@ The terminal workspace in use, showing the editable
 Browse the tree, search by name with `/`, and press `f` or Enter to fit a selected
 element in Preview.
 
-[![Browse and search the node tree, then display the selected elements in Preview.](docs/images/lazypencil-nodes.gif)](docs/media/lazypencil-nodes.mp4)
+[![Browse and search the node tree in light mode, then display the selected elements in Preview.](docs/images/lazypencil-nodes.gif)](docs/media/lazypencil-nodes.mp4)
 
 [Watch or download the Nodes video](docs/media/lazypencil-nodes.mp4).
 
@@ -57,7 +57,7 @@ element in Preview.
 Use the arrow keys to pan, `+` / `-` to zoom, and `0` to fit the whole design.
 Camera controls change the view while keeping the design itself in place.
 
-[![Pan and zoom the design preview, then fit the entire dashboard.](docs/images/lazypencil-preview.gif)](docs/media/lazypencil-preview.mp4)
+[![Pan and zoom the design preview in light mode, then fit the entire dashboard.](docs/images/lazypencil-preview.gif)](docs/media/lazypencil-preview.mp4)
 
 [Watch or download the Preview video](docs/media/lazypencil-preview.mp4).
 
