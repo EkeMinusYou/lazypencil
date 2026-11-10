@@ -1,8 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+- Restore conversations at the latest saved response without replaying native history, hide routine completion markers, and keep activity indicators aligned with conversation status.
+- Unify workspace dialogs with the command palette, improve file search and saved conversation formatting, and preserve the prompt while reviewing permissions.
+- Keep native gesture warnings and agent stderr off the terminal workspace.
+- Update rmcp to address the RustSec advisory and align terminal regressions with modal layouts, wrapped text and durable completion state.
+
 ## 0.2.4
 
-- Start restored TUI conversations at the latest saved response and avoid displaying native session history again during reconnection.
 - Limit slash commands to conversation management, queued prompts, attachments and scoped help. Add filtered command-name completion with keyboard selection while keeping all workspace actions in the command palette.
 - Restore each document's previous TUI conversation, draft, images and paged history automatically. Add `--new-conversation`, keep concurrent TUIs on separate conversation leases, and leave queued or interrupted requests unsent until explicit submission.
 - Validate boolean document properties before editing or resolving variables, including nested paints, effects and component overrides. Reject invalid values without changing the document or history.
