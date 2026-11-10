@@ -256,6 +256,8 @@ impl Harness {
                     "--adapter-arg=queued-followups"
                 } else if case == "steering" {
                     "--adapter-arg=steering-flood"
+                } else if case == "history-bottom" {
+                    "--adapter-arg=restore-history"
                 } else if matches!(case, "account-startup" | "picker-prepared") {
                     "--adapter-arg=auth-inspect-account"
                 } else if case == "agent-header-hang" {

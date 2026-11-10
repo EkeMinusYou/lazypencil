@@ -28,10 +28,12 @@ Drafts and preloaded images remain unsent until submission.
 
 Opening a document automatically restores its last explicitly selected or submitted
 conversation, including its draft and images. Saved requests and responses appear in
-the Agent pane: recent text loads first on a cancellable background task, and scrolling
-up to the loaded boundary reads older pages. Recorded turn timestamps determine display
-order; legacy turns without timestamps use local file creation times (modification
-times when creation times are unavailable), with a notice.
+the Agent pane: recent text loads first on a cancellable background task, starting at
+the bottom without scrolling through the conversation. Native session reconnection does
+not replay old messages into the pane. Scrolling up to the loaded boundary reads older
+pages. Recorded turn timestamps determine display order; legacy turns without timestamps
+use local file creation times (modification times when creation times are unavailable),
+with a notice.
 Historical events are display-only, and queued or interrupted input stays paused for
 explicit review and submission.
 An explicitly supplied startup prompt replaces the restored draft and remains unsent.

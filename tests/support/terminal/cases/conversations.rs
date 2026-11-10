@@ -1,5 +1,83 @@
 use super::*;
 
+pub fn history_bottom(h: &mut Harness) -> Result {
+    h.visible("fixture-model")?;
+    h.paste("Original request")?;
+    h.key(b"\r")?;
+    h.wait("original turn saved", 15.0, |h| h.completed_turns(1))?;
+    h.paste("Preserved draft")?;
+    h.draft("Preserved draft")?;
+    let id = state(h)["id"].as_str().unwrap().to_owned();
+    let document_bytes = fs::read(&h.document)?;
+    h.finish()?;
+    let path = files(&h.root.join("data"), |name| {
+        name.starts_with("turn-") && name.ends_with(".jsonl")
+    })[0]
+        .clone();
+    let mut records = fs::read_to_string(&path)?
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let index = records
+        .iter()
+        .rposition(|value| value["type"] == "complete")
+        .ok_or("Missing completed turn")?;
+    let response = format!(
+        "OLDEST_SAVED\n{}\nLATEST_RESTORED\n",
+        "Saved response 日本語 abcdefghijklmnopqrstuvwxyz\n".repeat(6000)
+    );
+    records.insert(index, json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":response}}}}));
+    fs::write(
+        &path,
+        records
+            .iter()
+            .map(|value| format!("{value}\n"))
+            .collect::<String>(),
+    )?;
+    let next = Harness::start(
+        &h.binary,
+        &h.root,
+        &h.document,
+        h.environment.clone(),
+        "history-bottom",
+        h.configuration.clone(),
+    )?;
+    *h = next;
+    h.wait("native history replay started", 15.0, |h| {
+        h.root.join("history-replay-started").exists()
+    })?;
+    h.visible("LATEST_RESTORED")?;
+    h.pump_for(0.2)?;
+    assert!(selected(h, &id));
+    assert!(h.screen.text().contains("LATEST_RESTORED"));
+    assert!(!h.screen.text().contains("REPLAYED_OLD"));
+    assert!(!h.screen.text().contains("OLDEST_SAVED"));
+    h.save_screen("history-bottom-loading-screen.txt")?;
+    fs::write(h.root.join("history-replay-release"), b"release")?;
+    h.visible("fixture-model")?;
+    assert!(h.screen.text().contains("LATEST_RESTORED"));
+    assert!(!h.screen.text().contains("REPLAYED_OLD"));
+    h.draft("Preserved draft")?;
+    assert_eq!(
+        h.count("start"),
+        1,
+        "Restoring and connecting must not submit a request"
+    );
+    h.resize(100, 28)?;
+    h.visible("LATEST_RESTORED")?;
+    h.save_screen("history-bottom-ready-screen.txt")?;
+    h.resize(145, 38)?;
+    h.key(b"\t\x15")?;
+    h.paste("Fresh request")?;
+    h.key(b"\r")?;
+    h.wait("fresh turn completes after restoring", 15.0, |h| {
+        h.completed_turns(2)
+    })?;
+    h.visible("完了 1")?;
+    assert_eq!(fs::read(&h.document)?, document_bytes);
+    Ok(())
+}
+
 pub fn completion(h: &mut Harness) -> Result {
     h.wait("initial complete preview", 15.0, |h| {
         !h.frames.images.is_empty()

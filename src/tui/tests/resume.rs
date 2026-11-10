@@ -12,6 +12,131 @@ async fn restored_history(app: &mut App) {
 }
 
 #[test]
+fn restored_history_opens_at_the_latest_visible_message_without_scrolling() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "selection");
+        let body = format!(
+            "OLDEST\n{}\nLATEST_MESSAGE",
+            "保存済みの長い応答と折り返しの確認 abcdefghijklmnopqrstuvwxyz\n".repeat(6000)
+        );
+        let path = saved_log(&app, 1, &body);
+        let bytes = std::fs::read_to_string(&path).unwrap();
+        let (header, rest) = bytes.split_once('\n').unwrap();
+        let mut header: Value = serde_json::from_str(header).unwrap();
+        header["recorded_at_unix_ms"] = json!(1);
+        std::fs::write(path, format!("{header}\n{rest}")).unwrap();
+        app.restore_history();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(130, 34)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        restored_history(&mut app).await;
+        for _ in 0..3 {
+            terminal
+                .draw(|frame| {
+                    app.draw(frame);
+                })
+                .unwrap();
+            let text = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(
+                text.contains("LATEST_MESSAGE"),
+                "Restoring history must initially show its latest response"
+            );
+            assert!(!text.contains("OLDEST"));
+            assert_eq!(app.scroll, 0);
+        }
+        assert!(
+            app.saved_history.is_some(),
+            "Older pages should remain lazy"
+        );
+    });
+}
+
+#[test]
+fn restored_history_pins_the_initial_page_and_preserves_manual_older_scrolling() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "selection");
+        saved_log(&app, 1, &"Earlier response\n".repeat(6000));
+        app.scroll = 2000;
+        app.restore_history();
+        assert_eq!(app.scroll, 0);
+        app.scroll_history(true, 500);
+        restored_history(&mut app).await;
+        assert_eq!(app.scroll, 0);
+        assert!(!app.history_requested);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(130, 34)).unwrap();
+        terminal
+            .draw(|frame| {
+                app.draw(frame);
+            })
+            .unwrap();
+        app.scroll_history(true, u16::MAX);
+        let position = app.scroll;
+        app.load_older_history();
+        restored_history(&mut app).await;
+        assert_eq!(
+            app.scroll, position,
+            "Explicit older-page browsing must remain in place"
+        );
+    });
+}
+
+#[test]
+fn restored_history_ignores_native_replay_until_ready_and_keeps_fresh_output() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut original = app(&temp, "selection");
+        saved_log(&original, 1, "LATEST_SAVED_RESPONSE");
+        original.insert_text("Preserved draft");
+        original.save_draft().unwrap();
+        let mut args = original.conversation.settings().clone();
+        args.create = false;
+        args.session = Some(original.conversation.id().into());
+        let executable = original.conversation.executable().to_owned();
+        let metadata = original.conversation.directory().join("session.json");
+        drop(original);
+        let mut state: Value = serde_json::from_slice(&std::fs::read(&metadata).unwrap()).unwrap();
+        state["native_session_id"] = json!("fixture-native");
+        std::fs::write(metadata, serde_json::to_vec(&state).unwrap()).unwrap();
+        let conversation = Conversation::open_with_executable(args, Some(temp.path().join("data")), executable).unwrap();
+        let mut resumed = App::new(conversation);
+        restored_history(&mut resumed).await;
+        resumed.message(&json!({"type":"initialized"}));
+        for number in 0..200 {
+            resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":format!("REPLAYED_OLD_{number}\n")}}}}));
+            resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call","toolCallId":number.to_string(),"title":"Replayed tool","status":"completed"}}}));
+        }
+        assert!(!resumed.log.contains("REPLAYED_OLD"));
+        assert!(resumed.tool_calls.is_empty());
+        assert_eq!(resumed.scroll, 0);
+        let options = json!([{"id":"model","category":"model","currentValue":"restored-model"}]);
+        resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"config_option_update","configOptions":options}}}));
+        assert!(resumed.header_line().to_string().contains("restored-model"));
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(130, 34)).unwrap();
+        terminal.draw(|frame| { resumed.draw(frame); }).unwrap();
+        let text = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(text.contains("LATEST_SAVED_RESPONSE"));
+        resumed.message(&json!({"type":"ready","response":{"configOptions":options}}));
+        resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"FRESH_RESPONSE"}}}}));
+        assert!(resumed.log.contains("FRESH_RESPONSE"));
+        assert_eq!(resumed.editor.lines(), ["Preserved draft"]);
+        assert!(resumed.permissions.is_empty());
+    });
+}
+
+#[test]
 fn explicit_startup_prompt_replaces_the_restored_draft_without_sending_the_queue() {
     let temp = TempDir::new().unwrap();
     let mut original = app(&temp, "selection");

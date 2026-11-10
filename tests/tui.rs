@@ -432,6 +432,11 @@ fn real_pty_slash_commands_complete_without_execution_and_palette_keeps_workspac
 }
 
 #[test]
+fn real_pty_restored_history_starts_at_the_bottom_without_replaying_native_messages() {
+    run_pty_case("history-bottom");
+}
+
+#[test]
 fn real_pty_saved_logs_page_format_refresh_and_keep_the_unsent_draft_without_starting_an_agent() {
     run_pty_case("saved-history");
 }

@@ -298,6 +298,8 @@ struct App {
     saved_history: Option<crate::conversation::history::timeline::Reader>,
     saved_history_task: Option<history::Task>,
     history_requested: bool,
+    history_initial: bool,
+    restoring_session: bool,
     tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
     turn_sequence: u64,
     history: Option<Paragraph<'static>>,
@@ -345,6 +347,7 @@ impl App {
 
     fn new(conversation: Conversation) -> Self {
         let editor = editor(conversation.draft());
+        let restoring_session = conversation.has_native_session();
         let agent = agent_status::Status::new(conversation.settings().fast == Some(true));
         let focus = if conversation.settings().create {
             Focus::Prompt
@@ -399,6 +402,8 @@ impl App {
             saved_history: None,
             saved_history_task: None,
             history_requested: false,
+            history_initial: true,
+            restoring_session,
             tool_calls: Default::default(),
             turn_sequence: 0,
             history: None,
@@ -613,6 +618,7 @@ impl App {
                 event = self.conversation.next_event() => {
                     match event? {
                         ConversationEvent::Message(value) => {
+                            if self.restored_agent_history(&value) { continue; }
                             self.message(&value);
                         },
                         ConversationEvent::Permission { id, request } => {
@@ -1029,9 +1035,29 @@ impl App {
             self.tool_calls.retain(|id, _| visible.contains(id));
         }
     }
+    fn restored_agent_history(&self, value: &Value) -> bool {
+        self.restoring_session
+            && value["type"] == "update"
+            && matches!(
+                value["notification"]["update"]["sessionUpdate"].as_str(),
+                Some(
+                    "agent_message_chunk"
+                        | "agent_thought_chunk"
+                        | "user_message_chunk"
+                        | "tool_call"
+                        | "tool_call_update"
+                )
+            )
+    }
     fn message(&mut self, value: &Value) {
+        // Local history already presents the saved tail. Native session loading
+        // can replay the entire conversation before ready; it is not new output.
+        if self.restored_agent_history(value) {
+            return;
+        }
         match value["type"].as_str() {
             Some("initialized") => {
+                self.restoring_session = self.conversation.has_native_session();
                 self.agent.initialized();
             }
             Some("update") => {
@@ -1113,6 +1139,7 @@ impl App {
                 ));
             }
             Some("ready") => {
+                self.restoring_session = false;
                 self.update_agent_configuration(&value["response"]["configOptions"]);
                 if let Some(report) = self.conversation.authentication() {
                     self.agent.authentication = report.display();
@@ -1335,6 +1362,7 @@ impl App {
             return Ok(());
         }
         self.editor = editor(self.conversation.draft());
+        self.restoring_session = self.conversation.has_native_session();
         self.completion = Default::default();
         self.outbox = Default::default();
         self.restore_outbox();

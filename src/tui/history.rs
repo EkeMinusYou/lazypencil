@@ -38,6 +38,8 @@ impl App {
         self.history = None;
         self.history_metrics = (0, 0, 0);
         self.history_requested = false;
+        self.history_initial = true;
+        self.scroll = 0;
         let store = self.conversation.store().clone();
         let session = self.conversation.id().to_owned();
         let cutoff = std::time::SystemTime::now();
@@ -76,6 +78,11 @@ impl App {
         self.saved_history_task.take();
         match result {
             Ok(page) => {
+                if self.history_initial {
+                    self.scroll = 0;
+                    self.history_requested = false;
+                    self.history_initial = false;
+                }
                 self.saved_log.insert_str(0, &clean(&page.text));
                 self.saved_history = page.reader;
                 self.history = None;

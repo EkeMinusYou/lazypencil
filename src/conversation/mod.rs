@@ -212,6 +212,10 @@ impl Conversation {
     pub fn id(&self) -> &str {
         &self.session.state.id
     }
+    #[cfg(feature = "tui")]
+    pub(crate) fn has_native_session(&self) -> bool {
+        self.session.state.native_session_id.is_some()
+    }
     pub fn draft(&self) -> &str {
         &self.session.state.draft
     }

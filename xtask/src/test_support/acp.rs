@@ -362,6 +362,21 @@ impl<'a> Peer<'a> {
                         assert_eq!(params["sessionId"], "fixture-native");
                     }
                     self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"replayed\n"}}))?;
+                    if mode == "restore-history" {
+                        for number in 0..128 {
+                            self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":format!("REPLAYED_OLD_{number:04}\n")}}))?;
+                            self.notify(json!({"sessionUpdate":"tool_call","toolCallId":format!("old-{number}"),"title":"Replayed tool","status":"completed"}))?;
+                        }
+                        fs::write("history-replay-started", b"started")?;
+                        let deadline = Instant::now() + Duration::from_secs(15);
+                        while !Path::new("history-replay-release").exists() {
+                            assert!(
+                                Instant::now() < deadline,
+                                "History replay test must release session loading"
+                            );
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    }
                 }
                 if [
                     "edit",
@@ -414,6 +429,9 @@ impl<'a> Peer<'a> {
                     if mode.starts_with("settings-permissions") {
                         result["modes"]["availableModes"].as_array_mut().unwrap().push(json!({"id":"agent-full-access","name":"Full access","description":"Unrestricted computer access"}));
                     }
+                    result["configOptions"] = self.config();
+                }
+                if mode == "restore-history" {
                     result["configOptions"] = self.config();
                 }
                 self.response(&message, result)?;

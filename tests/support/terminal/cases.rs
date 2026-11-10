@@ -708,6 +708,10 @@ pub fn run(
             conversations::completion(&mut h)?;
             Value::Null
         }
+        "history-bottom" => {
+            conversations::history_bottom(&mut h)?;
+            Value::Null
+        }
         "session-selection" => conversations::selection(&mut h)?,
         "session-deletion" | "session-deletion-small" => conversations::deletion(&mut h)?,
         "saved-history" => conversations::history(&mut h)?,
