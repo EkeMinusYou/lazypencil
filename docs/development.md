@@ -64,14 +64,6 @@ recipes and regressions discovered outside that scope justify broader verificati
 Finish the implementation before the final check pass. After another edit, repeat the
 checks affected by that edit, rather than starting every unrelated suite again.
 
-Changes to shared conversation rendering, modal layouts or terminal input handling
-affect multiple PTY cases. After a focused reproduction, run `cargo xtask test --test tui`
-before pushing those changes. Check completion through the saved frontend state and
-the visible agent response rather than incidental notification wording. Wait for a
-modal to close before sending the next command, and account for wrapped text when
-checking narrow layouts. Include ignored dynamic-preview cases when their shared
-dialogs or input paths change.
-
 ## Pull requests and integration
 
 CI compares the PR merge result with its tested base parent to select a completion
