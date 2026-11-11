@@ -205,7 +205,6 @@ impl super::App {
                     "Restored checkpoint · revision {}",
                     value["revision"].as_str().unwrap_or("unknown")
                 ));
-                self.append(&format!("\nCheckpoint restored: {value}\n"));
                 self.request(worker, false, false);
             }
             Err(error) => {

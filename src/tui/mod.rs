@@ -189,7 +189,7 @@ pub fn run_with_selection(
     let mut app = App::new(conversation);
     app.apply_startup_prompt(&args.prompt.prompt)?;
     if let Some(notice) = notice {
-        app.append(&format!("\n{notice}\n"));
+        app.set_status(notice);
     }
     app.attach_startup_images(&args.prompt.images)?;
     // Reserve two slots each for exact and temporary camera frames. The low
@@ -1152,10 +1152,13 @@ impl App {
                 }
             }
             Some("session_restarted") => {
-                self.append("\nStarted a new native session with current document context and bounded local history. Previous model memory was not restored.\n");
+                self.set_attention_status(
+                    "New agent session · local history supplied; previous model memory unavailable"
+                        .into(),
+                );
             }
             Some("local_context") => {
-                self.append("\nAdded current document context and bounded local history after an interrupted restart.\n");
+                self.set_status("Local history context supplied".into());
             }
             Some("connection_error") => {
                 self.agent.unavailable();
@@ -1382,11 +1385,7 @@ impl App {
         self.restore_history();
         self.tool_calls.clear();
         self.scroll = 0;
-        self.set_status(format!(
-            "Selected conversation {} · sends only on submit",
-            self.conversation.id()
-        ));
-        self.append("\nSelected conversation. Saved history is loading; the session connects automatically. Your draft is sent only on submit.\n");
+        self.set_status(format!("Selected conversation {}", self.conversation.id()));
         if let Some(error) = remember_error {
             self.append(&format!(
                 "\nCould not remember this conversation: {error}\n"

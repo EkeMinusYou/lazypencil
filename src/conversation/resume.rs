@@ -63,12 +63,7 @@ pub(super) fn open(
             saved.session = Some(id.clone());
             match Session::open(store, &saved, command) {
                 Ok(session) => {
-                    return Ok((
-                        session,
-                        Some(format!(
-                            "Resumed previous conversation {id} · New: /new-conversation · sends only on submit"
-                        )),
-                    ));
+                    return Ok((session, Some(format!("Resumed previous conversation {id}"))));
                 }
                 Err(error) if error.code == "REVISION_CONFLICT" => format!(
                     "Previous conversation {id} is in use by another TUI; opened a new conversation"

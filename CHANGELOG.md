@@ -2,6 +2,7 @@
 
 ## 0.2.5
 
+- Keep conversation selection, resume, session context and checkpoint restoration notices in the footer instead of the conversation body.
 - Restore conversations at the latest saved response without replaying native history, hide routine completion markers, and keep activity indicators aligned with conversation status.
 - Unify workspace dialogs with the command palette, improve file search and saved conversation formatting, and preserve the prompt while reviewing permissions.
 - Keep native gesture warnings and agent stderr off the terminal workspace.
