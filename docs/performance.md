@@ -42,6 +42,13 @@ completed frame rather than interrupting and repeating the same render. Differen
 views, backgrounds, sizes, refreshes and presentation work still preempt prediction.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
+Static image scenes key retained pictures and rasters by their exact device
+viewport. For explicit viewports of at least 2,097,152 device pixels,
+revisiting a cached frame does not replay it to synchronize raster origins: each
+later viewport has its own fixed origin. Smaller or unspecified viewports keep
+the existing eager cache warmup. Vector scenes retain their origin synchronization
+so fractional camera pixels remain unchanged.
+
 Opaque previews without node names share one immutable RGBA buffer between the
 retained scene and its local-upload fallback, avoiding a full-viewport copy.
 Decorations and nonopaque images keep their existing independent pixel buffers

@@ -257,6 +257,19 @@ impl PreviewRenderer {
         cancel: Option<tokio_util::sync::CancellationToken>,
     ) -> Result<()> {
         crate::cancel::check(cancel.as_ref())?;
+        let large_viewport = self
+            .viewport
+            .is_some_and(|[width, height]| u64::from(width) * u64::from(height) >= 2 * 1024 * 1024);
+        if large_viewport
+            && self.recordable == Some(true)
+            && self.cache.as_ref().is_some_and(|cache| cache.has_images)
+        {
+            // Image commands and rasters already carry their exact device
+            // viewport. A cached pan cannot change a later viewport's origin;
+            // replaying it would only repopulate an optional raster cache.
+            project.verify_unchanged()?;
+            return Ok(());
+        }
         if self.recordable == Some(true)
             && self.cache.as_ref().is_some_and(|cache| !cache.has_images)
         {
@@ -573,11 +586,16 @@ mod tests {
     #[test]
     fn retained_geometry_preserves_exact_camera_pixels_and_clears_on_reload() {
         for images in [false, true] {
-            retained_geometry_case(images);
+            for background in [Color::TRANSPARENT, Color::WHITE] {
+                retained_geometry_case(images, background, None);
+            }
+        }
+        for (viewport, skip_hydration) in [([640, 480], false), ([2048, 1024], true)] {
+            retained_geometry_case(true, Color::WHITE, Some((viewport, skip_hydration)));
         }
     }
 
-    fn retained_geometry_case(images: bool) {
+    fn retained_geometry_case(images: bool, background: Color, viewport: Option<([u32; 2], bool)>) {
         let directory = tempfile::TempDir::new().unwrap();
         let path = directory.path().join("design.pen");
         let asset = directory.path().join("image.png");
@@ -607,8 +625,16 @@ mod tests {
         std::fs::write(&path, document.to_string()).unwrap();
         let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
         let mut retained = PreviewRenderer::default();
+        if let Some((size, _)) = viewport {
+            retained.set_viewport(size);
+        }
         let mut dynamic = crate::dynamic::DynamicRuntime::new(store.data_dir());
-        for changed in [false, true] {
+        let changes: &[bool] = if viewport.is_some() {
+            &[false]
+        } else {
+            &[false, true]
+        };
+        for &changed in changes {
             image::RgbaImage::from_fn(7, 5, |x, y| {
                 image::Rgba([
                     x as u8 * 30,
@@ -642,11 +668,20 @@ mod tests {
                 error.message.contains("0.01..16"),
                 "Public export scale limits must stay unchanged"
             );
-            for scale in [0.375, 1.0, 1.25, 2.0] {
+            let scales: &[f32] = if viewport.is_some() {
+                &[1.25]
+            } else {
+                &[0.375, 1.0, 1.25, 2.0]
+            };
+            for &scale in scales {
+                let [width, height] = viewport.map_or([640.0, 480.0], |(size, _)| {
+                    [size[0] as f32 / scale, size[1] as f32 / scale]
+                });
                 for x in [-48.5, 16.0, -48.5] {
                     let options = RenderOptions {
                         scale,
-                        region: Some(Rect::new(x, -24.25, 640.0, 480.0)),
+                        region: Some(Rect::new(x, -24.25, width, height)),
+                        background,
                         ..Default::default()
                     };
                     let original = preview_png_with_runtime_observed(
@@ -658,9 +693,33 @@ mod tests {
                         None,
                     )
                     .unwrap();
+                    let anchored_clock = retained.cache.as_ref().and_then(|cache| {
+                        (images && retained.recordable == Some(true))
+                            .then(|| cache.picture_clock.get())
+                    });
+                    let mut replayed = retained.fork();
+                    replayed
+                        .with_raster(&project, &snapshot, &options, &mut dynamic, None, |_, _| {
+                            Ok(())
+                        })
+                        .unwrap();
                     retained
                         .hydrate(&project, &snapshot, &options, &mut dynamic, None)
                         .unwrap();
+                    if let Some(clock) = anchored_clock {
+                        let after = retained.cache.as_ref().unwrap().picture_clock.get();
+                        if viewport.is_some_and(|(_, skip)| skip) {
+                            assert_eq!(
+                                after, clock,
+                                "Large cached image views avoid native replay"
+                            );
+                        } else {
+                            assert!(
+                                after > clock,
+                                "Small or unspecified viewports keep cache warmup"
+                            );
+                        }
+                    }
                     let cached = retained
                         .render(&project, &snapshot, &options, &mut dynamic, None, None)
                         .unwrap();
@@ -696,11 +755,43 @@ mod tests {
                             cached.pixels.png().unwrap()
                         );
                     }
+                    let replayed_frame = replayed
+                        .render(&project, &snapshot, &options, &mut dynamic, None, None)
+                        .unwrap();
                     assert_eq!(
-                        crate::document::hash(&cached.pixels.png().unwrap()),
-                        crate::document::hash(&original.png),
-                        "scale={scale}, x={x}, changed={changed}"
+                        cached.pixels.png().unwrap(),
+                        replayed_frame.pixels.png().unwrap(),
+                        "Preserve replayed pixels: images={images}, background={background:?}, scale={scale}, x={x}"
                     );
+                    // Opaque vector atlases retain their original device origin.
+                    // Compare them with the original replay sequence above;
+                    // transparent output also preserves the fresh-export check.
+                    if background.a() == 0 && viewport.is_none() {
+                        assert_eq!(
+                            crate::document::hash(&cached.pixels.png().unwrap()),
+                            crate::document::hash(&original.png),
+                            "scale={scale}, x={x}, changed={changed}"
+                        );
+                    }
+                    if anchored_clock.is_some() {
+                        let future = RenderOptions {
+                            scale,
+                            region: Some(Rect::new(x + 17.75, -37.75, width, height)),
+                            background,
+                            ..Default::default()
+                        };
+                        let expected = replayed
+                            .render(&project, &snapshot, &future, &mut dynamic, None, None)
+                            .unwrap();
+                        let actual = retained
+                            .render(&project, &snapshot, &future, &mut dynamic, None, None)
+                            .unwrap();
+                        assert_eq!(
+                            actual.pixels.png().unwrap(),
+                            expected.pixels.png().unwrap(),
+                            "Skipping cached image hydration must preserve later fractional pan pixels"
+                        );
+                    }
                 }
             }
             assert!(!retained.cache.as_ref().unwrap().shapes.borrow().is_empty());
