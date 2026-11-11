@@ -42,6 +42,12 @@ completed frame rather than interrupting and repeating the same render. Differen
 views, backgrounds, sizes, refreshes and presentation work still preempt prediction.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
+Opaque previews without node names share one immutable RGBA buffer between the
+retained scene and its local-upload fallback, avoiding a full-viewport copy.
+Decorations and nonopaque images keep their existing independent pixel buffers
+and exact alpha conversion. Prepared sources retain the existing lossless PNG
+storage policy.
+
 The renderer separately retains native premultiplied rasters in an on-demand
 128 MiB cache with at most eight entries. Larger viewports evict older rasters
 within that budget instead of compressing and decompressing them on the rendering

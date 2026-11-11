@@ -2389,7 +2389,9 @@ mod tests {
                 .unwrap()
                 .to_rgba8();
             let (pixels, bitmap) = PreviewPixels::from_image(&image).unwrap();
-            let actual = bitmap.into_rgba8();
+            let actual = bitmap
+                .unwrap_or_else(|| pixels.bitmap().into())
+                .into_rgba8();
             assert_eq!(actual.dimensions(), expected.dimensions());
             assert_eq!(
                 actual
@@ -2503,7 +2505,10 @@ mod tests {
                 assert_eq!(pixel_phases, ["render_raster_ms", "render_pixel_copy_ms"]);
                 assert_eq!(direct.pixels.png().unwrap(), fast.png);
                 let old_bitmap = image::load_from_memory(&fast.png).unwrap().to_rgba8();
-                assert_eq!(direct.bitmap.into_rgba8(), old_bitmap);
+                let bitmap = direct
+                    .bitmap
+                    .unwrap_or_else(|| direct.pixels.bitmap().into());
+                assert_eq!(bitmap.into_rgba8(), old_bitmap);
                 assert_eq!(direct.dynamic_artifacts, fast.dynamic_artifacts);
                 assert_eq!(preview_phases, ["render_raster_ms", "render_png_encode_ms"]);
                 assert_eq!(fast.png, unobserved.png);

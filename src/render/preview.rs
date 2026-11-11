@@ -15,7 +15,7 @@ pub(crate) struct PreviewPixels {
 }
 
 impl PreviewPixels {
-    pub(super) fn from_image(image: &Image) -> Result<(Self, image::DynamicImage)> {
+    pub(super) fn from_image(image: &Image) -> Result<(Self, Option<image::DynamicImage>)> {
         let width = image.width() as u32;
         let height = image.height() as u32;
         let info = skia_safe::ImageInfo::new(
@@ -36,9 +36,9 @@ impl PreviewPixels {
         }
         let opaque = rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255);
         let bitmap = if opaque {
-            // Straight and premultiplied pixels are identical for opaque images.
-            image::RgbaImage::from_raw(width, height, rgba.clone())
-                .expect("Read pixels have the checked image dimensions")
+            // Opaque uploads can share these pixels. Defer a mutable copy
+            // until decorations or a fallback encoder actually need one.
+            None
         } else {
             let mut bitmap = image::RgbaImage::new(width, height);
             let unpremul = info.with_alpha_type(skia_safe::AlphaType::Unpremul);
@@ -51,7 +51,7 @@ impl PreviewPixels {
             ) {
                 return Err(Error::new("RENDER_ERROR", "Cannot convert preview pixels"));
             }
-            bitmap
+            Some(bitmap)
         };
         Ok((
             Self {
@@ -61,10 +61,15 @@ impl PreviewPixels {
                 opaque,
                 camera_pixels: (!opaque
                     && u64::from(width) * u64::from(height) * 4 <= 16 * 1024 * 1024)
-                    .then(|| std::sync::Arc::new(bitmap.clone())),
+                    .then(|| std::sync::Arc::new(bitmap.as_ref().unwrap().clone())),
             },
-            image::DynamicImage::ImageRgba8(bitmap),
+            bitmap.map(image::DynamicImage::ImageRgba8),
         ))
+    }
+
+    pub(crate) fn opaque_pixels(&self) -> Option<([u32; 2], std::sync::Arc<Vec<u8>>)> {
+        self.opaque
+            .then(|| ([self.width, self.height], self.rgba.clone()))
     }
 
     pub(crate) fn camera_pixels(&self) -> Option<image::ImageBuffer<image::Rgba<u8>, &[u8]>> {
@@ -131,7 +136,8 @@ impl PreviewPixels {
 
 pub(crate) struct RenderedPreview {
     pub pixels: PreviewPixels,
-    pub bitmap: image::DynamicImage,
+    // Preserve Skia's straight-alpha conversion for nonopaque frames.
+    pub bitmap: Option<image::DynamicImage>,
     pub dynamic_artifacts: Vec<Value>,
     pub retain_raw_pixels: bool,
 }
@@ -400,8 +406,10 @@ mod tests {
                                 .unwrap()
                                 .into_rgba8();
                             assert_eq!(bitmap.dimensions(), (width, height));
-                            assert_eq!(preview.bitmap.width(), width);
-                            assert_eq!(preview.bitmap.height(), height);
+                            if let Some(bitmap) = &preview.bitmap {
+                                assert_eq!(bitmap.width(), width);
+                                assert_eq!(bitmap.height(), height);
+                            }
                             assert!(
                                 bitmap == reference,
                                 "Preserve native pixels and alpha without filtering at scale={scale}, pan={pan}: first differing pixels {:?}",
@@ -543,6 +551,8 @@ mod tests {
                 skia_safe::images::raster_from_data(&info, Data::new_copy(&pixel.repeat(4)), 8)
                     .unwrap();
             let (pixels, bitmap) = PreviewPixels::from_image(&image).unwrap();
+            assert_eq!(bitmap.is_none(), pixel[3] == 255);
+            let bitmap = bitmap.unwrap_or_else(|| pixels.bitmap().into());
             let camera = pixels.camera_pixels().unwrap();
             assert_eq!(camera.as_raw(), &bitmap.to_rgba8().as_raw().as_slice());
             assert_eq!(

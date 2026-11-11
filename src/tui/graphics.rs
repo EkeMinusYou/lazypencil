@@ -89,16 +89,34 @@ impl NativeImage {
         compressed: bool,
         local: Option<&Arc<LocalTransfer>>,
     ) -> Result<Self> {
+        let pixels = [image.width(), image.height()];
+        let rgba = image.into_rgba8();
+        Self::new_shared(
+            Arc::new(rgba.into_raw()),
+            pixels,
+            size,
+            id,
+            compressed,
+            local,
+        )
+    }
+
+    fn new_shared(
+        rgba: Arc<Vec<u8>>,
+        pixels: [u32; 2],
+        size: Size,
+        id: u32,
+        compressed: bool,
+        local: Option<&Arc<LocalTransfer>>,
+    ) -> Result<Self> {
         use base64::{Engine, engine::general_purpose::STANDARD};
         use image::{
             ImageEncoder,
             codecs::png::{CompressionType, FilterType, PngEncoder},
         };
         use std::fmt::Write as _;
-        let pixels = [image.width(), image.height()];
-        let rgba = image.into_rgba8();
         if let Some(transfer) = local
-            && let Some(local) = transfer.store_raw(rgba.as_raw())
+            && let Some(local) = transfer.store_raw(rgba.as_slice())
         {
             return Ok(Self {
                 id,
@@ -109,7 +127,7 @@ impl NativeImage {
                     pixels[0], pixels[1]
                 )
                 .into(),
-                raw_upload: Some(Arc::new(rgba.into_raw())),
+                raw_upload: Some(rgba),
                 inline_compression: compressed,
                 local: Some(local),
                 transmitted: false.into(),
@@ -119,14 +137,14 @@ impl NativeImage {
         // keep RGBA directly, avoiding a second window-sized conversion buffer.
         let rgb = (local.is_none()
             && rgba
-                .as_raw()
+                .as_slice()
                 .as_chunks::<4>()
                 .0
                 .iter()
                 .all(|pixel| pixel[3] == 255))
         .then(|| {
             let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
-            for pixel in rgba.as_raw().as_chunks::<4>().0 {
+            for pixel in rgba.as_slice().as_chunks::<4>().0 {
                 rgb.extend_from_slice(&pixel[..3]);
             }
             rgb
@@ -143,7 +161,7 @@ impl NativeImage {
             let mut encoder =
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
             encoder
-                .write_all(rgb.as_deref().unwrap_or(rgba.as_raw()))
+                .write_all(rgb.as_deref().unwrap_or(rgba.as_slice()))
                 .and_then(|()| encoder.finish())
                 .map_err(|error| {
                     Error::new(
@@ -155,7 +173,7 @@ impl NativeImage {
             let mut png = Vec::new();
             PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
                 .write_image(
-                    rgb.as_deref().unwrap_or(rgba.as_raw()),
+                    rgb.as_deref().unwrap_or(rgba.as_slice()),
                     pixels[0],
                     pixels[1],
                     if rgb.is_some() {
@@ -175,7 +193,7 @@ impl NativeImage {
         // Local terminals can read exact RGBA without decoding a compressed
         // viewport on their input thread. Keep the prepared inline fallback.
         let local = local.and_then(|transfer| {
-            transfer.store(&payload, compressed.then_some(rgba.as_raw().len()))
+            transfer.store(&payload, compressed.then_some(rgba.as_slice().len()))
         });
         drop(rgb);
         drop(rgba);
@@ -795,6 +813,30 @@ impl Backend {
             .map(Encoded::Native);
         }
         self.encode(image, size, id).map(Encoded::Protocol)
+    }
+
+    pub(super) fn encode_preview_shared(
+        &self,
+        rgba: Arc<Vec<u8>>,
+        pixels: [u32; 2],
+        size: Size,
+        id: u32,
+    ) -> Result<Encoded> {
+        let viewport = super::viewport::Viewport::new(self.font, size)?;
+        if self.protocol == ProtocolType::Kitty && !self.tmux && pixels == viewport.raster {
+            return NativeImage::new_shared(
+                rgba,
+                pixels,
+                size,
+                id,
+                self.kitty_compression,
+                self.local_transfer.as_ref(),
+            )
+            .map(Encoded::Native);
+        }
+        let rgba = Arc::try_unwrap(rgba).unwrap_or_else(|shared| (*shared).clone());
+        let bitmap = image::RgbaImage::from_raw(pixels[0], pixels[1], rgba).unwrap();
+        self.encode_preview(bitmap.into(), size, id)
     }
 
     fn resize(&self, mut image: DynamicImage, size: Size) -> Result<DynamicImage> {

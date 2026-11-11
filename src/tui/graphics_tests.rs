@@ -1131,3 +1131,39 @@ fn native_selection_frames_restore_original_pixels_after_deselection() {
     assert_eq!(observer.camera_frames, 1);
     assert!(observer.images.last().unwrap().has_color([255, 0, 0, 255]));
 }
+
+#[test]
+fn shared_native_pixels_reuse_the_source_and_preserve_compact_inline_fallback() {
+    for compressed in [false, true] {
+        let local = Arc::new(LocalTransfer::new().unwrap());
+        let source = Arc::new([12, 34, 56, 127].repeat(80 * 64));
+        let native = NativeImage::new_shared(
+            source.clone(),
+            [80, 64],
+            Size::new(80, 64),
+            42,
+            compressed,
+            Some(&local),
+        )
+        .unwrap();
+        assert!(Arc::ptr_eq(native.raw_upload.as_ref().unwrap(), &source));
+        let mut encoded = Encoded::Native(native);
+        assert!(encoded.request_receipt());
+        let Encoded::Native(native) = encoded else {
+            unreachable!()
+        };
+        let wire = native.upload(43);
+        let mut decoder = observer::KittyFrames::default();
+        decoder.allow_local_files = true;
+        decoder.feed(wire.as_bytes()).unwrap();
+        assert_eq!(decoder.images[0].rgba(), source.as_slice());
+        std::fs::remove_dir_all(local.directory.path()).unwrap();
+        let fallback = native.upload(44);
+        assert!(!fallback.contains(",t=t;"));
+        assert!(fallback.contains("q=0"));
+        assert!(fallback.len() < source.len() / 4);
+        assert_eq!(fallback.contains("o=z"), compressed);
+        decoder.feed(fallback.as_bytes()).unwrap();
+        assert_eq!(decoder.images[1].rgba(), source.as_slice());
+    }
+}

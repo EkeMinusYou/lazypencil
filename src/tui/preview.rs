@@ -501,7 +501,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 );
             }
             let frame_started = Instant::now();
-            let image = renderer.render(
+            let mut image = renderer.render(
                 project,
                 layout,
                 &options,
@@ -520,16 +520,6 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 && picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
                 && !picker.tmux_detected();
             let prepare_camera = static_camera && first_camera_frame;
-            // Native retained scenes keep direct pixels for low-latency camera
-            // updates. Other scenes retain a lossless PNG instead of a full
-            // framebuffer, and release its raw storage before terminal encoding.
-            let retained_image = if image.retain_raw_pixels {
-                PreviewImage::Pixels(image.pixels)
-            } else {
-                let png = image.pixels.png()?;
-                drop(image.pixels);
-                PreviewImage::Png(png.into())
-            };
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 hit: super::selection::HitGeometry {
@@ -545,15 +535,35 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 has_error_diagnostic: item.record.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
                 parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
-            let mut bitmap = image.bitmap.into_rgba8();
-            labels.paint(&mut bitmap, &nodes, view, pixels, &[])?;
-            let protocol = encode(
-                picker,
-                image::DynamicImage::ImageRgba8(bitmap),
-                request.cells,
-                image_id,
-            )?;
+            let protocol = if !labels.visible()
+                && let Some((dimensions, pixels)) = image.pixels.opaque_pixels()
+            {
+                picker.encode_preview_shared(pixels, dimensions, request.cells, image_id)?
+            } else {
+                let mut bitmap = image
+                    .bitmap
+                    .take()
+                    .unwrap_or_else(|| image.pixels.bitmap().into())
+                    .into_rgba8();
+                labels.paint(&mut bitmap, &nodes, view, pixels, &[])?;
+                encode(
+                    picker,
+                    image::DynamicImage::ImageRgba8(bitmap),
+                    request.cells,
+                    image_id,
+                )?
+            };
             timing.mark("terminal_encode_ms");
+            // Native retained scenes keep direct pixels for low-latency camera
+            // updates. Other scenes retain a lossless PNG instead of a full
+            // framebuffer after preparing the terminal upload.
+            let retained_image = if image.retain_raw_pixels {
+                PreviewImage::Pixels(image.pixels)
+            } else {
+                let png = image.pixels.png()?;
+                drop(image.pixels);
+                PreviewImage::Png(png.into())
+            };
             let time_dependent = image.dynamic_artifacts.iter().any(|artifact| {
                 artifact["acquisition"]["kind"] == "shader"
                     && artifact["acquisition"]["time_dependent"] == true

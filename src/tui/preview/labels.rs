@@ -32,6 +32,10 @@ impl Labels {
         }
     }
 
+    pub(super) fn visible(&self) -> bool {
+        self.visible
+    }
+
     pub(super) fn top_padding(&self) -> u32 {
         if self.visible {
             (28.0 * self.screen_scale).ceil() as u32

@@ -56,7 +56,7 @@ impl Frame<'_> {
         self.check_interrupted()?;
         renderer.set_viewport(self.raster);
         let options = self.options(view);
-        let image = renderer.render(
+        let mut image = renderer.render(
             self.project,
             self.layout,
             &options,
@@ -71,14 +71,25 @@ impl Frame<'_> {
                 "Scene cannot retain static camera frames",
             ));
         }
-        let mut bitmap = image.bitmap.into_rgba8();
-        labels.paint(&mut bitmap, &self.nodes, view, self.pixels, &[])?;
-        let protocol = encode(
-            self.picker,
-            image::DynamicImage::ImageRgba8(bitmap),
-            self.cells,
-            self.image_id,
-        )?;
+        let protocol = if !labels.visible()
+            && let Some((dimensions, pixels)) = image.pixels.opaque_pixels()
+        {
+            self.picker
+                .encode_preview_shared(pixels, dimensions, self.cells, self.image_id)?
+        } else {
+            let mut bitmap = image
+                .bitmap
+                .take()
+                .unwrap_or_else(|| image.pixels.bitmap().into())
+                .into_rgba8();
+            labels.paint(&mut bitmap, &self.nodes, view, self.pixels, &[])?;
+            encode(
+                self.picker,
+                image::DynamicImage::ImageRgba8(bitmap),
+                self.cells,
+                self.image_id,
+            )?
+        };
         Ok(Preview {
             protocol,
             selection: None,
