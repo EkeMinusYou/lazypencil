@@ -1,10 +1,8 @@
-# Font files, faces, and fallback
+# Fonts
 
-The current SkParagraph path uses the same shaped Paragraph for text measurements and PNG painting. Noto Sans JP is bundled at the revision and hashes in [the manifest](../resources/fonts/manifest.json), under the complete [OFL 1.1 notice](../resources/fonts/OFL.txt). Other fonts can be supplied as files without installing them in the OS.
-
-Text `fontWeight` accepts integer strings and the absolute keywords `normal` (400) and `bold` (700), including resolved string variables. Measurement and painting use the same numeric weight without rewriting the stored value. Relative weights and other names are not inferred.
-
-Paragraph glyphs use `FontHinting::None` for both measurement and painting. Skia's glyph-path extraction uses unhinted geometry; the shared policy keeps inner outlines within the corresponding glyph ink on FreeType as well as CoreText. Text metrics expose `hinting: "none"` as rendering metadata, not a saved `.pen` property. Raster antialiasing and native backend differences still require platform-specific comparison; this setting does not promise byte-identical PNGs across operating systems. Browser-node fonts retain the page's Chromium/CSS behavior.
+Noto Sans JP is included for Japanese and Latin text. To use another family,
+supply its font files or reference an installed system family. Font files can be
+used directly without installing them in macOS.
 
 ## Adding and inspecting fonts
 
@@ -12,33 +10,67 @@ Paragraph glyphs use `FontHinting::None` for both measurement and painting. Skia
 lazypencil fonts list
 lazypencil fonts list --font /path/to/family.ttc --font /path/to/other.otf
 lazypencil fonts list --file design.pen
-lazypencil fonts license
 lazypencil render design.pen --font /path/to/family.ttc --output preview.png
-lazypencil mcp --font /path/to/family.ttc
 lazypencil tui design.pen --font /path/to/family.ttc
 ```
 
-The `--font` option is repeatable on the existing document commands and AI/TUI entry points. Use the same files and order when computing, editing from measurements, and rendering. [User and project configuration](configuration.md) persists files, search directories, a default family, fallbacks, and locale. `config init --user` creates a shared `config.toml`; project `lazypencil.toml` overrides each explicitly supplied field. Arrays replace, and an empty array stops inheritance. Paths stay relative to the physical configuration file supplying that field. CLI, MCP, and TUI use the same captured inputs. Explicit CLI files precede project files/search results, then inherited user files/search results. `fonts list` without `--file` uses user settings only. Normal rendering does not download fonts, install them into the OS, or copy system fonts into the project.
+Repeat `--font` for additional files. Use the same files and order when measuring,
+editing and rendering a design. Save frequently used paths in
+[user or project configuration](configuration.md):
 
-Configured files are fingerprinted with bounded streaming reads. Discovery reads collection directories and name tables without retaining every file or creating every native typeface. A family loads when requested; all supplied styles of that family remain available to Skia's existing style matcher. Fallback families load in their declared order only while shaping reports missing glyphs. Legacy names without Unicode records use the native loader during discovery to preserve compatibility. The bundled default remains shared. Directory discovery and content hashing still inspect every configured file; deferred loading does not mean zero startup I/O.
+```toml
+[fonts]
+files = ["fonts/Brand.ttf"]
+fallbacks = ["Noto Sans JP"]
+locale = "ja"
+```
 
-`fonts list` and MCP `list_fonts` explicitly load and report each supplied face, including all faces in a collection, plus the bundled default unless explicitly overridden. They include family, PostScript name, weight, width, slant, source hash, original collection index, normalized face hash, variation axes/ranges/current values, and synthetic-style flags. This is an inventory of supplied fonts; it is not a catalogue of every installed system font. Library `Fonts::inventory` returns a `Result` because a deferred file may have changed or disappeared.
+Paths in configuration are relative to the file that defines them. Project values
+override user values; arrays replace inherited arrays. `fonts list --file design.pen`
+shows the document's effective font inputs, while `fonts list` uses user settings.
 
-`fonts license` reads the complete embedded Noto Sans JP license and pinned source manifest without scanning system fonts or creating a data directory. Supplied fonts retain their own licenses; lazypencil does not infer redistribution permission from a filename or family name.
+## Font formats and inventory
 
-## Formats and immutable data
+Supported files are TrueType `.ttf`, CFF `.otf`, and OpenType collections `.ttc`
+and `.otc`. A collection can contain several families and styles; each face is
+available for selection. The source files are left unchanged.
 
-Supported containers are TrueType `.ttf`, CFF `.otf`, and OpenType collections `.ttc` / `.otc`. Container contents determine parsing; changing an extension does not create a new format. Collections can contain multiple families/styles and different outline formats, as defined in [the OpenType specification](https://learn.microsoft.com/en-us/typography/opentype/spec/otff#font-collections).
+The font inventory reports family, PostScript name, weight, width, slant, source
+hash, collection index, variation axes and synthetic styles. `hash` identifies the
+original file, `face_index` identifies a face in its collection, and `face_hash`
+identifies the face data used for rendering. Inventory covers supplied fonts and
+the bundled default, rather than every font installed on the machine.
 
-The current macOS Skia CoreText path does not accept nonzero collection indexes when making a typeface from bytes. Lazypencil therefore rebuilds each selected collection face as an in-memory standalone SFNT. It validates directory/table ranges, relocates table offsets, recomputes checksums and the head adjustment, and removes a signature that described the original container. Glyph and shaping table bodies remain unchanged. Source files are never modified. Standalone inputs borrow their captured bytes without an extra normalization buffer.
+## Selection and text coverage
 
-`hash` identifies the original source bytes, and `face_index` identifies its original collection entry. `face_hash` identifies the normalized standalone data supplied to Skia. The original collection remains a captured file dependency, so even a change to trailing source bytes invalidates a retained calculation. Normalization does not hide a changed input.
+An explicitly supplied family takes precedence over the bundled or system family
+of the same name. Matching is case-insensitive. Supplied regular, bold and italic
+faces participate in style selection together.
 
-Supplied file revisions remain project dependencies even when no text uses them. A deferred read verifies the complete source hash before passing its captured bytes to Skia; same-size edits cannot silently change a retained snapshot. Loaded faces retain their immutable data, and the project checks all configured file revisions before accepting the operation. Library `Fonts::from_sources` also accepts already captured immutable bytes. Direct file loading checks regular-file descriptors and bounded reads; a FIFO is rejected rather than waited on. Named system families are resolved on demand for the requested style, captured as font data, and reconstructed from those bytes. A system data hash identifies the bytes returned by Skia, which may reconstruct font tables; it is not a promise to identify an OS file path. Automatic OS-font-change monitoring and a full platform reproducibility audit remain unfinished. Explicit refresh/recalculation is required to resolve installed fonts again. An optional lockfile checks those newly resolved bytes against an explicit baseline.
+`fontWeight` accepts integer strings, `normal` (400), and `bold` (700), including
+string variables. A node without `fontFamily` uses the configured `default_family`.
+The default fallback order is the requested family, Noto Sans JP, and other
+supplied families in file order. Set `[fonts].fallbacks` to choose another order;
+an empty array uses only the requested family.
+
+A missing requested family or unsupported character causes layout and PNG export
+to fail with `ASSET_NOT_FOUND`. The error identifies missing characters so you can
+supply a font that covers them. The TUI can show missing characters as squares
+while you repair the design; its warning marks that preview as provisional.
+Supply the missing font or change the text before exporting.
+
+Color and bitmap glyphs retain their native palettes. Browser-node text uses the
+page's own CSS and web fonts; icon packs and the terminal's UI font are configured
+separately.
+
+If a configured file or directory is missing, inspection and structural editing
+remain available, but rendering waits until the path is repaired or removed from
+configuration. After changing a font, refresh or recalculate the document.
 
 ## Reproducibility lockfile
 
-Opt in with a **top-level project setting**, before any TOML table:
+Use a font lockfile when a project needs to detect font changes between machines
+or over time. Add `font_lock` at the top level of `lazypencil.toml`, before any table:
 
 ```toml
 version = 1
@@ -50,71 +82,69 @@ fallbacks = ["Noto Sans JP"]
 locale = "ja"
 ```
 
+Create and check the baseline:
+
 ```sh
 lazypencil fonts lock design.pen
 lazypencil fonts check design.pen
-# Review a changed baseline before replacing its current hash:
+```
+
+The lock records every supplied face and the system faces used by this document's
+layout, including text generated by scripts. For a project-wide font baseline,
+supply the font files explicitly: a system style that has not been used yet will
+need to be captured when the design starts using it.
+
+After reviewing an intentional font change, replace the baseline using its current
+hash. `lazypencil config show design.pen` reports it as `font_lock.hash`:
+
+```sh
 lazypencil fonts lock design.pen --expected-lock-revision CURRENT_SHA256
 ```
 
-`fonts lock` performs the real layout, including generated script text, and explicitly loads every supplied face. It captures the configured files in precedence order and system faces observed by that document. It does not enumerate every installed family or execute every possible script branch. Prefer supplied font files for a project-wide baseline covering styles not yet used by that document. A later unrecorded system face is rejected until explicitly captured. Browser CSS/Web fonts, icon packs and the terminal's own text fonts retain their separate owners.
+`--output PATH` writes a baseline elsewhere without enabling it in configuration.
+The result's `active` field shows whether the file is selected by the project.
+Font acquisition leaves the document, source fonts and settings unchanged.
 
-Only the project configuration accepts `font_lock`; its path resolves relative to the physical `lazypencil.toml`. Existing projects without this setting keep their previous behavior. `--output PATH` can acquire an inactive baseline without changing configuration; the result's `active` field distinguishes that case. Creation never rewrites the document, font files or configuration. Identical acquisition is a no-op. Replacing different existing bytes requires the current `--expected-lock-revision`; stale hashes fail. New files use no-clobber publication, updates use the existing atomic writer, and the destination shares dependency-reader locks. Linked final output names and document/configuration/font/asset destinations are rejected.
+| Error | What to do |
+| --- | --- |
+| `FONT_LOCK_MISMATCH` | Check changed fonts or selection settings, then restore them or explicitly update the baseline |
+| `FONT_LOCK_INVALID` | Check the lockfile format and version |
+| Missing `font_lock` asset | Restore the lockfile or acquire a new baseline |
 
-The UTF-8 JSON manifest is version 1, at most 1 MiB, with these fields:
+Inspection and structural edits are available while repairing a lockfile.
+Rendering, layout and document-specific inventory require a valid selected lock.
+The lock fixes font inputs and selection policy; web-page contents and native
+rasterization differences across systems remain separate.
+
+### Lockfile format
+
+The UTF-8 JSON manifest uses version 1 and is limited to 1 MiB.
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Exactly `1`; unknown fields or versions are rejected. |
-| `engine`, `native_sources` | Layout engine identity and the hash of the vendored Skia dependency manifest, including its pinned native revision. |
-| `bundled_pack` | Complete pinned standard-font pack manifest, including its upstream revision and hashes. |
-| `input_hashes` | At most 256 source hashes, in effective configured/CLI file precedence order. |
-| `default_family`, `fallback_families`, `locale` | Effective selection policy; the fallback list preserves its order. |
-| `faces` | At most 256 unique `FontInfo` records as described above, including collection index, source/face hashes, physical style, synthetic flags and variation axes/ranges/default positions. `source` is `file`, `bundled` or `system:font-data`; local paths and native unique IDs are omitted. |
+| `version` | Manifest format version, currently `1` |
+| `engine`, `native_sources` | Layout engine and native dependency identities |
+| `bundled_pack` | Included standard-font manifest and source hashes |
+| `input_hashes` | Source hashes in effective input order, up to 256 |
+| `default_family`, `fallback_families`, `locale` | Selection policy, preserving fallback order |
+| `faces` | Up to 256 face records with source and face hashes, collection index, style and variation data |
 
-The baseline fixes face data and policy; a document's supported weight changes still select axes from the same fixed data. Per-run selected positions remain in `get_layout` metrics. Renaming or relocating identical files is allowed when their effective order and policy stay the same. This is reproducible font selection, not a promise of identical antialiasing across operating systems or a lock on web-page contents.
+Identical files may be moved or renamed if their effective order and selection
+policy stay the same. Text metrics report the selected variation positions and
+faces actually used in a layout.
 
-CLI, MCP and TUI share enforcement through `Project::load_fonts`, including faces loaded later during shaping. `fonts list --file` also checks the lock. `FONT_LOCK_MISMATCH` identifies changed data, settings, engine/pack or an unrecorded face; `FONT_LOCK_INVALID` identifies malformed or unsupported manifests. The configured lock is a captured dependency, so modified bytes, a redirected parent or restoring an absent lock invalidates old edit/calculation preconditions. Missing locks report `font_lock` asset diagnostics. Inspection and structural edits remain available with a missing, malformed or mismatched lock; normal inventory, layout and rendering require a valid baseline. Oversized/non-regular/unreadable inputs still fail their bounded source checks. Only explicit baseline acquisition bypasses its old/missing font lock, retaining the normal missing-font and missing-asset checks and publication preconditions.
+## Limits and licenses
 
-## Selection and text coverage
+Font limits include 256 files/faces, 64 variation axes per face, 64 MiB per supplied
+source or extracted face, and 128 MiB of supplied source data. Captured system-font
+data has a separate 256 MiB budget. If an input exceeds a reported limit, use a
+smaller font file or reduce the selected font set.
 
-Missing configured files and search directories are captured as absent inputs, so inspection and structural document edits remain available. Effective configuration reports `fonts_complete: false` and `font_diagnostics`; document metadata includes the same missing inputs in its asset diagnostics and dependency revision. Restoring an input or retargeting a parent invalidates the captured revision. Font inventory, shaping and rendering require every selected configured input; an available bundled/system face does not conceal a missing declared file. Restoring the original path or explicitly editing configuration is separate from document edits. Unreadable inputs, wrong file types, malformed configuration and discovery limits remain errors.
+Noto Sans JP is distributed under [OFL 1.1](../resources/fonts/OFL.txt); its source
+and hashes are in the [font manifest](../resources/fonts/manifest.json).
+`lazypencil fonts license` prints this information. Other fonts retain their own
+licenses, including restrictions on redistribution.
 
-File fonts take precedence over same-named installed families. Family matching is case-insensitive. The bundled Noto Sans JP takes precedence over a system installation, while an explicitly supplied same-named family overrides the bundle. Multiple supplied styles of a family participate in Skia's style matching; the engine no longer assumes that the first face describes every weight or slant.
-
-The default glyph fallback chain is the requested family, Noto Sans JP, then other explicitly supplied families in file/collection order. Duplicate family names are omitted. Skia's arbitrary system fallback is disabled. A missing requested family remains an error even if another font could draw the text.
-
-Coverage is checked after shaping through Paragraph's unresolved-glyph/codepoint result. This handles the actual selected style and supplementary characters, rather than relying on a different face's per-character lookup. Missing text produces `ASSET_NOT_FOUND`, with up to 64 distinct missing characters and the full distinct count. It does not rewrite `.pen` font names or silently export unresolved text.
-
-The live TUI preview replaces unsupported characters with visible squares, while preserving supported text and the saved document. A persistent preview warning marks the text layout as provisional, and node diagnostics identify the affected text and missing characters. Layout calculations and PNG exports remain strict; a provisional preview cannot be exported through the TUI. Unavailable font families and missing configured font inputs still produce errors.
-
-To preserve intrinsic color-glyph palettes, the renderer captures the exact glyphs, positions, fonts and run origins from the measured Paragraph when a selected face contains color tables. Native glyph painting reuses the existing fill paints, image placement/clips and mesh raster reservation; ordinary monochrome paragraphs keep their existing path. Color paragraphs retain at most 1,048,576 positioned glyphs, with cancellation checks during capture and every 64 painted glyphs. Decorations use the same native geometry adapter as outline strokes.
-
-Original Rust-generated diagnostic fonts exercise COLR/CPAL color layers, required ZWJ/modifier ligatures and cmap variation-selector mappings. Tests require native shaping and palette pixels, both document schemas, mixed Japanese/monochrome/color text, decorations, gradient/image/mesh fills, translucent compositing and exact CLI/library PNG agreement.
-
-Real-font checks acquire the unmodified 2D Noto Emoji CBDT/CBLC and COLRv1 files at the official revision and SHA-256 pins in [emoji-upstream.json](../tests/fixtures/fonts/emoji-upstream.json). The Rust `cargo xtask fixtures emoji` task runs only for hosted acquisition, retains the original OFL, and rechecks cached files. These fonts are not included in the application distribution. Standard native GHA explicitly runs both opt-in checks: seven emoji/Japanese cases per format, composed glyph counts, captured source hashes, intrinsic color or grayscale palettes, and exact native Paragraph/ordinary-render pixels in both document schemas. PNGs and reports bind the upstream font and application source identities.
-
-On macOS, embedded FreeType and a lazily created file-only `FontMgr::custom_empty` handle CBDT and COLRv1. Bounded font-directory inspection selects these formats before loading. Ordinary faces, COLRv0 and sbix retain CoreText, including system-family lookup; captured system bytes use the same file loader. Other targets keep their existing backend. The current layout engine identity is `layout-7`, matching the native alpha-silhouette stroke implementation.
-
-`get_layout` text metrics collect the faces actually visited in positioned glyph runs. A font present in the fallback list but unused in the shaped text is not reported as used. Variable `wght` coordinates are recorded from the selected instance; actual synthetic bold/italic flags are included. Color/bitmap text strokes now recover a bounded native-alpha silhouette when required; [the graphics notes](graphics.md#text-and-outlines) describe precision, limits and current verification.
-
-Library callers can replace the fallback list with `Fonts::set_fallback_families`. User/project `[fonts].fallbacks` provides the same policy to CLI, MCP, and TUI. Omit it in both scopes for the default chain; an empty array leaves only the requested family. Effective `default_family` applies when a node omits `fontFamily`, and `locale` appears alongside the requested family in text metrics. Explicit stored families are preserved.
-
-Cancellation can be supplied to `Fonts::layout_with_cancellation`. Common calculations use the same request token and, for script-generated layout, its absolute calculation deadline. Checks surround native shaping and run at every positioned run and at most 64 glyphs while collecting outlines. An interrupted walk returns its cancellation/deadline error without a partial text block; registered fonts can be reused by a later request. An individual Skia call remains cooperative.
-
-## Limits and verification
-
-The deferred-loading rule concerns ordinary document rendering. Explicit font inventory and font-lock operations also capture unused declared system fallbacks so their provenance is complete.
-
-Supplied fonts remain limited to 64 MiB per source or extracted face, 128 MiB of supplied source data, and 128 MiB of retained supplied/bundled face data. Captured system fonts have a separate 256 MiB per-source/extracted-face and aggregate retained-data budget, accommodating the 183 MiB Apple Color Emoji collection shipped on the observed Mac. System fallback names are validated when configured; their data is captured only when shaping needs them. Requests that select the same installed face reuse its capture across requested styles. Both paths retain the 256 files/faces, 64 variation axes per face, and 4,095 tables per extracted face limits. Family names are limited to 256 UTF-8 bytes and locale strings to 128 bytes; invalid names produce bounded diagnostics. These are engine input limits, not a measured bound on process RSS. Collection face data is shared with native typefaces where possible. On macOS, eligible large system fonts are streamed into private immutable file mappings with the same captured bytes, hashes and face metadata as the native stream. Mapping pages can be reclaimed after layout without discarding the captured font. Unsupported captures and unavailable temporary storage retain the existing native capture path. Family loading is deferred; configurable cache budgets and eviction remain unfinished.
-
-`tests/font_sources.rs` checks the [original tiny diagnostic fonts](../tests/fixtures/fonts/README.md): every collection index, static normal/bold/italic selection, CFF and mixed-outline collections, normalized hashes and standalone-equivalent PNGs, Japanese/supplementary fallback, variable weight metadata, bounded missing-text diagnostics, aggregate input limits, malformed containers, CLI inventory/license, and FIFO rejection. The original assets and generator require no third-party font library and reproduce byte-for-byte.
-
-`tests/mcp.rs` checks actual MCP inventory, resolved mixed-script/style records, PNG image content, and rejection of changed font dependencies without saving the document. `tests/text.rs` retains Japanese wrapping, variable-weight pixel comparisons, missing families/glyphs, and pinned bundled data. An opt-in test also passed with the installed Arial normal/bold/italic faces on macOS arm64, comparing captured source data and selected PostScript names:
-
-```sh
-LAZYPENCIL_TEST_FONT_FAMILY=Arial \
-cargo test --test font_sources installed_system_styles -- --ignored
-```
-
-Arbitrary external fonts, all emoji sequences and all variation axes are not guaranteed. Supported environments are listed in the [README](../README.md#supported-environment); use [focused development checks](development.md) for changes.
+For font-loader development, see [architecture](design.md), the
+[font fixtures](../tests/fixtures/fonts/README.md), and
+[focused development checks](development.md#focused-development-checks).

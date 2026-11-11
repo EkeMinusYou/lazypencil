@@ -1,21 +1,17 @@
 # Example gallery
 
 Start with a finished screen, ask for a small change, then render the result.
-These are editable `.pen` designs, not application implementations. The three
-examples below render locally with bundled fonts and need no Chromium runtime.
-AI editing uses your chosen client's authentication and usage allowance.
+Each example includes a preview, editable `.pen` source and a prompt to try.
 
 [Install and choose a workflow](../README.md#quick-start) ·
 [日本語の導入ガイド](../docs/getting-started.ja.md)
 
 ## Get a working copy
 
-To try just the dashboard, use `lazypencil demo` from a build that includes it.
-For releases without `demo`, including 0.2.5, download the
-[raw dashboard file](https://raw.githubusercontent.com/EkeMinusYou/lazypencil/main/examples/project-dashboard.pen)
-as `demo.pen`. Neither route needs a repository checkout. Then run:
+To try just the dashboard without a repository checkout, run:
 
 ```sh
+lazypencil demo
 lazypencil render demo.pen --output demo.png
 open demo.png
 ```

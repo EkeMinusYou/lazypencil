@@ -1,96 +1,63 @@
 # User and project configuration
 
-User `config.toml` persists font/runtime/agent preferences, attachment budgets,
-conversation retention, and TUI themes/controls. Project `lazypencil.toml` overrides individual
-font/runtime/agent fields and supplies design guides/styles. CLI, MCP, and TUI capture
-the same document settings. Design instructions and project executables need separate
-explicit user grants. See [TUI controls](tui.md#viewing-and-global-shortcuts) for user-only keys.
+Use user settings for your preferred fonts, AI agent, theme and controls. Use
+project settings for shared fonts, rendering policy and design guidance.
 
-## Preview node names
-
-Set the initial visibility of root node names in the user `config.toml`:
-
-```toml
-[tui.preview]
-show_node_names = true
-```
-
-The default is `true`. Use `false` to start with names hidden. Toggle them during a
-session with `View · Toggle node names` in the command palette or `Node names` in the View controls menu. Session changes do not rewrite the file.
-Hidden names reserve no title padding when fitting the whole document. This setting
-only affects the terminal preview; exported images keep their document contents.
-Like other TUI preferences, it cannot be set in project `lazypencil.toml`.
-
-## Image attachment budgets
-
-Attachment limits belong to the user `config.toml`; projects cannot override them. `config init --user` writes these defaults, and `config show --user` / `config schema --user` expose them:
-
-```toml
-[attachments]
-max_images = 8
-max_source_bytes = 20971520
-max_send_bytes = 20971520
-max_total_source_bytes = 52428800
-max_total_send_bytes = 52428800
-max_source_pixels = 33554432
-```
-
-`max_images` accepts 1..64. Per-image source/send budgets accept 1..20 MiB; separate per-request source/send totals accept 1..256 MiB. `max_source_pixels` accepts 1..32 Mi pixels (32 × 1024 × 1024), measured before resizing. Per-image bytes and pixels remain bounded by the native decoder's safety limits; raising the count or aggregate budgets does not raise those ceilings. Existing explicit lower pixel budgets remain in effect; set `max_source_pixels = 33554432` to use the new ceiling. Adapter/model limits still apply.
-
-Source bytes count the captured original encoding; send bytes count the normalized PNG. Lower send budgets require an explicit `--image-max-size WIDTHxHEIGHT`, `/attach PATH WIDTHxHEIGHT`, `/paste-image WIDTHxHEIGHT`, or `/resize-image NUMBER WIDTHxHEIGHT`; images are never silently resized or omitted. `original` overrides a startup size for one TUI input command. Explicit resizing keeps the original encoding and applies orientation before fitting without upscaling.
-
-Limits are checked at ingestion and again before submission. Editing the user file while a draft is open can block its next image addition or submission; stored originals and the draft remain intact. Remove images or resize pending send images to repair the request. A smaller replacement can repair an oversized draft incrementally, while submission still requires the entire request to fit. Tightening source budgets requires removing oversized sources or adjusting the setting. Reading numeric attachment policy does not discover or load fonts. Text clipboard input remains available when an image budget is exhausted.
-
-## Local conversation retention
-
-Retention is user-owned and is rejected in project configuration. Set it in the user `config.toml` created by `config init --user`:
-
-```toml
-[conversations.retention]
-max_age_days = 90
-max_total_bytes = 1073741824
-keep_recent_per_document = 1
-```
-
-Omitted limits keep all local conversations. Limits apply when the user explicitly reviews and commits `conversations prune`; opening a file or submitting a prompt does not silently delete history. Age is measured from the most recent local file write, excluding the maintenance lease, with a cutoff rounded to the start of the current UTC day. This is local activity, not an inferred creation date or provider timestamp. The byte limit covers local conversation files across **all** document stores in the selected `--data-dir`, including retained images, logs and pending deletion payloads. It excludes project assets, document checkpoints, fonts and browser/runtime data. File-byte totals are distinct from filesystem allocation.
-
-```sh
-lazypencil conversations prune --json
-lazypencil conversations prune --expected-revision REVIEWED_SHA256 --json
-lazypencil conversations cleanup --all --json
-```
-
-Review shows each recognized local conversation, the policy, known bytes, unknown totals, protection reasons and selected deletions. Recent conversations are kept per document; eligible expired conversations are selected first, then the oldest eligible records are selected to reduce aggregate bytes. Busy or changing sessions, any nonempty unsent draft, pending images, queued prompts or unconfirmed delivery, incomplete native continuity, unknown formats and unsafe filesystem entries are protected. `keep_recent_per_document = 0` disables only the recent-history minimum. Mandatory protection remains. These rules can leave usage above the configured limit; `remaining_over_limit` is unknown when protected data cannot be measured. Pending deletion payloads are counted but require explicit cleanup, so a failed cleanup cannot be reported as reclaimed space.
-
-Apply requires an unchanged review, including its policy and UTC-day cutoff. Each selected conversation is checked again under its exclusive lease; a new draft, request or external change is refused. User settings are verified again immediately before the atomic rename, after preparing and checking the target. Configuration changes and cancellation stop further commits and return completed results. Reviews are live (`snapshot: false`): exact totals mean every listed entry was measured, not that a global filesystem snapshot was taken. A batch is not atomic: already committed deletions remain committed. Returned remaining-byte figures are estimates from the review, not a new scan that promises a hard quota while other frontends write. Original `.pen` files may have moved or disappeared; maintenance validates the saved document namespace without opening those files, an adapter or authentication. `cleanup --all` similarly recovers recognized deletion journals without the original document.
-
-Review/apply have a shared 30-second cooperative budget, up to 10,000 records and 100,000 entries per scanned directory/tree. Bounds produce diagnostics rather than silently ignoring the tail. Cleanup waiting also observes cancellation/deadline; filesystem cleanup may continue in the same process after waiting stops, and its journal remains recoverable if that process exits.
+| File | Purpose |
+| --- | --- |
+| `~/.config/lazypencil/config.toml` | Your defaults across projects |
+| `lazypencil.toml` in a project | Shared settings for documents in that project |
 
 ## Start and inspect
 
 ```sh
-lazypencil config init
 lazypencil config init --user
-lazypencil config show design.pen
+lazypencil config init
 lazypencil config show --user
-lazypencil config schema
-lazypencil config schema --user
-lazypencil fonts list --file design.pen
+lazypencil config show design.pen
 ```
 
-`config init [PATH]` creates `lazypencil.toml` atomically and never overwrites an existing file. A supplied path must have that filename and an existing parent directory. `config show FILE` resolves project settings for that document path without executing scripts, launching a browser/agent, or decoding font glyphs. It can inspect configuration even when the document's contents are invalid. `config schema` returns the JSON Schema for supported settings, including version and array limits. Parsing also enforces byte/path/language limits.
+`config init --user` creates the user file and its parent directories. `config init`
+creates `lazypencil.toml` in the current directory; `config init PATH` selects an
+existing directory's `lazypencil.toml`. Both commands preserve existing files.
+Templates leave optional fields commented so defaults continue to apply.
 
-`config init --user` explicitly creates the user configuration and missing parent directories; it also never overwrites an existing file. Ordinary reads do not create those directories. `config show --user` and `config schema --user` need no document and inspect only user settings. The templates leave optional fields commented so a newly initialized project inherits user preferences. User scope accepts `version`, `[fonts]`, `[runtime]`, `[agents]`, `[attachments]`, `[conversations.retention]`, `[tui]` (`theme`), `[tui.layout]`, `[tui.keys]` and `[tui.navigation]`; project design instructions are rejected there. Project agent preferences require the separate execution grant described below. Shortcut and [panel width settings](tui.md#panel-widths) remain user-only. See [TUI keys](tui.md#keys-and-commands) for replacement, validation and focus rules. `show --user` reports the effective prompt keys and `schema --user` describes them, including builds without TUI support.
+`config show` displays effective settings and their sources. For the full schema,
+run `config schema --user` or `config schema`. Unknown fields, invalid values,
+duplicate keys and unsupported versions produce `CONFIGURATION_ERROR` with the
+file and location to correct. Configuration files are limited to 256 KiB.
 
-TUI `theme` defaults to `"auto"`, which adapts to the terminal background. Presets are `"dark"`, `"light"` and `"monochrome"`. `tui --theme NAME` overrides it for one launch; the command palette switches the theme within the current session. Themes are user-only and do not affect document rendering or export. See [UI themes](tui.md#ui-themes).
+For each field, precedence is **explicit project value > explicit user value >
+built-in default**. Command-line options take precedence where available. Arrays
+replace inherited arrays: `files = []`, for example, clears inherited font files.
 
-On macOS and Linux, the user configuration is `$XDG_CONFIG_HOME/lazypencil/config.toml`. When `XDG_CONFIG_HOME` is unset, empty, or relative, it defaults to `~/.config/lazypencil/config.toml`. `LAZYPENCIL_CONFIG_DIR` takes precedence over both and overrides the directory, not the filename; a relative explicit override resolves against the invoking directory. `doctor` reports the selected path; `config show --user` reports the requested/physical paths and source hash. The former macOS location, `~/Library/Application Support/dev.lazypencil.lazypencil/config.toml`, is no longer read or automatically migrated. This changes configuration discovery only; application data and caches keep their existing locations. The deferred Windows implementation retains `%APPDATA%\\lazypencil\\lazypencil\\config\\config.toml` and still requires platform verification.
+TUI controls, attachment budgets and conversation retention belong in user settings.
+Projects can set fonts, runtime policy, agent defaults and design resources.
+Project-supplied agent executables and design instructions each require a local
+trust decision, described below.
 
-Each field follows **explicit project value > explicit user value > built-in default**. Arrays replace rather than concatenate; `files = []`, `search_paths = []`, or `fallbacks = []` explicitly stop inheritance for that field. Explicit values equal to built-in defaults still override user settings. `config show FILE` exposes the merged `settings`, per-field `font_origins` (`project`, `user`, or `builtin`), and separate `user` source metadata. File lists retain their declared spelling; `font_files` / `effective_font_files` expose resolved paths and ordering.
+## Discovery and path rules
 
-Missing selected font files/search directories are captured without creating them. `config show FILE` and `config show --user` report `fonts_complete: false` and bounded `font_diagnostics`, while retaining declared paths. They remain inspectable and structural document edits keep their absence revisions. Font inventory and rendering require complete selected inputs. Restoring an input or redirecting its parent invalidates the old snapshot; obtain fresh document/dependency revisions after repair.
+User configuration uses `$XDG_CONFIG_HOME/lazypencil/config.toml` when
+`XDG_CONFIG_HOME` is an absolute path, otherwise `~/.config/lazypencil/config.toml`.
+`LAZYPENCIL_CONFIG_DIR` overrides that directory. Run `lazypencil doctor` to see
+which file is selected if your settings seem to be ignored.
 
-For example:
+Project discovery starts beside the document and walks up to the nearest
+`lazypencil.toml`, stopping at a Git repository or worktree boundary. Only that
+project file applies; parent project files are not merged.
+
+File paths are relative to the physical configuration file that defines them,
+including when that file is reached through a symlink. Use an absolute path for a
+file elsewhere. `~` and environment variables are not expanded inside TOML paths.
+Font paths refer to local files, rather than URLs.
+
+`--data-dir` and `LAZYPENCIL_DATA_DIR` select the storage used for conversations,
+checkpoints, attachments and runtimes. Relative values resolve from the directory
+where you invoke lazypencil. The AI adapter and its MCP connection use the same
+resolved storage and user settings.
+
+## Font precedence and fallback
 
 ```toml
 version = 1
@@ -103,36 +70,308 @@ locale = "ja"
 fallbacks = ["Noto Sans JP", "My Supplemental Family"]
 ```
 
-Unknown fields, duplicate keys, unsupported versions, wrong types, invalid font paths, and oversized configuration produce `CONFIGURATION_ERROR`. Syntax/schema errors include a file and byte/line location, without returning the source excerpt or arbitrary input values. An empty file uses version 1 defaults. Unavailable design resources have their own diagnostic, described below. Keep secrets in the external runtimes' authentication stores rather than in project configuration.
+Use `files` for explicit fonts and `search_paths` to discover fonts recursively.
+Hidden entries and nested directory symlinks are skipped. Repeated files are
+loaded once. A search root allows 16 directory levels, 4,096 entries and 256 font
+candidates; configurations allow 32 roots and 256 effective files/fallback families.
 
-## Discovery and path rules
+Font inputs are ordered as command-line files, project files, project search
+results, inherited user files, then inherited user search results. Only the
+selected source of each field participates. The bundled Noto Sans JP follows
+explicit same-named files and takes precedence over a system installation.
 
-Project discovery starts at the canonical document's directory and walks upward. The nearest `lazypencil.toml` is selected. A `.git` directory or worktree marker stops the search after checking for configuration in that directory. Without either marker, the document directory remains the default project root. Parent project configurations are not merged; omitted font fields inherit the separately selected user file.
+`default_family` applies when a text node omits `fontFamily`. `locale` is a language
+tag such as `ja`, `en-US` or `zh-Hant`. An explicit `fallbacks` array replaces the
+fallback chain after the requested family; `[]` leaves only that family. When
+omitted, fallback is Noto Sans JP followed by other supplied families.
 
-File and search-directory paths resolve against the physical parent of the configuration that supplied that field, including when the configuration itself is a symlink. Inherited user paths therefore stay relative to the user file. Absolute local paths are accepted. Home-directory and environment-variable expansions are not performed, and URLs are not font-file paths. Configured external font files can be used without copying them into the project. Canonical configuration and font paths must be UTF-8. The user configuration directory does not extend the document's allowed import/asset roots.
+Inspect the result with `lazypencil fonts list --file design.pen`. Missing paths
+appear in `font_diagnostics`; repair or remove them before rendering. See
+[fonts](fonts.md) for coverage, formats and the project-level
+`font_lock = "fonts.lock.json"` option.
 
-These font paths are explicit data inputs. Design trust authorizes instruction use; it never authorizes project-selected adapters. Project agent settings use a separate local execution grant, as described below. Unsupported tables are rejected.
+## Preview node names
 
-`--data-dir` and `LAZYPENCIL_DATA_DIR` resolve relative paths against the invoking directory before child processes change their working directory. ACP adapters and their bound MCP processes therefore use the same local grants, history, and attachments.
+Set the initial visibility of root names in user settings:
 
-The conversation host also pins the absolute `LAZYPENCIL_CONFIG_DIR` in its bound MCP descriptor. Changing the adapter/MCP working directory to a nested document directory does not select another user file. This does not modify the user's global environment or external agent configuration.
+```toml
+[tui.preview]
+show_node_names = true
+```
+
+The default is `true`. Toggle names for the current session with **View · Toggle
+node names** in the command palette. This changes the preview, while exported
+images contain only the design.
+
+Set `[tui] theme` to `auto`, `dark`, `light` or `monochrome`. `auto` follows the
+terminal background. `tui --theme NAME` selects a theme for one launch. See
+[TUI controls](tui.md#keys-and-commands), [panel widths](tui.md#panel-widths) and
+[themes](tui.md#ui-themes) for more user preferences.
+
+## User agent profiles
+
+Save defaults for the AI runtimes you use:
+
+```toml
+[agents]
+default = "codex"
+
+[agents.codex]
+adapter = "codex-acp"
+adapter_args = []
+auth = "subscription"
+require_auth_status = true
+mode = "read-only"
+timeout = 600
+document_tools = "allow"
+# model = "an-adapter-advertised-model"
+# fast = true
+# auth_method = "an-adapter-advertised-authentication-method"
+
+[agents.claude]
+adapter = "claude-agent-acp"
+auth = "subscription"
+require_auth_status = true
+mode = "default"
+```
+
+`prompt` and `tui` select the agent from `--agent`, then the configured default,
+then Codex. Only the selected agent's profile applies. Explicit command-line
+values override configured values, including an explicit built-in default.
+
+Use the adapter's advertised model, mode and authentication-method identifiers.
+`require_auth_status = true` requires a reported authentication route before
+submission. `--require-auth-status=false` overrides that preference, while a
+conflicting reported route still stops the request. See [agent setup](agents.md).
+
+Codex `fast = true` or `false` chooses Fast mode; `--fast` and `--fast=false` override
+it. Omission uses the adapter's inherited setting. If Fast mode is unexpectedly
+cleared, pass the choice explicitly; see the upstream
+[inheritance issue](https://github.com/agentclientprotocol/codex-acp/issues/285).
+Fast mode is available only for Codex and follows the provider's account limits.
+
+An explicit `--adapter` replaces both the configured executable and its argument
+list. Plain command names use `PATH`; relative adapter paths resolve beside their
+configuration file. Arguments are passed unchanged, so use absolute script paths
+when the adapter needs them. The adapter runs in the document's directory.
+
+Adapter paths allow up to 4,096 UTF-8 bytes. `adapter_args` requires an adapter and
+allows 128 arguments, 4,096 bytes each and 64 KiB total. Model IDs allow 1–512 bytes;
+mode and authentication-method IDs allow 1–256 bytes without control characters.
+Timeout accepts 1–86,400 seconds.
+
+Edited defaults apply on the next CLI/TUI launch. To continue a saved conversation,
+use its original agent, adapter command and authentication route. Credentials stay
+in the external runtime's authentication store.
+
+## Project agent profiles
+
+Project settings accept the same agent tables. Precedence is **command-line >
+project > user > built-in**. Replacing an adapter replaces its complete argument
+list; inherited paths keep the directory of the file that defined them.
+
+Review the project settings and approve their fingerprint before using them:
+
+```sh
+lazypencil config show design.pen --executables
+lazypencil config trust design.pen --executables --expected-fingerprint SHA256_FROM_SHOW
+```
+
+This approval is separate from design-instruction trust. It covers the reviewed
+settings at that project root, including the executable path and arguments.
+Review the program and scripts at those paths as well: their contents are not
+included in the settings fingerprint.
+
+If the selected project settings need approval, sending returns
+`PROJECT_NOT_TRUSTED` and keeps the draft. You can inspect the design before
+authorizing them. After changing the agent table, review its new fingerprint and
+reopen the CLI/TUI. Font or design-data changes alone keep agent approval intact.
+
+`config untrust design.pen` revokes both agent and design-instruction approvals.
+Revocation takes effect on the next attempted turn. MCP tools cannot grant trust.
+
+## Project guides and styles
+
+Guides supply project conventions. Styles add tokens, instructions and an editable
+component example. For instance:
+
+```toml
+[design]
+styles = ["design/brand.json"]
+default_style = "project:brand"
+
+[[design.guides]]
+id = "brand"
+path = "design/brand.txt"
+version = "1.0.0"
+language = "en"
+summary = "Project typography and color roles"
+automatic = true
+```
+
+Guide files are UTF-8 text and can contain Markdown in any language. IDs allow
+1–64 ASCII letters, digits, `-`, `_` or `.` and appear as `project:ID`. Version
+defaults to `1.0.0`, language to `und`, summary to empty, and `automatic` to `true`.
+Automatic guides accompany new turns; set `automatic = false` for an on-demand guide.
+
+Paths resolve beside the configuration; a style's example resolves beside its JSON
+file. All resources and their symlink targets must stay inside the project root.
+
+For `design/brand.json`:
+
+```json
+{
+  "id": "brand",
+  "name": "Project brand",
+  "version": "1.0.0",
+  "language": "en",
+  "description": "A starting point for new project screens",
+  "use_cases": ["app-screen", "dashboard"],
+  "guidance": ["layout", "project:brand"],
+  "tokens": {"accent": "#134E4A", "spacing": [4, 8, 16, 24]},
+  "instructions": "Use the project color roles and reuse existing components.",
+  "example": "components.pen",
+  "required_fonts": [{"family": "Noto Sans JP", "source": "bundled"}]
+}
+```
+
+Required fields are `id`, `name`, `description`, `tokens`, `instructions` and
+`example`. `tokens` is an object. Optional arrays default to empty; `license` is
+optional and should describe the project's own terms. Guide references use a
+built-in ID or the full `project:ID`.
+
+The example is a separate `.pen` file using a supported version. For example,
+`design/components.pen` can contain:
+
+```json
+{
+  "version": "2.22",
+  "children": [
+    {"id": "button", "type": "frame", "reusable": true,
+     "name": "Project button", "width": 120, "height": 44,
+     "cornerRadius": 8, "fill": "#134E4A"}
+  ]
+}
+```
+
+`--style ID` overrides `default_style`. Applying a style provides guidance; the
+agent still edits the document through ordinary operations. Components can be
+imported from a style with `source: {"style_id":"project:brand","node_id":"button"}`.
+See [component imports](mcp.md#importing-components) for link/copy options.
+
+## Explicit design trust
+
+Review project-supplied instructions before making them available to an agent:
+
+```sh
+lazypencil config show design.pen
+# Review the listed guide, style, and example files.
+lazypencil config trust design.pen --expected-fingerprint HASH_FROM_SHOW
+lazypencil guidance --file design.pen
+lazypencil styles --file design.pen --use-case dashboard
+lazypencil style project:brand --file design.pen
+```
+
+`config show` lists resource paths, IDs, sizes and hashes. `config trust` approves
+the reviewed instructions for this project root and stores the grant in your user
+data directory. Changed guide/style instructions require a new review. Changes to
+example data, font settings or configuration comments update data revisions without
+revoking unchanged instruction approval.
+
+Your request takes precedence over project guidance. Built-in guides remain
+available without a project grant. Use `config untrust design.pen` to revoke
+approval. Revocation affects future reads and turns; prior conversation context
+and saved document edits remain.
+
+Design resources allow up to 32 guides of 64 KiB each, 256 KiB of automatic guide
+text, 16 style files of 256 KiB each, 2 MiB per example and 8 MiB in captured
+resources. Styles allow up to 32 use cases and 64 guidance/font/pack entries.
+
+Broken resources appear as `configuration.design.error`. Fix them before starting
+a new guided turn or importing a style. Ordinary inspection and rendering remain
+available when the document and its rendering inputs are valid.
+
+## Image attachment budgets
+
+Set reference-image limits in user settings:
+
+```toml
+[attachments]
+max_images = 8
+max_source_bytes = 20971520
+max_send_bytes = 20971520
+max_total_source_bytes = 52428800
+max_total_send_bytes = 52428800
+max_source_pixels = 33554432
+```
+
+The values shown are defaults. `max_images` accepts 1–64. Per-image byte limits
+accept up to 20 MiB; each aggregate total accepts up to 256 MiB. The source-pixel
+limit accepts up to 32 × 1024 × 1024 pixels and is measured before resizing.
+Provider limits also apply.
+
+Source bytes measure the original encoding; send bytes measure the normalized PNG.
+To reduce send size, use `--image-max-size WIDTHxHEIGHT`, `/attach PATH WIDTHxHEIGHT`,
+`/paste-image WIDTHxHEIGHT` or `/resize-image NUMBER WIDTHxHEIGHT`.
+See [image attachments](image-attachments.md) for resizing and clipboard controls.
+
+Limits apply when adding and sending images. Tightening a limit preserves existing
+images and drafts, but may block submission until you remove or resize the affected
+images. Projects cannot change these user limits.
+
+## Local conversation retention
+
+Set a policy in user settings, then explicitly review and apply it:
+
+```toml
+[conversations.retention]
+max_age_days = 90
+max_total_bytes = 1073741824
+keep_recent_per_document = 1
+```
+
+```sh
+lazypencil conversations prune --json
+lazypencil conversations prune --expected-revision REVIEWED_SHA256 --json
+lazypencil conversations cleanup --all --json
+```
+
+Omitted limits keep all conversations. The policy runs only when you confirm a
+prune operation. Age uses the most recent local file write, with the cutoff
+rounded to the current UTC day's start. The byte limit covers conversations in
+all document stores under the selected data directory, including images and logs;
+project assets, checkpoints, fonts and runtimes have separate storage.
+
+Review shows candidates, sizes and reasons for keeping protected conversations.
+The policy keeps the configured recent count per document, then selects eligible
+expired and oldest conversations. Active sessions, unsent drafts, pending images,
+queued or unconfirmed requests and incomplete continuity are protected. Setting
+`keep_recent_per_document = 0` clears the recent-count minimum while keeping these
+protections, so total usage may remain above the limit.
+
+If settings or conversation contents change after review, review again. A batch
+can commit some deletions before a later failure; completed deletions stay applied.
+Repeat `cleanup --all` for interrupted file removal. Maintenance can operate even
+when an original document has moved or disappeared. Each pass has a 30-second
+budget and limits of 10,000 records and 100,000 scanned entries.
 
 ## Document expansion budget
 
-Both user `config.toml` and project `lazypencil.toml` accept:
+For a component-heavy design, adjust the budget for expanding instances and
+resolving their properties:
 
 ```toml
 [runtime.document]
 expansion_mib = 256
 ```
 
-The default is 256 MiB; accepted values are whole MiB within 1..16,384. Explicit project values override explicit user values, and omitted fields inherit. `config show FILE` reports the effective value and its scope as `runtime_origins.document.expansion_mib`.
-
-This budget bounds allocation work when expanding component instances and resolving properties, including strings and map bookkeeping. All roots and script-generated outputs share the budget in a calculation. Preview and ordinary layout calculations use the same setting, including elements outside the viewport. It is not a bound on process RSS or the saved file size. Exceeding it returns `RESOURCE_LIMIT` with the effective `limit_bytes`; document metadata reports the effective `capabilities.document_expansion.allocation_budget_bytes`. Configuration changes invalidate retained calculations and apply on the next calculation. The separate 128 MiB project dependency limit and node-count limits are unchanged.
+The default is 256 MiB; accepted values are whole MiB from 1 to 16,384.
+A calculation shares this budget across roots and generated nodes, including
+content outside the viewport. `RESOURCE_LIMIT` reports `limit_bytes` when it is
+exhausted. This controls expansion work; file-size, dependency and total process
+memory limits are separate.
 
 ## JavaScript execution limits
-
-Both user and project files accept these data-only settings:
 
 ```toml
 [runtime.javascript]
@@ -144,26 +383,24 @@ max_evaluations = 128
 max_passes = 8
 ```
 
-| Field | Accepted range | Meaning |
+| Field | Accepted range | Purpose |
 | --- | --- | --- |
-| `timeout_ms` | 1..60,000 ms | One interpreter evaluation, including context setup, compilation and output normalization |
-| `heap_mib` | 4..512 MiB | QuickJS heap cap; separate from native-process or complete process-group RSS |
-| `idle_seconds` | 0..3,600 s | Reap an unused script worker after its last completed request; zero permits immediate reaping |
-| `layout_timeout_ms` | 1..300,000 ms | Budget for script-generated layout calculation, across passes and evaluations |
-| `max_evaluations` | 1..4,096 | Maximum actual script executions in one calculation |
-| `max_passes` | 1..64 | Maximum fixed-point layout passes |
+| `timeout_ms` | 1–60,000 ms | Time for one script evaluation |
+| `heap_mib` | 4–512 MiB | JavaScript heap limit |
+| `idle_seconds` | 0–3,600 s | Close an unused script worker after this interval |
+| `layout_timeout_ms` | 1–300,000 ms | Time for the complete script-driven layout calculation |
+| `max_evaluations` | 1–4,096 | Script executions allowed in a calculation |
+| `max_passes` | 1–64 | Layout passes allowed to converge on the result |
 
-The values shown are defaults. Each field follows **explicit project > explicit user > built-in**. An empty table inherits; an explicit built-in value overrides a different user preference, and `idle_seconds = 0` is an explicit value. `config show FILE` reports effective settings and the supplying scope in `runtime_origins`, using keys such as `javascript.timeout_ms`. Values outside the ranges, wrong types and unknown fields are configuration errors. Invalid lower-priority declarations are rejected even when another scope would override them.
-
-Each calculation applies its captured settings to the shared script runtime. Changes to either configuration file invalidate retained calculations through ordinary configuration dependencies, even when resulting geometry would match. Long-lived hosts apply the new policy on the next calculation; idle cleanup otherwise uses the last applied policy. Configuration inspection does not start workers. Numeric runtime policy does not select executables or grant project executable trust.
-
-The host sends a versioned policy envelope separately from script inputs and the worker validates it before execution. Script code cannot change its limits through `pencil.input`. The parent watchdog is the effective per-evaluation timeout plus 1,000 ms; an earlier absolute layout deadline also caps worker startup, I/O and execution. Interrupting or catching an execution timeout never makes that evaluation successful. Script-layout budgets are checked within native passes at node and glyph-batch boundaries, around shaping and before publishing a completed calculation. Cancellation takes precedence over an expired budget. Checks cannot preempt an individual synchronous native call; it finishes before the next checkpoint. Static calculations also use request cancellation, without starting a JS worker or applying the script-only layout budget. Document/font loading before script layout is outside this particular budget.
+The example shows defaults. Both user and project files accept these settings.
+A zero idle interval permits immediate worker cleanup. If a calculation hits a
+limit, simplify the script/design or increase the relevant value. Timeouts cover
+script evaluation and layout work; loading document and font inputs precedes them.
 
 ## Browser, shader and raster-cache limits
 
-User configuration may additionally select `runtime.browser.profile = "work"` after explicit profile creation and login. Project configuration can set it to `""` to disable it, but cannot select a profile. The private name is omitted from serialized settings and acquisition limits. See [dedicated authentication profiles](runtimes.md#dedicated-authentication-profiles) for login/storage behavior and shared TUI/MCP profile ownership.
-
-Both scopes accept the following defaults, with the same per-field inheritance, validation, `runtime_origins`, and captured dependency rules as JavaScript:
+Install [Chromium](runtimes.md) before using browser nodes or GLSL. Configure its
+capture behavior and reusable image cache with these defaults:
 
 ```toml
 [runtime.browser]
@@ -185,223 +422,86 @@ cache_mib = 64
 cache_entries = 32
 ```
 
-| Field | Accepted range | Meaning |
+| Field | Accepted range | Purpose |
 | --- | --- | --- |
-| Browser/shader `timeout_ms` | 1..300,000 ms | One acquisition, including launch when needed, tab setup, navigation/evaluation and capture |
-| Browser/shader `launch_timeout_ms` | 1..60,000 ms | An additional cap on starting and connecting to that purpose's process |
-| Browser/shader `idle_seconds` | 0..3,600 s | Independent idle expiry after completed work; zero permits immediate cleanup |
-| Browser `wait_until` | `load`, `network_idle` | Readiness before fonts, image decoding and two animation frames; default `load` |
-| Browser `ready_selector` | Empty or CSS selector of at most 512 Unicode characters, without NUL | Optional first matching element in the main document; empty disables this condition |
-| Browser `selector_state` | `attached`, `visible` | Require existence or visibility; default `visible`, used only with a nonempty selector |
-| Browser `additional_wait_ms` | 0..60,000 ms | Extra host-timed wait after load/selector readiness and before final font/image preparation; default zero |
-| Browser `animation_policy` | `running`, `paused` | Native document animation playback at capture; default `running` |
-| Browser `network_policy` | `online`, `offline` | HTTP(S)/WebSocket request policy; default `online`; offline implementation targets macOS/Linux |
-| Dynamic `render_timeout_ms` | 1..300,000 ms | Shared rendering budget across acquisitions and checked native stages |
-| Dynamic `cache_mib` | 0..256 MiB | Maximum total retained encoded raster and expanded shader-source bytes; zero disables reuse |
-| Dynamic `cache_entries` | 0..256 | Maximum total raster and expanded shader-source entries; zero disables reuse |
+| Browser/shader `timeout_ms` | 1–300,000 ms | Time for one capture, including launch and navigation |
+| Browser/shader `launch_timeout_ms` | 1–60,000 ms | Additional cap on starting the browser process |
+| Browser/shader `idle_seconds` | 0–3,600 s | Close an unused process after this interval |
+| Browser `wait_until` | `load`, `network_idle` | Page readiness condition |
+| Browser `ready_selector` | Empty or a CSS selector of up to 512 Unicode characters, without NUL | Optional element to wait for in the main document |
+| Browser `selector_state` | `attached`, `visible` | Require the element to exist or be visible |
+| Browser `additional_wait_ms` | 0–60,000 ms | Extra wait after readiness; default 0 |
+| Browser `animation_policy` | `running`, `paused` | Native animation playback at capture; default `running` |
+| Browser `network_policy` | `online`, `offline` | Network policy; default `online` |
+| Browser `image_origins` | Up to 64 exact origins, 4,096 bytes combined | Allowlist for HTTP image acquisition |
+| Dynamic `render_timeout_ms` | 1–300,000 ms | Total rendering time across captures and native stages |
+| Dynamic `cache_mib` | 0–256 MiB | Reusable encoded images and expanded shader-source data |
+| Dynamic `cache_entries` | 0–256 | Maximum cache entries |
 
-The common render entry applies the captured policy before beginning work, so CLI, MCP and TUI use the same limits. Launch uses the earliest of its own deadline, the operation deadline and the remaining shared render budget. Deadlines are not restarted between CDP commands. The final checks reject expired/cancelled acquisitions and check the shared budget again after native PNG encoding. Native work, runtime-file verification and OS transport calls are cooperative; synchronous work cannot be preempted, and bounded context/process cleanup may finish after a deadline. Document/font loading and script-layout calculation precede this rendering budget.
+Setting a cache limit to zero disables reuse. Changed runtime settings clear
+previous captures before reuse. Decoded images, native raster buffers and browser
+process memory are separate from this encoded-data cache.
 
-Changing browser, shader or dynamic policy clears the shared runtime cache before reuse; unchanged policy preserves it. Encoded PNGs and expanded shader declaration sources share its byte/entry limits and LRU. An entry larger than the configured capacity is used without retention. Reaching the count/byte bound evicts the least recently used entries until the new entry fits. Hits update eviction order without extending process idle lifetime. Repeatedly used page acquisitions can survive shader frame churn; a disabled or insufficient cache still requires recapture. These limits bound retained encoded PNGs and expanded shader-source text, not active Skia surfaces, decoded image memory, or complete process-group RSS. Acquisitions include their effective purpose and dynamic `limits` in metadata. Expiring a process alone preserves cached pixels and declaration sources; cached reads do not extend its last execution time. Shader declaration acquisition, typed input preparation and drawing share one purpose deadline.
+### Wait for page content
 
-`wait_until = "network_idle"` additionally waits for Chromium's `networkIdle` lifecycle event for the current main-frame loader, while still requiring document load. Lifecycle notifications from the previous document, another tab or a child frame cannot satisfy it. Fonts, decoded images and two animation frames remain required afterward. This follows Chromium's lifecycle readiness; it is not a guarantee that application state, future requests, animations, workers or every cross-origin frame have settled. Long-lived or repeated requests can exhaust the existing acquisition/render deadline; the runtime returns an error and disposes the context and process instead of capturing early. No additional deadline is started. The chosen policy appears in acquisition metadata and inherits independently from user/project settings.
-
-For application-specific readiness, set `ready_selector = "#app[data-state='ready']"`. It is queried after load/network readiness and before fonts, image decoding and final animation frames, using the same deadline. `attached` accepts the first matching element even when hidden. `visible` additionally requires a positive-area client rectangle and Chromium's `checkVisibility` with opacity, CSS visibility and skipped-content checks enabled. Hidden ancestors, opacity zero, skipped content and zero-size boxes do not satisfy it. This is a CSS/layout condition, not a test for occlusion or viewport intersection. It does not enter iframes or shadow roots. Selector text is passed as a serialized string, never as JavaScript source. Invalid syntax returns `PAGE_LOAD_FAILED`; an unsatisfied condition times out and disposes the acquisition. See the [CSSOM visibility definition](https://drafts.csswg.org/cssom-view/#dom-element-checkvisibility).
-
-The setting applies to every browser acquisition using that captured configuration. Each field inherits independently; an explicit `ready_selector = ""` clears an inherited selector. The requested zoom and scroll are applied before visibility checks. Scroll is repeated during polling as content appears, with `behavior: instant`, so page CSS smooth scrolling cannot leave an intermediate capture. Metadata records the actual scroll offsets, selector and state; the existing runtime limits and dependency/cache invalidation rules also apply to these fields.
-
-Set `additional_wait_ms = 250` when a page needs an extra interval after readiness. The host measures this interval, so replacing page timers cannot shorten it. Final font readiness, decoding of the images present at that point, scroll and two animation frames follow the wait. This does not predict future page changes. The wait shares the existing acquisition/render deadline and cancellation; it never adds another deadline, and a wait longer than the remaining budget times out. An explicit zero overrides an inherited wait. Metadata records the configured value, and policy changes invalidate prior acquisitions. Cache hits reuse the completed acquisition without waiting again.
-
-Set `animation_policy = "paused"` to pause Chromium's native document animations after load/selector readiness and the additional wait, before final font/image preparation and capture. This uses the document timeline playback rate for CSS animations, CSS transitions and Web Animations; page JavaScript timers, requestAnimationFrame, video, animated image decoding and cross-process subframes are not a universal frozen clock. It pauses the acquired state rather than seeking a fixed timestamp. An explicit `running` overrides an inherited pause. Captured settings, origins, acquisition metadata and cache invalidation include this policy. Changing policy disposes retained contexts under the existing configuration-reload rules; refreshing an unchanged paused context retains its state. The default makes no Animation-domain calls.
-
-For HTTP images, `image_origins = ["https://assets.example.com"]` restricts each request and redirect to exact scheme/host/port origins (at most 64 origins and 4,096 combined bytes). Omission inherits; `[]` denies all HTTP images. Project lists intersect user lists and cannot widen them. This setting does not restrict Chromium page requests.
-
-Set `network_policy = "offline"` to reject HTTP(S), `ws:` and `wss:` requests in isolated page contexts, including localhost and worker/child-frame requests. Declared captured local resources, data URLs and about:blank keep their existing file boundaries. Remote main-document navigation fails. Metadata and effective limits record the policy. Other fields inherit independently. A user `offline` policy is a hard denial: project `online` cannot relax it, while project `offline` may restrict user `online`. The effective policy also covers explicitly requested HTTP image acquisition. Ordinary inspection never requests HTTP images. Policy changes invalidate acquisitions; changing network mode restarts the page process for fresh and retained acquisitions. Unchanged cached acquisitions and page refresh remain reusable. The default introduces no listener or worker. The implementation targets macOS/Linux; further Windows support is deferred. The implemented page-process policy restricts WebRTC to proxy routes at process launch, using the corresponding Chrome and headless-shell switches. Its owned fixtures exercise STUN, TURN/TCP and page/worker WebTransport routing with positive controls, policy changes, refresh and online recovery.
-
-Configuration inspection starts no process and grants no execution or runtime installation.
-Dedicated profiles can share one owned page browser between retained previews and bound
-MCP clients. The encoded cache limit is separate from decoded/native allocations and
-complete process-tree RSS; network policy is not a host-wide egress sandbox.
-
-Execution records contain the **configured** `limits`, included in calculation identity. Code/input/output/node/depth and stack guards remain independent: 1 MiB source, 4 MiB protocol frames, 1,000 generated nodes per output, 64 output levels and a 512 KiB JS stack. Browser/shader deadlines and idle/cache limits are implemented; independent raster guards, process accounting, project-asset collection and final resource acceptance have their own documented scope.
-
-Choose focused checks for the changed behavior; warm local checks and hosted native verification are described in [development](development.md).
-
-## User agent profiles
-
-On macOS, owned bound MCP servers default to `MallocSpaceEfficient=1` and
-`MallocMediumZone=0`, unless the launching user overrides each value. They are supplied
-through ACP's MCP environment before the child starts; the parent/adapter environment
-is unchanged. Descendants may inherit them. This policy does not apply to unrelated
-external MCP clients or promise a universal process-memory ceiling.
-
-Add preferences to the selected **user** `config.toml`:
+The default `load` waits for document load, fonts, decoded images and two animation
+frames. For a page that fills in content later, select `network_idle` or set a
+readiness marker:
 
 ```toml
-[agents]
-default = "codex"
-
-[agents.codex]
-adapter = "codex-acp"
-adapter_args = []
-auth = "subscription"
-require_auth_status = true
-mode = "read-only"
-timeout = 600
-document_tools = "allow"
-# model = "an-adapter-advertised-model"
-# fast = true # Omit to inherit Codex speed; false disables Fast mode.
-# auth_method = "an-adapter-advertised-authentication-method"
-
-[agents.claude]
-adapter = "claude-agent-acp"
-auth = "subscription"
-require_auth_status = true
-mode = "default"
+[runtime.browser]
+ready_selector = "#app[data-state='ready']"
+selector_state = "visible"
+additional_wait_ms = 250
 ```
 
-`prompt` and `tui` resolve these preferences once at invocation, before creating a document or conversation. Without project overrides, the selected agent is explicit `--agent`, then user `agents.default`, then built-in `codex`. Only that agent's profile supplies defaults; fields never leak from the other profile. Each remaining field follows explicit CLI value, selected user profile value, then built-in behavior. An explicitly supplied value equal to the built-in default still overrides the profile, including `--timeout 600`, `--auth subscription`, and `--document-tools allow`.
+`attached` accepts an existing element even when hidden. `visible` also checks its
+size and CSS visibility. The selector applies to the main document, outside
+iframes and shadow roots. Use an application-owned marker when network idleness
+alone cannot tell whether the page is ready.
 
-`--require-auth-status` enables strict authentication reporting; `--require-auth-status=false` explicitly overrides a true user default. Disabling this flag does not disable an adapter's advertised authentication-status requirements or permit a conflicting reported route. Authentication, model/mode negotiation, document-tool permissions, and timeout cancellation retain the same behavior as their CLI options. Credentials remain in the external agent's stores. A profile is a set of preferences, not evidence that an adapter is installed or that a model/API account can execute a request.
+All waits share the capture/render timeout. `additional_wait_ms` adds a wait after
+the readiness conditions, within that timeout. An empty selector clears an
+inherited selector. Zoom and scroll apply before visibility checks.
 
-Codex Fast mode uses the same CLI > project profile > user profile precedence. Set `[agents.codex] fast = true` or `false`; `--fast` / `--fast=true` and `--fast=false` override it in both `prompt` and `tui`. With no override, lazypencil leaves the adapter's speed setting untouched and delegates inheritance of Codex defaults or saved native settings to the adapter. An explicit override is applied through the advertised ACP `fast-mode` selector after model selection, on both new and loaded sessions. Unsupported or unconfirmed overrides fail before prompting. Fast mode is Codex-only; `[agents.claude] fast` and `--agent claude --fast` are rejected. Codex configuration files are never modified. Availability and higher usage depend on the model/account; see [OpenAI speed documentation](https://learn.chatgpt.com/docs/agent-configuration/speed).
+`animation_policy = "paused"` pauses CSS animations, transitions and Web Animations
+at the captured state. JavaScript timers, video and animated images can continue;
+use application-specific readiness for those.
 
-Known upstream limitation: Codex ACP 2.2.2 initializes Fast mode only for `fast`, while Codex returns the canonical tier `priority`. The first prompt can therefore clear an inherited Fast setting. The same comparison remains in the inspected 2.5.0 package. Track [issue #285](https://github.com/agentclientprotocol/codex-acp/issues/285), [PR #327](https://github.com/agentclientprotocol/codex-acp/pull/327), and [PR #673](https://github.com/agentclientprotocol/codex-acp/pull/673). Until the adapter fixes this, explicitly set `fast = true` or pass `--fast` to enable Fast mode reliably through ACP. lazypencil does not patch or install the external adapter.
+### Network and authenticated pages
 
-An explicit `--adapter` replaces both the configured executable and its entire `adapter_args` vector. Other selected-profile fields still apply unless individually overridden. No shell parses the command or arguments, and no adapter is installed automatically. A plain command name searches `PATH`; a relative path such as `./bin/codex-acp` resolves against the physical user configuration directory, including when `config.toml` itself is a symlink. Absolute paths are accepted. The process still runs in the document's directory. Relative **argument strings** are passed unchanged and therefore follow the adapter's own working-directory rules; use absolute script paths when necessary. Home/environment expansion is not performed.
+`network_policy = "offline"` blocks HTTP(S) and WebSocket requests during browser
+capture, including localhost, workers and child frames. It also blocks explicit
+HTTP image acquisition. A project may tighten a user's policy to offline but
+cannot relax a user-selected offline policy.
 
-`adapter_args` requires a configured adapter and is bounded to 128 arguments, 4,096 UTF-8 bytes each, and 64 KiB total. Adapter commands/paths are bounded to 4,096 bytes. Model identifiers use 1..512 bytes; mode/authentication-method identifiers use 1..256 bytes without control characters. Timeout uses 1..86,400 seconds. Both profiles are structurally validated even when one is unselected; unused adapter files are not opened. Inspecting a profile, font inventory, or document never launches its adapter.
+`image_origins = ["https://assets.example.com"]` restricts HTTP image requests and
+redirects to those exact scheme/host/port origins. `[]` blocks them all; omission
+inherits. Project lists intersect user lists. This setting applies to image
+acquisition; browser page requests use `network_policy`.
 
-Changing user preferences affects the next CLI/TUI invocation; an existing connection keeps its resolved settings. Session reload still verifies the agent, requested authentication route, and command/argument fingerprint. It refuses a changed adapter rather than silently switching a saved conversation. Programmatic `Conversation::open` callers supply complete `PromptArgs`; they do not implicitly reapply CLI preferences.
-
-## Project agent profiles
-
-Project `lazypencil.toml` accepts the same `[agents]`, `[agents.codex]` and `[agents.claude]` fields. Each field follows **explicit CLI > project profile > user profile > built-in**. The selected default agent follows the same order, and only that agent's merged profile applies. Replacing an adapter replaces its entire argument vector, including an empty vector. Inherited adapters keep the physical base directory of their supplying configuration; project adapters use the physical project configuration directory. Argument strings remain unchanged. Both scopes retain the validation and authentication rules above.
-
-Review and authorize the project table explicitly:
-
-```sh
-lazypencil config show design.pen --executables
-lazypencil config trust design.pen --executables --expected-fingerprint SHA256_FROM_SHOW
-```
-
-`show --executables` reads only project configuration metadata and agent settings, without font discovery or loading design resources. It reports the physical source, selected project root, settings and `agent_execution` fingerprint/trust status. Ordinary `config show FILE` also exposes this metadata. Reads never grant permission or launch adapters. The execution grant uses its own `agent_execution` scope and storage; `config trust FILE` without this flag remains a design-instruction grant. MCP cannot create either grant. Agents must not authorize their own project settings.
-
-A grant is required when project settings change the effective invocation after CLI overrides. An unused profile or a project value completely overridden by CLI does not require a grant. TUI inspection, preview and draft recovery remain available before authorization; attempting to send retains the draft and returns `PROJECT_NOT_TRUSTED` before starting the adapter. An unchanged selection can be granted while the TUI is open. Each turn and adapter launch recheck the selected root, table fingerprint and current grant. Revocation stops reuse of an existing connection on the next attempted turn. Changing the agent table requires reviewing and granting the new table and reopening the CLI/TUI; a grant for new settings cannot authorize an old captured selection. Changing fonts or design data alone does not invalidate the agent-table grant.
-
-`config untrust FILE` revokes both local grant purposes, including when the configuration has been removed or is malformed. Grants are bound to the canonical project root and physical configuration path as well as the table, so sharing a configuration symlink does not share authorization between project roots. Empty agent tables inherit without requiring a grant. Grant files reject mismatched scopes, malformed content and symlinks.
-
-This authorization covers the reviewed settings, not executable bytes or transitive code. Replacing a binary or script at an approved path is outside the fingerprint. User profiles remain local preferences; neither scope installs adapters, alters external agent configuration, proves a billing route, or adds executable operations to MCP.
-
-## Project guides and styles
-
-Add explicitly named guides and JSON style files:
-
-```toml
-[design]
-styles = ["design/brand.json"]
-default_style = "project:brand"
-
-[[design.guides]]
-id = "brand"
-path = "design/brand.txt"
-version = "1.0.0"
-language = "en"
-summary = "Project typography and color roles"
-automatic = true
-```
-
-Guide files contain UTF-8 text, including Markdown when desired. IDs contain 1..64 ASCII letters, digits, `-`, `_`, or `.`; tools expose them as `project:ID`, so a project cannot shadow a built-in ID. Version defaults to `1.0.0`, language to `und`, summary to empty, and `automatic` to true. Project guides can use any language. An automatic guide accompanies the entry workflow; a guide with `automatic = false` is listed and fetched by ID when needed. User instructions take precedence over project rules, followed by the selected style and standard guidance. Capability checks, validation, and save rules still apply.
-
-Style paths resolve against the physical configuration directory. A style's example resolves against that JSON file's physical directory. All guide/style/example targets, including symlink targets, must remain inside the selected project root. They are regular local files, never URLs, commands, or automatic downloads.
-
-For `design/brand.json`:
-
-```json
-{
-  "id": "brand",
-  "name": "Project brand",
-  "version": "1.0.0",
-  "language": "en",
-  "description": "A starting point for new project screens",
-  "use_cases": ["app-screen", "dashboard"],
-  "guidance": ["layout", "project:brand"],
-  "tokens": {"accent": "#134E4A", "spacing": [4, 8, 16, 24]},
-  "instructions": "Use the project color roles and reuse existing components.",
-  "example": "components.pen",
-  "required_fonts": [{"family": "Noto Sans JP", "source": "bundled"}]
-}
-```
-
-`id`, `name`, `description`, `tokens` (an object), `instructions`, and `example` are required. Version/language use the guide defaults. `use_cases`, `guidance`, `required_fonts`, and `required_packs` default to empty arrays. `license` is optional; an omitted project license remains unknown, and is never assigned the application's MIT license. Guide references use built-in IDs or complete `project:ID` names. Unknown fields and invalid metadata are rejected.
-
-The example is a separate `.pen` file with an explicitly supported schema (2.19, 2.21, or 2.22). Its version is retained for project-owned styles. For example, `design/components.pen` can contain:
-
-```json
-{
-  "version": "2.21",
-  "children": [
-    {"id": "button", "type": "frame", "reusable": true,
-     "name": "Project button", "width": 120, "height": 44,
-     "cornerRadius": 8, "fill": "#134E4A"}
-  ]
-}
-```
-
-Selection does not change a document. `prompt` and TUI use `default_style` when no explicit `--style` is supplied. Existing conventions still take priority when editing an existing design. Startup includes tokens, instructions, component IDs and the example hash; the complete example is retrieved through MCP when needed. Component imports use normal `source: {"style_id":"project:brand","node_id":"button"}` operations. Both link and copy retain the example's source directory for assets and references. Linked imports use relative project URIs and preserve a requested example alias; copied components use normal dependency closure and immutable asset publication. Independent script-copy contexts are implemented for the cases recorded in [dynamic content](dynamic-content.md); missing provenance and out-of-root input diagnostics remain explicit errors.
-
-## Explicit design trust
-
-```sh
-lazypencil config show design.pen
-# Review the listed guide, style, and example files.
-lazypencil config trust design.pen --expected-fingerprint HASH_FROM_SHOW
-lazypencil guidance --file design.pen
-lazypencil guidance project:brand --file design.pen
-lazypencil styles --file design.pen --use-case dashboard
-lazypencil style project:brand --file design.pen
-lazypencil config untrust design.pen
-```
-
-`config show` exposes IDs, paths, sizes and hashes, without loading guide bodies into AI instructions. `config trust` is an explicit local user action; the optional expected fingerprint rejects changes since review. Grants are stored in the selected user data directory, outside document contents. The review/catalogue `fingerprint` includes the canonical project root, configuration source, resource bytes, and requested-to-canonical path bindings. The separate `trust_fingerprint` pins instruction scope: parsed design settings, the physical configuration source, guide/style bytes, and their path bindings. Changes to these instructions require a new grant. Example libraries remain reference data: editing an example or retargeting its alias changes catalogue/revision hashes without revoking unchanged instructions. Font-only settings and configuration comments also leave instruction trust intact. Grants do not transfer to another project root. Documents under the same selected project root share its grant.
-
-MCP does not grant trust. Untrusted configured instructions cause `PROJECT_NOT_TRUSTED`, and `prompt` refuses to start an adapter turn with them. Agents must not grant trust on the user's behalf. Built-in CLI guides remain available without `--file`. A project with no design instructions needs no grant. Revocation applies to subsequent reads/turns; it does not undo saved edits or erase an agent's earlier context. `config untrust` revokes applicable ancestor grants through the Git boundary, even with broken design resources or a removed nested configuration.
-
-The entry workflow keeps its English body and returns automatic project guides separately, with each guide's own language, version, and hash. CLI/TUI send the same content through their shared conversation host. Turn records retain selected guide/style identities and hashes. Reference-only guides are fetched on demand. MCP clients receive the same catalogue and respect the external client's own instruction hierarchy.
-
-Design resources are bounded to 32 guides (64 KiB each), 256 KiB of automatic guide text, 16 style files (256 KiB each), 2 MiB per example, and 8 MiB of unique captured resource bytes. Styles have bounded metadata, at most 32 use cases and 64 guidance/font/pack entries. Tool responses retain the shared 4 MiB limit. The catalogue currently captures/parses local resources eagerly; startup omits complete example documents from the agent prompt.
-
-Missing, malformed, or out-of-root design resources appear under `configuration.design.error` with `available: false`. AI catalogue reads, style imports, and new prompt turns reject that error. Ordinary document reads and rendering can continue using their existing data and valid font settings; a broken guide does not become an empty set of approved instructions. Invalid TOML or font settings still fail their normal checks.
-
-## Font precedence and fallback
-
-Explicit CLI `--font` files come first, followed by project `files`, project search results, inherited user `files`, and inherited user search results. Only the selected source of each field participates: a project `files` array replaces the user array, while a project `search_paths` array may coexist with inherited user `files` and takes precedence over them. This ordering chooses among competing supplied faces of the same family/style. The bundled Noto Sans JP follows supplied same-named files and takes precedence over the system installation. Named system families are matched only when requested or explicitly included in a fallback chain.
-
-`default_family` applies to text nodes without an explicit `fontFamily`. It does not rewrite stored nodes or override existing explicit font choices. `locale` is passed to SkParagraph and recorded in text metrics. Use a hyphenated language tag such as `ja`, `en-US`, or `zh-Hant`.
-
-When neither scope defines `fallbacks`, the default glyph chain is requested family, Noto Sans JP, then other supplied families in file/collection order. An explicit array replaces the fallback portion after the requested family; `fallbacks = []` disables it. A missing requested family still fails. `fonts list --file FILE`, MCP `list_fonts`, and `get_document` with `include_configuration: true` expose the effective settings. Without `--file`, `fonts list` uses user settings only. CLI `--font` alone adds files; it does not replace the configured fallback policy.
-
-Search directories are traversed recursively in filename order, with hidden entries skipped. Explicit root-directory symlinks and file symlinks are resolved; nested directory symlinks are not followed. Repeated canonical files are deduplicated while preserving first occurrence. Discovery and hashing inspect configured inputs; family data is loaded on demand as described in [fonts](fonts.md).
-
-Current configuration limits are 256 KiB per file, 256 explicit/effective font files or fallback families, 32 search roots, 16 nested directory levels, and 4,096 entries / 256 candidate files per search root. File/data/face limits also apply; see [font behavior](fonts.md). Both files are parsed and structurally validated, even if a project overrides a user field. Overridden user file/search lists are not opened. These bounds are fixed; family-level loading is deferred, while discovery and hashing still inspect selected inputs.
+For authenticated pages, create and log in to a [dedicated profile](runtimes.md#dedicated-authentication-profiles),
+then set `runtime.browser.profile = "work"` in user settings. A project can disable
+it with `profile = ""`, but cannot select a different named profile.
 
 ## Revisions and concurrent changes
 
-The optional top-level project `font_lock = "fonts.lock.json"` selects a [font reproducibility baseline](fonts.md#reproducibility-lockfile), relative to the physical project configuration. It is not a `[fonts]` field or a user setting. The lock's bytes or absence, path bindings and publication lock participate in document dependency checks. `config show` reports its path, presence and hash without interpreting the baseline as executable code or silently updating it. CLI/MCP/TUI font loading enforces its contents; explicit `fonts lock FILE` acquires or updates it, and changed existing contents require their current hash.
+Settings, fonts, design resources and an optional font lock contribute to the
+document's dependency revision. After any of these change, recalculate before
+editing from old measurements. The TUI refreshes its layout while preserving your
+draft and attachments; MCP returns a conflict for a stale snapshot.
 
-Both user/project configuration bytes, effective font bytes, and available design resource bytes become captured project dependencies. They participate in `dependency_revision`, retained calculations, and edit/restore preconditions. Settings are parsed from the exact bytes captured in that snapshot. A comment-only configuration edit therefore changes the dependency revision too. Design trust separately pins its instruction resources; example/font data changes and configuration comments still invalidate affected data snapshots, without granting or revoking instruction trust.
+This includes configuration comments, search-directory contents and changes to
+which nearby configuration is selected. `config show` reports effective values
+and their origins, including `font_origins` and `runtime_origins`.
 
-Validation checks discovery bindings and directory membership, as well as file contents. Adding a nearer configuration, removing/adding a font in a search directory, or retargeting configuration/font/directory symlinks invalidates the old snapshot. The TUI checks these dependencies using its existing update path, reloads the font/layout state, and retains the user's draft and attachments. A retained MCP snapshot rejects changed settings rather than returning an image from mixed revisions.
-
-Document saves hold shared locks for project lookup candidates and the selected user configuration, including currently absent files. `config init` / `config init --user` take the matching exclusive lock, so cooperating configuration creation waits until the save releases it. Its lock wait can be cancelled before publication. Ordinary CLI lock waits report once on stderr; MCP and TUI do not print those messages into their protocol or terminal screen. External writers remain subject to the design's existing limit on fully simultaneous non-cooperating writes.
-
-A retry of an already committed edit returns its saved result even if configuration later becomes invalid. A new edit must validate current settings and dependency revisions. Configuration changes themselves are not restored by document checkpoints and are not silently repaired by document editing tools.
+A retry of an already committed request returns its saved result. New edits use
+the current settings. Document checkpoints restore document edits; configuration
+files and font inputs must be managed separately, for example in Git.
 
 ## Development checks
 
-Settings tests exercise discovery, overlays, trust, source-safe diagnostics, revisions,
-CLI/MCP reads, and TUI changes using deterministic local fixtures. Use
-`cargo xtask test --test config --test user_config --test project_guidance --test user_agent_config`
-with an appropriate filter for the changed behavior; see [development](development.md).
-The task isolates user settings and rejects zero executed tests. Direct Cargo tests
-should use an empty temporary `LAZYPENCIL_CONFIG_DIR` when a fixture needs defaults.
+For changes to configuration handling, use focused tests for the affected scope:
+`cargo xtask test --test config --test user_config --test project_guidance --test user_agent_config`.
+See [development](development.md#focused-development-checks) for filters and
+isolated settings.

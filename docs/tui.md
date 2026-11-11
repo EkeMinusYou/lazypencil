@@ -1,190 +1,132 @@
-# Terminal frontend
+# Terminal workspace
+
+Create and refine a design while viewing its node tree, preview and AI conversation
+in one terminal. For installation and agent setup, start with the
+[quick start](../README.md#quick-start).
 
 ## Opening a document
 
-`lazypencil` and `lazypencil tui` open a centered recursive file picker over the empty
-workspace. `lazypencil tui FILE` opens directly; a bare file argument is unsupported.
-Selecting a file immediately closes the picker and shows loading states in the
-Nodes and Preview panes before file access starts. The selected file is shown in
-the header. Preview uses the same loading status as the document workspace. The
-document opens in the same terminal screen, without returning to the shell.
-`--create` and `--session` require an explicit file. A terminal of at least 50 columns
-by 16 rows is required. `--json` and noninteractive input are rejected before opening
-or creating a document.
+```sh
+lazypencil
+lazypencil tui design.pen
+lazypencil tui new.pen --create --agent codex
+```
 
-The picker lists relative `.pen` paths without parsing them. Type to filter; `/` enters
-filtering explicitly, arrows or navigation-mode `j`/`k` select, Enter opens, Ctrl+L
-accepts a file or search directory, Esc clears input, and Ctrl+C exits. Relative paths
-use the displayed root. Discovery stops after 10,000 matches, 100,000 entries, or five
-seconds, preserving partial results and the stop reason. Directory symlinks are not
-followed; `.gitignore` does not hide documents. Change the root or enter a known file
-when a partial scan misses it.
+Running without a file opens a document picker. Type to filter, use arrows or
+`j`/`k` to select, and press Enter to open. Ctrl+L accepts a path or search directory;
+Esc clears the filter and Ctrl+C exits. If a large directory is only partially
+listed, narrow the search or enter the file's path directly.
 
-Adapter process/transport preparation runs in the background using user preferences
-and explicit CLI options. ACP initialization, document sessions, MCP setup and preview
-start after selection; a compatible process is reused. A preparation failure does not
-prevent file selection. Explicit-file startup prepares the selected document session.
-Drafts and preloaded images remain unsent until submission.
+Use a terminal at least 50 columns by 16 rows. `--create` needs an explicit filename
+and preserves existing files. For scripted output, use the CLI or MCP rather than
+`--json tui`.
 
-Opening a document automatically restores its last explicitly selected or submitted
-conversation, including its draft and images. Saved requests and responses appear in
-the Agent pane: recent text loads first on a cancellable background task, starting at
-the bottom without scrolling through the conversation. Native session reconnection does
-not replay old messages into the pane. Scrolling up to the loaded boundary reads older
-pages. Recorded turn timestamps determine display order; legacy turns without timestamps
-use local file creation times (modification times when creation times are unavailable),
-with a notice.
-Historical events are display-only, and queued or interrupted input stays paused for
-explicit review and submission.
-An explicitly supplied startup prompt replaces the restored draft and remains unsent.
+Opening a document restores its last selected/submitted conversation, including
+draft, images and saved history. Scroll up to load older messages. Reopening leaves
+queued or interrupted input paused for review; it does not submit a draft.
+A startup prompt replaces the restored draft and still waits for submission.
 
 Use `tui FILE --new-conversation`, `/new-conversation`, or **Conversation · New empty
-conversation…** to start fresh. Previous drafts, images and logs remain in their original
-conversation. `--new-conversation` conflicts with `--session` and `--restart-session`.
-An explicit `--session UUID` must open that exact compatible conversation or fail.
-With automatic selection, a busy, missing, damaged or incompatible previous conversation
-opens a new one and displays the reason. One conversation can be owned by only one TUI;
-separate conversations can still edit the same document under its existing revision checks.
+conversation…** for a fresh conversation. Previous drafts and logs stay in their
+original conversation. `--session UUID` selects a specific saved conversation and
+cannot be combined with `--new-conversation`.
 
-The resume selection is stored per document in the user data store, outside the `.pen`
-source. Explicit selection (including `--session`), explicit creation, and accepted
-message submissions update it atomically. A missing selection is initialized once on
-the first TUI open, so an initial unsent draft can also be restored. Automatic restoration,
-automatic fallback to an empty conversation, and closing a TUI do not update it.
-Concurrent explicit actions use the last committed selection; window closing order has
-no effect. Existing histories without a saved selection remain available through
-`/conversations`. CLI `prompt` keeps
-its explicit `--session` behavior.
+One frontend can use a conversation at a time. Automatic reopening starts a new
+one if the previous selection is unavailable and tells you why. Explicit
+`--session` reports an error when that conversation cannot be opened. See
+[agent conversations](agents.md#conversations-and-events) for CLI resume and recovery.
 
 ## Workspace and prompt
 
-Nodes and Preview occupy the left/center panels. Agent contains history, image
-attachments, explicit node references, queued follow-ups, and the multiline prompt.
-Existing documents open with Preview focused; new documents (`--create`) start at Prompt.
-Tab enters Agent at Prompt; Alt+Up/Down visits its nonempty sections. Collapsing Nodes
-or Agent gives its space to Preview without losing state.
+| Panel | Use it for |
+| --- | --- |
+| Nodes | Browse and search the document tree, inspect diagnostics, add references |
+| Preview | Pan, zoom, select and inspect the design |
+| Agent | Read responses, attach images, review references and enter requests |
 
-The header reports the connected adapter's actual model, effort, enabled Fast mode,
-account/authentication route and local session. Connecting/missing reports are labeled.
-Account identity stays in memory, outside transcripts. Agent activity is independent:
-Idle, Working, or Blocked for an explicit permission response. During a turn the prompt
-remains editable. With a compatible adapter, submitting text steers the running turn
-without waiting for completion or reattaching its images. The footer labels this action
-`steer`, and delivery is confirmed separately. Use `/queue <text>` to explicitly defer
-a follow-up until the current turn finishes. Unsupported adapters, input submitted
-before the active prompt is ready, and node references retain the queued behavior.
-Images remain editable in the next draft during work and while the queue is paused.
-Submitting an image-bearing draft captures text, references and images as one queued
-request; later attachments belong only to the next draft. Image-bearing follow-ups
-are queued rather than steered into the running turn, including image-only prompts.
-If the turn ends before it can accept the input, the input moves to the normal queue.
-Unconfirmed delivery pauses the queue for review; check saved logs before resuming
-because the agent may already have received the input. Failure/cancellation pauses the queue;
-`/resume-queue` resumes and `/clear-queue` discards it. Reopening never submits drafts.
-Reopening also retains any unconfirmed mid-turn input in the paused queue.
+Tab moves between visible panels. Existing documents start in Preview; new
+documents start at Prompt. Alt+Up/Down moves between Agent's history, attachments,
+references and prompt. Collapse Nodes or Agent to give Preview more room.
 
-Steering requires the adapter to advertise `_meta.steering.supported` and honor the
-host-owned idle fallback: codex-acp 2.3.0+ or claude-agent-acp 0.100.0+ are recognized.
-Older or unrecognized adapters continue to queue input. See the
-[ACP steering extension](https://github.com/agentclientprotocol/codex-acp/blob/main/docs/steering.md).
+The header shows the connected agent's model, effort, Fast mode and account.
+The activity indicator shows Idle, Working or Blocked while an approval is needed.
+Write the next draft while the agent works. Submitting text steers a compatible
+active turn; `/queue <text>` explicitly schedules a later turn. Images and node
+references use a queued turn.
 
-Nodes is a foldable, searchable tree. Selection controls viewing, not the next AI
-request's target. Use `a` to add a node or selected diagnostic to References; exact
-addresses and captured summaries are frozen on submission. Up to 16 references/64 KiB
-can accompany a prompt. Deleted or rebound targets fail preparation instead of using
-a similarly named node. The agent inspects current state before editing.
+If delivery is uncertain or a turn fails, the queue pauses. Check saved logs before
+using `/resume-queue`; `/clear-queue` discards queued requests. Draft edits and
+attachments added later belong to the next request.
 
-In Nodes, `d` opens Diagnostics for the selected subtree; `s` switches to all nodes.
-Enter reveals/fits its target, `f` fits while staying in Diagnostics, and Esc returns
-to Nodes. Branch badges include hidden descendants. These diagnostics are also
-available through MCP `validate_document`; attachment or selection is not required.
+### Refer to nodes and diagnostics
 
-## Initial terminal support
+Select a node in Nodes and press `a` to add it to the next prompt's References.
+Selecting or fitting a node only changes what you are viewing; add a reference
+when your request should target it. A prompt allows up to 16 references / 64 KiB.
 
-The released platform is macOS Apple Silicon, with the [README terminal baseline](../README.md#supported-environment).
-Kitty and Sixel are pixel transports; halfblocks and the palette's Open preview externally action provide fallbacks.
-Terminal versions, IMEs, multiplexers and SSH forwarding require separate checks.
-Linux/Windows backends are retained for future support, and Intel Mac is unsupported.
+Press `d` in Nodes to open Diagnostics. `s` switches between the selected subtree
+and the whole document. Enter reveals a diagnostic's node, `f` fits it while
+staying in Diagnostics, and Esc returns to Nodes.
+
+## Terminal image previews
+
+Use Kitty or WezTerm for full-resolution image previews. In another terminal,
+try a block-character preview:
+
+```sh
+lazypencil tui design.pen --image-protocol halfblocks
+```
+
+Choose **Preview · Open preview externally** from the command palette to open a
+PNG in another app. You can also export directly with
+`lazypencil render design.pen --output design.png`.
+
+If terminal images are missing or garbled, run `lazypencil doctor`. With tmux or
+SSH, try the same document directly in a local terminal to isolate forwarding
+issues. `--image-protocol kitty`, `sixel` or `halfblocks` selects the transport
+explicitly; otherwise it is detected automatically.
 
 ## Preview behavior
 
-Pan/zoom/fit affect the camera, not document coordinates. Static navigation can project
-a previous complete image while an exact frame renders; cached feedback is labeled.
-Only completed document frames can be exported. Slow rendering replaces pending work
-with the latest view rather than replaying every queued camera position.
+Use arrows or `hjkl` to pan, `+`/`-` to zoom, and `0` to fit the document. These
+controls move the camera without changing design elements. `f` fits the selected
+node or selected shapes.
 
-Root node titles stay compact in the overview and grow as you zoom in, up to a
-readable screen size based on terminal cell metrics. Further zooming keeps that
-size constant. Text is rasterized directly at each size. Long names are clipped
-with an ellipsis to their frame width rather than shrinking to fit or overlapping
-adjacent titles. These titles decorate the preview only and are not added to exports.
-Use `View · Toggle node names` in the command palette or
-`Node names` in View controls to show or hide them for the current session. Set
-`[tui.preview] show_node_names = false` in the user `config.toml` to start with names
-hidden (the default is `true`). Whole-document fitting reserves no title space while
-names are hidden.
+Root names appear above the design for orientation and are omitted from exported
+images. Toggle them with **View · Toggle node names** or set
+`[tui.preview] show_node_names = false` in user settings.
 
-The dark theme retains the semantic palette in `design.pen`; the file picker and
-dialogs share the active theme surfaces.
+The preview canvas follows the UI theme while the design keeps its own colors.
+CLI PNG exports preserve the document's transparency. **Open preview externally**
+uses the preview's canvas background.
 
-The canvas underneath the design uses the active UI theme background for Kitty, Sixel
-and halfblocks, matching the surrounding workspace panels. The canvas is opaque so
-Kitty-compatible terminals that render transparent image pixels as black still show
-the workspace background. Terminal background images and window opacity are not
-reproduced inside the preview. Auto uses the dark theme when the terminal reports
-neither a background color nor a valid `COLORFGBG` hint. Pan/zoom feedback uses the
-same background. Document fills and CLI PNG exports keep their original colors
-and transparency; **Preview · Open preview externally** opens the completed preview with its canvas background.
+For dynamic content, `p` starts or pauses playback at 5 fps by default; the palette's
+**Preview · Play…** accepts 1–10 fps. `Alt+[` / `Alt+]` steps shader time, and
+**Preview · Seek shader time…** accepts a specific time. Shader seeking does not
+rewind web pages or document scripts. `r` refreshes browser captures.
 
-Browser pages can retain per-node DOM state for `r` refresh and bounded playback.
-Preview `p` or **Preview · Play…** in the palette starts at 5 fps by default (1–10);
-**Preview · Pause** stops new frames. **Preview · Seek shader time…** and
-`Alt+[`/`Alt+]` seek shader time, not page JavaScript or document script execution. Runtime expiry, policy changes, failures and eviction can reset DOM.
-See [dynamic content](dynamic-content.md) for capture identity and limits.
-
-`--image-protocol kitty|sixel|halfblocks` selects a transport explicitly. Auto recognizes
-direct Kitty or uses a bounded 350 ms probe in other environments, preserving typed
-text and consuming terminal replies. Explicit protocols and direct Kitty also query
-the background within that time limit, without negotiating a different transport.
-Compression is used when supported. Windows high-resolution output currently needs an explicit override. tmux uses passthrough
-without changing pane settings. Direct Kitty-compatible transports use whole rectangular
-placements; nested tmux retains the Unicode-placeholder transport. `NO_COLOR` disables
-text colors while retaining image identity metadata.
-
-The native cursor follows the prompt's rendered display cells and scrolling so an IME
-can anchor its preedit/candidate windows. Prompt/search use the text-safe keyboard mode;
-Preview accepts press/repeat/release navigation without moving on release. If Ghostty
-has a `shift+enter=text:\n` override, remove it so Shift+Enter retains its modifier.
-Plain Enter submits by default; Alt+Enter inserts a newline.
+On very large or high-DPI viewports, preview resolution is reduced to keep
+navigation usable. PNG export has its own size limits; see [graphics](graphics.md).
 
 ## UI themes
 
-The default `auto` theme chooses light or dark UI colors from the terminal background
-queried at startup. If the query is unsupported, it uses `COLORFGBG` when available;
-otherwise it falls back to the dark theme so the UI and preview keep matching
-surfaces. The document picker uses the same theme as the workspace.
-
-Open `View · Theme…` in the command palette (Alt+P) and enter `auto`, `dark`,
-`light` or `monochrome`. Submitting empty theme arguments shows the current selection. These changes last
-for the current TUI session. For a persistent preference, set the user configuration:
+Choose **View · Theme…** in the command palette and enter `auto`, `dark`, `light`
+or `monochrome`. For a persistent preference:
 
 ```toml
 [tui]
 theme = "auto"
 ```
 
-`lazypencil tui FILE --theme light` overrides the user preference for one launch.
-Themes change UI accents, text, selections, conversation messages and input surfaces.
-The workspace background follows the selected UI theme; document colors are preserved.
-The preview canvas follows the same background, including in-session theme changes.
-`monochrome` adapts its gray surfaces to the terminal's light/dark background. Terminal
-theme changes are detected on the next launch.
+`auto` follows the terminal background, falling back to dark when it cannot be
+detected. `lazypencil tui FILE --theme light` selects a theme for one launch.
+Theme changes affect the workspace and preview background, while document colors
+stay the same. Restart after changing the terminal's own theme.
 
 ## Mouse and trackpad
 
-Pointer input is enabled by default in the document picker and workspace. Click a
-panel or Prompt to focus it. Scroll acts on the region under the pointer without
-moving keyboard focus, so typing can continue while browsing history or the canvas.
+Click a panel to focus it. Scrolling acts on the region under the pointer while
+you continue typing in the focused prompt.
 
 | Region / gesture | Action |
 | --- | --- |
@@ -201,94 +143,31 @@ moving keyboard focus, so typing can continue while browsing history or the canv
 | Agent history / diagnostic details / Help / saved text: scroll | Scroll the text; history resumes following output at the bottom |
 | File picker / command palette / checkpoints | Click a row to select, then Open / Run / Review to activate |
 
-The default workspace keeps its existing borders and labels. Enable
-`show_controls = true` under `[tui.mouse]` in user configuration to show Preview's `[-]`,
-`[+]`, `[Fit]`, `[Play]`/`[Pause]`, and `[Menu]` buttons, Nodes' `[Show]` and `[+Ref]`,
-and header panel toggles when space permits. With either setting, **View controls…**
-in the command palette (`Alt+p`) opens the view menu, including a temporary wheel
-pan/zoom switch. The menu leaves the uncovered portion of Preview visible.
-Selecting or fitting alone never adds an AI reference. There is no persistent
-hand-tool mode. Selection outlines and the drag marquee are view-only: they do
-not alter the document, exported pixels or prompt references. Nodes reveals the
-primary selected shape. In Preview, Fit selected fits the whole canvas selection;
-in Nodes, it fits and outlines the current tree row. Browsing tree rows leaves
-the canvas selection unchanged. Shape hit
-testing respects paint order, transforms, disabled ancestors and clipping.
-In Preview, `[` selects the first enabled direct child and `]` selects the parent.
-The camera centers and fits the selected element, and Nodes reveals it. A leaf or root with
-no target keeps its selection. With multiple selected shapes, navigation starts at
-the primary shape and replaces the selection with one target. Without a canvas
-selection, either key selects the first enabled node intersecting the displayed
-Preview area, in document order, independently of the current Nodes row. A partly
-visible node is eligible; disabled ancestors and ancestor clipping are respected.
-If no node is visible, the selection stays empty.
-Prompt clicks focus input; pointer caret positioning and element movement/resizing
-are not included yet.
+Selections and camera gestures change the view. Use an AI request to move, resize
+or edit elements. Fit selected uses the canvas selection in Preview or the current
+row in Nodes. `[` selects and fits a child; `]` selects and fits its parent.
 
-A drag belongs to its starting surface until the button is released, including
-when Space is released during the drag. Resize, focus loss, and changed modal or
-list geometry cancel pending clicks. Dialogs capture pointer input above the
-workspace. Permission choices require a separate Respond action; existing reviewed
-restoration and deletion rules remain in force. Exact Space hold/release reporting
-requires the terminal's enhanced keyboard protocol; wheel, middle/right drag, and
-buttons remain alternatives. A completed pointer gesture clears the Space state
-so a missing release cannot leave subsequent drags in pan mode.
+To show clickable preview buttons and panel toggles, enable `show_controls` in
+user settings. **View controls…** in the command palette also opens a menu with
+zoom, fit, playback and a temporary wheel pan/zoom switch.
 
-[Herdr App 0.1.12](https://github.com/herdrdev/herdr-app/blob/v0.1.12/src/terminal.rs)
-omits mouse modifiers when forwarding directional scrolling. Ctrl+scroll therefore
-arrives as ordinary scrolling there. The native macOS bridge described below
-preserves these modifiers for precise scrolling. Without that bridge, use the view
-menu's wheel pan/zoom switch or the keyboard zoom keys instead.
+### Native gestures on macOS
 
-For local input diagnosis, launch with
-`LAZYPENCIL_PROFILE_INPUT=owned-local-measurement` and redirect stderr to a file.
-The bounded trace records received pointer kinds, cell positions, modifiers, hit
-targets and image presentation timing; it does not record prompt text. Tracing is
-disabled by default.
+Choose **Enable native gestures…** in the command palette, allow the requested
+application in macOS Accessibility settings, then retry. Move the pointer inside
+Preview and pinch or scroll with two fingers. The bridge captures gestures inside
+the foreground canvas; other panes and apps retain their gestures. Move slightly
+inward if a gesture at the canvas edge is not picked up.
 
-While the TUI is active, diagnostics directed to the terminal (including native
-macOS warnings) are captured so they cannot scroll or overwrite the workspace.
-After the terminal is restored, up to the last 64 KiB are printed. Explicit stderr
-redirection such as `2>diagnostics.log` remains live and bypasses this capture.
+After access is granted, local sessions start native input automatically. Set
+`native_pinch = false` or `native_scroll = false` to disable either behavior.
+SSH sessions use terminal-forwarded input.
 
-For native macOS pinch and precise scrolling, open the command palette (`Alt+p`)
-and choose **Enable native gestures…**. Allow the requested application in macOS
-Accessibility settings and retry the action. Move the pointer onto Preview, then
-pinch or scroll with two fingers. The OS bridge reads magnification and precise
-scrolling events, retaining
-both scroll axes, small deltas, modifiers and the system's momentum. Scroll points
-are converted to display pixels using the display's backing scale. Ordinary mouse
-wheel detents continue through the terminal.
+If Ctrl+scroll is not forwarded by your terminal, use the view menu's wheel mode
+or keyboard zoom. Space-drag depends on key-release reporting; middle/right drag
+and the buttons are alternatives.
 
-The bridge claims input only inside the canvas calibrated from this terminal's
-pointer reports in the foreground application; other panes and applications retain
-their gestures. Calibration accounts for terminal-cell size and display scale, so
-small pointer movements between cell reports do not invalidate a pinch. Because a
-cell report does not include the exact offset inside that cell, the bridge uses a
-conservative inner canvas boundary; at an edge, move the pointer slightly inward
-if the terminal has not yet reported its new cell. Accepted native scroll packets
-are suppressed before the terminal can send a second, rounded copy. Claimed
-gestures do not also resize the terminal font. The bridge is independent of terminal
-brands and stops when the TUI exits. When access has already been granted, local
-sessions start it automatically. `native_pinch = false`
-disables native pinch, and `native_scroll = false` disables precise native scrolling.
-Foreground ownership is queried live; failed or timed-out focus queries leave input
-untouched. A terminal focus-loss report clears calibration and prevents late mouse
-reports from reclaiming input until focus returns and a new pointer report arrives.
-SSH sessions do not start the bridge. PTY regression tests set
-`LAZYPENCIL_DISABLE_NATIVE_INPUT=1` to isolate themselves from desktop input.
-
-Other platforms currently use terminal-forwarded gestures (for example pinch
-translated to Ctrl+wheel). The cell-based terminal protocol itself has no native
-pinch event, fractional scroll deltas, gesture phases, device identity, or Cmd
-mouse modifier. Without the native macOS bridge, trackpad scrolling uses the same
-directional events as a wheel. No additional application momentum or acceleration
-is added. Terminal font zoom and terminal-specific mouse bindings remain outside
-the application. Shift-based text selection/copy belongs to the terminal; in
-particular, some terminals intercept Shift+scroll before forwarding it. tmux/SSH
-and physical device combinations need their own compatibility checks.
-
-User-only settings can disable capture or change the scroll behavior:
+### Pointer preferences
 
 ```toml
 [tui.mouse]
@@ -301,24 +180,18 @@ scroll_step = 2
 zoom_step = 1.1
 ```
 
-`wheel_zoom = true` makes unmodified vertical scrolling zoom and Ctrl+scroll pan,
-matching a mouse-first navigation preference. This also applies to native precise
-scrolling. `scroll_step` accepts 1–20: list/text rows or terminal-cell units for camera
-pan through the terminal. Native precise pan uses the actual scroll distance; its
-zoom uses the equivalent distance for one terminal scroll step. `zoom_step` accepts
-1.01–2.0. Preferences are read at startup; the Menu wheel switch lasts only for the
-invocation. `enabled = false` leaves pointer handling to the terminal. Mouse settings are shown in user config
-and its schema and cannot be set by a project.
+`wheel_zoom = true` makes vertical scrolling zoom and Ctrl+scroll pan.
+`scroll_step` accepts 1–20; `zoom_step` accepts 1.01–2.0. Native precise panning
+uses the actual scroll distance. Settings apply on the next launch;
+the view menu's wheel switch lasts for the current session.
 
-Playback now defaults to `p` in Preview; Nodes Space still toggles branches and
-Prompt Space still inserts text. While pointer support is enabled, plain Space is
-reserved in Preview for drag panning. An explicit navigation mapping such as
-`play_pause = ["Space"]` fails with a configuration message; change it to `p` or
-another free shortcut, or disable mouse support. User bindings are never rewritten.
+`enabled = false` leaves pointer handling to the terminal. While pointer handling
+is enabled, Space in Preview is reserved for drag panning; use another key for
+playback. User controls belong in user configuration, not project files.
 
 ## Panel widths
 
-Set relative widths in your user `config.toml` and restart the TUI:
+Set relative widths in user settings and restart:
 
 ```toml
 [tui.layout]
@@ -327,15 +200,14 @@ preview = 53
 agent = 25
 ```
 
-Each weight accepts an integer from 1 to 10000; the total does not need to be 100 (for example, `2`, `5`, `3` gives 20%, 50%, 30%). Omitted fields use the defaults above. Collapsing Nodes or Agent gives its space to Preview and preserves the other panel's share. Layout settings are user-only and appear in `config show --user` and `config schema --user`.
+Weights accept 1–10,000 and need not total 100. For example, `2`, `5`, `3` gives
+20%, 50%, 30%. Collapsing a side panel expands Preview while retaining panel state.
 
 ## Keys and commands
 
-The footer always occupies two rows so notifications appearing or disappearing do not move the workspace. The bottom row shows at most two relevant actions for the current focus and a right-aligned help shortcut. It shows one representative binding per action, preferring non-function keys; while typing, plain text bindings such as `?` are excluded, so help falls back to a usable configured key. Alternatives remain listed in Help. Narrow terminals omit whole hints rather than wrapping them.
-
-Panel headings omit collapse shortcuts. A collapsed panel can replace a secondary footer action with a restore shortcut, with Agent taking priority when both panels are collapsed. The row above is reserved for notifications or activity while Agent is collapsed, and stays blank otherwise. Informational notices expire after four seconds; errors and recovery notices stay until resolved or superseded by an explicit operation. Local operation errors appear only in the notification row and do not enter Agent conversation history. Preview refreshes do not erase unrelated errors. Long notices are shortened with an ellipsis. Preview failures stay in Preview and the notification row without entering Agent conversation history. Node counts, diagnostics, zoom and playback time stay on their respective panel borders.
-
-Large or high-DPI viewports automatically reduce preview raster resolution to stay within 8192 pixels per side and 16 megapixels. Camera bounds, fit, zoom and pan continue to use the full display viewport. Kitty scales the bounded raster to fill its terminal cells; oversized Sixel views use halfblocks because Sixel cannot scale the image to an arbitrary display rectangle. Ordinary viewport resolution and CLI export limits are unchanged.
+F1 opens the complete key reference. The footer shows actions for the current
+focus; errors and recovery notices stay visible until resolved. Use Alt+P for the
+command palette.
 
 | Focus / key | Action |
 | --- | --- |
@@ -377,7 +249,7 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | Nodes: `Space` | Toggle a branch when no search filter is active |
 | Nodes: Enter | Expand a branch, or enter its first child if already expanded; fit the selected node if it has no children |
 | Nodes: `f` | Fit the selected node while keeping focus in Nodes; use `a` to add an explicit prompt reference |
-| Nodes: `Esc` | Clear the editing target and canvas selection outline; keep the camera |
+| Nodes: `Esc` | Clear node and canvas selection; keep the camera |
 | Attachments: arrows | Preview pending images in order |
 | Attachments: `d`, Delete, Backspace | Remove a pending image without changing its source |
 | Agent history: PgUp/PgDn, End | Scroll or follow new output |
@@ -390,23 +262,12 @@ Large or high-DPI viewports automatically reduce preview raster resolution to st
 | `Ctrl+C` | Cancel active input/agent work; exit when idle |
 | Outside Prompt: `q`, or General · Quit in the palette | Stop the conversation and exit |
 
-The command palette groups workspace actions by Conversation, Send queue, Images,
-Preview, View, Checkpoints and General. It lists every workspace action. Conversation
-management, send queues, images and `/help` also have slash commands; preview, view,
-checkpoint and general workspace actions are available through the palette and their
-existing keyboard controls. Select a row to see its command syntax and description, or the
-reason it is unavailable. Enter runs the action; unavailable actions stay in the
-palette. Home/End and PgUp/PgDn navigate longer lists, including at 50×16.
+### Command palette and slash commands
 
-Actions needing input open a separate dialog: attach an image file, paste with an
-optional send size, resize a pending image, queue a follow-up, start playback with
-an optional frame rate, or seek shader time. Enter runs, Alt/Shift+Enter inserts a
-newline, and Esc returns to the palette. Argument errors remain editable with the
-error displayed; asynchronous file/clipboard errors use the notification row.
-Typing or pasting into this dialog keeps the Prompt draft and
-pending attachments intact; nothing is sent to the agent until explicitly queued
-or submitted. A queued follow-up runs when the queue is not paused and the agent
-is ready; it does not replace or send the current draft.
+The palette groups actions by Conversation, Send queue, Images, Preview, View,
+Checkpoints and General. Select an action to see its syntax, description or why
+it is unavailable. Enter runs it. Actions that need arguments open an input dialog;
+Esc returns to the palette. Your current prompt and attachments remain intact.
 
 | Category | Slash commands |
 | --- | --- |
@@ -415,30 +276,28 @@ is ready; it does not replace or send the current draft.
 | Images | `/attach <quoted path> [WIDTHxHEIGHT\|original]`, `/paste-image [WIDTHxHEIGHT\|original]`, `/resize-image <number> <WIDTHxHEIGHT\|original>`, `/clear-images` |
 | Help | `/help` lists conversation commands; F1 and palette Help show workspace help |
 
-Type `/` in the single-line Prompt to show conversation command candidates. Continue
-typing to filter by command name (or `/mode`), use Up/Down to select, and Tab or Enter
-to fill the name, or click a candidate. Completion preserves existing arguments, supports
-Undo, and never executes an action.
-Enter on an exact command executes it; commands needing arguments receive a trailing
-space when completed. Esc hides candidates until the query changes. With arguments or
-multiline text, ordinary editing and panel navigation remain available. Candidates stay
-inside Agent and leave the prompt's IME caret visible, including at 50×16.
+Type `/` in a single-line prompt to complete conversation commands. Up/Down selects
+a candidate; Tab or Enter fills its name. Enter on an exact command executes it.
+With arguments or multiline text, normal editing remains available.
+Use the palette for workspace actions such as theme, playback and checkpoints.
 
-Former workspace slash commands, including `/theme`, `/play`, `/checkpoints`, `/history`,
-`/commands` and `/quit`, are rejected with their palette category/action and the current
-palette shortcut. They remain in the draft and are not submitted to the agent, including
-with configured submit keys. The palette retains all actions and preserves the Prompt
-draft when running them.
+You can ask the agent to navigate Preview, for example “show both screens” or
+“center the login button”. It can search the design, fit nodes and adjust the camera.
+This preserves design coordinates. Clarify ambiguous names if several elements
+match your request.
 
-During a conversation, requests such as “show the login button”, “show both screens”, “zoom out a little” or “center the heading at this scale” can operate Preview. The agent searches names/types through the lightweight `search_nodes` tool, uses `get_preview_state` for the selected node and current camera, and calls the TUI-only `set_preview` tool. It can target one or multiple nodes, the entire document, a region or a point, and adjust absolute/relative zoom or pan. “Show both” fits their combined bounds without moving design elements. State queries distinguish the requested view from the last complete frame and its revision. They do not expose draft text.
+### Prompt shortcuts
 
-The agent also receives instructions to search for and display a specific existing target before modifying it, including requests such as “fix the login button”, and to refocus after edits that change its geometry. This is agent-directed behavior, not a deterministic natural-language parser. `set_preview` returns success after a complete frame at the requested view is available. It pauses playback while preserving time, the prompt draft, keyboard focus and selected editing target. Camera state is not saved in the document. Ambiguous matches require resolution; dialogs, attachment viewing, manual camera changes and cancellation may refuse or interrupt an operation. A failed preview operation does not prohibit an otherwise authorized edit, and the agent must report the display limitation.
+Enter, Ctrl+Enter or Ctrl+S submits by default. Alt+Enter and Shift+Enter insert a
+newline. Modified Enter keys depend on terminal support. In Ghostty, remove a
+custom `shift+enter=text:\n` binding if it turns a newline into a submission, then
+reload the terminal configuration.
 
-Ghostty users should leave Shift+Enter unbound so the negotiated keyboard protocol can preserve its Shift modifier. A custom `keybind = shift+enter=text:\n` sends an unmodified line-feed byte instead, which a nested terminal can treat as a submission. Remove that override and reload Ghostty's configuration (`Cmd+Shift+,` on macOS). The terminal and any multiplexer must forward the modified key; the TUI inserts a newline in both idle drafts and follow-ups without submitting or queueing them.
+Ctrl+V / Alt+V reads the current host's clipboard. Cmd+V is handled by the terminal.
+Paths in image commands resolve from the launch directory. See
+[image attachments](image-attachments.md) for file input and resizing.
 
-Commands occupy one prompt line and are parsed without shell execution, expansion, or substitution. Paths are relative to the launch directory. Bracketed text paste stays text. `Cmd+V` is controlled by the terminal and is not assumed to carry bitmap pixels. `Ctrl+Enter` and `Shift+Enter` depend on terminal keyboard support; plain Enter submits and Alt+Enter provides a portable newline.
-
-The user's `config.toml` can replace prompt shortcuts, for example:
+Replace submit or paste shortcuts in user configuration:
 
 ```toml
 [tui.keys]
@@ -446,20 +305,27 @@ submit = ["F5", "Ctrl+Alt+s"]
 paste = ["F6"]
 ```
 
-Omitted actions retain their defaults; each explicit list replaces that action's list. Submit accepts 1–8 shortcuts and paste accepts 0–8 (`paste = []` disables clipboard shortcuts while `/paste-image` remains available). Keys support `Enter`, ASCII letters with `Ctrl` or `Alt`, and `F2`–`F24`, optionally combining `Ctrl`, `Alt` and `Shift`. Names are case insensitive and modifier matching is exact. Plain Enter may be configured as submit (the default); unbound Enter inserts a newline. Alt+Enter and Shift+Enter insert a newline unless explicitly bound to another prompt action. F1, Ctrl+C/Ctrl+P and legacy Ctrl+H/I/J/M aliases are reserved. Duplicate bindings, overlaps between actions and unsupported keys fail with `CONFIGURATION_ERROR`. The terminal must transmit the chosen key distinctly; configuration cannot add keyboard-protocol support to a terminal.
+Each explicit list replaces that action's defaults. Submit accepts 1–8 keys;
+paste accepts 0–8, with `[]` disabling its shortcuts. Supported keys include Enter,
+ASCII letters with Ctrl or Alt, and F2–F24, optionally with Ctrl, Alt and Shift.
+F1, Ctrl+C, Ctrl+P and legacy Ctrl+H/I/J/M aliases are reserved. Conflicting or
+unsupported bindings produce `CONFIGURATION_ERROR` before the workspace opens.
 
-Bindings are captured before entering the terminal and remain fixed for that invocation. Help shows the effective keys. They act in the focused prompt, including follow-up input during active turns; permission dialogs, checkpoint dialogs, search, help and other panels retain their own input handling. Project files cannot remap user shortcuts. Normal viewing and global actions are configured separately under `[tui.navigation]`, described below.
+Help shows the effective keys. An unbound Enter inserts a newline. Settings apply
+on the next launch; dialogs and other panels retain their own controls.
 
 ### Viewing and global shortcuts
 
-User `config.toml` also accepts `[tui.navigation]`. Each supplied list replaces that action's default list; omitted actions keep the keys in the table above. Up to eight keys may be assigned to an action, and `[]` disables it. Panel switching must retain at least one shortcut usable while typing, so the prompt cannot trap keyboard focus.
+Use `[tui.navigation]` to replace viewing and global keys. Each action accepts up
+to eight keys; `[]` disables it. Keep at least one panel-switching key usable while
+typing.
 
 ```toml
 [tui.navigation]
-next_panel = ["F6"]
-previous_panel = ["F7"]
-help = ["F8", "?"]
-commands = ["F9"]
+next_panel = ["F7"]
+previous_panel = ["F8"]
+help = ["F9", "?"]
+commands = ["F10"]
 quit = ["x"]
 pan_left = ["a"]
 pan_right = ["d"]
@@ -468,8 +334,6 @@ pan_down = ["s"]
 zoom_in = ["z"]
 zoom_out = ["v"]
 ```
-
-The schema and `config show --user` list all actions and effective defaults:
 
 | Scope | Action fields |
 | --- | --- |
@@ -482,82 +346,85 @@ The schema and `config show --user` list all actions and effective defaults:
 | Attachments and References | `remove_attachment` |
 | Agent history | `scroll_up`, `scroll_down`, `follow_output` |
 
-Navigation supports ASCII letters and printable symbols, Enter, Space, Tab, Esc/Escape, arrows, Home/End, PageUp/PageDown, Delete/Backspace, and F1–F24. Ctrl, Alt and Shift can be combined; `Plus` names `+`. `BackTab` is the same binding as `Shift+Tab`. Already shifted symbols normalize their Shift bit across terminal protocols, so `+` and `Shift+Plus` are equivalent. Other modifiers match exactly. Keys may be shared between disjoint panels, such as Up for panning and list selection. Overlaps in the same panel, including global bindings that would intercept prompt submit/paste, fail before terminal entry.
-
-Unmodified text bindings do not intercept prompt or search input. Permission and checkpoint dialogs retain their displayed acceptance/rejection keys. Ctrl+C remains the fixed emergency cancellation/exit key; its aliases and legacy Ctrl+H/I/J/M encodings cannot be rebound. Prompt shortcuts retain their own restrictions above. Help, footer and panel titles show the captured effective keys. Help supports PageUp/PageDown or arrows to scroll and Home/End to jump. Changing the configuration file affects the next invocation; it does not change the active keyboard map. Projects cannot select these user controls.
-
-During a turn, the submitted request is frozen while the prompt holds the next editable draft. Failure/cancellation restores the request when safe or leaves it at the front of the paused queue, preserving newer input. Idle drafts are saved after a one-second debounce and on normal exit; an abrupt kill can lose edits within that interval. Conversation metadata versions 1/2 migrate to version 3 without discarding drafts, images, or continuity state.
-
-Permission dialogs show tool details and native choices. Reject Once is initially selected when advertised. PgUp/PgDn scroll details, Enter answers, and Esc denies. Bound document tools use the shared preauthorization policy; other requests remain interactive unless `--non-interactive` rejects them.
+Navigation supports printable ASCII, Enter, Space, Tab, Esc, arrows, Home/End,
+PageUp/PageDown, Delete/Backspace and F1–F24 with Ctrl/Alt/Shift. Use `Plus` for `+`;
+`BackTab` and `Shift+Tab` are equivalent. Keys can be shared by disjoint panels,
+but conflicts in the same panel are rejected. Text keys leave prompt and search
+input available. Ctrl+C remains the cancellation/exit key.
 
 ## Saved conversation logs
 
-Choose **Conversation · Current conversation logs…** or **Conversation · Saved conversations…** in the command palette. `/logs` and `/conversations` open the same views. Browsing uses shared, read-only conversation APIs and a cancellable background task. It does not authenticate, start/resume an adapter, resend an old prompt, select a different active agent, edit a document, or clear pending text/images. An already active request continues; permission dialogs retain priority. Ctrl+C cancels both a pending log read and an active request.
+Open **Conversation · Current conversation logs…** or **Saved conversations…**
+in the palette, or use `/logs` and `/conversations`. Browsing preserves the current
+draft and design. A running agent continues while you read.
 
-Lists load 50 entries at a time in stable UUID order, explicitly marked as live listings rather than inferred chronology. Arrows select an entry; Enter opens its turns or transcript. `n`/`p` or PgDn/PgUp request the next/previous list page. Home refreshes the first page, `c` opens the current conversation, and `s` opens saved conversations. Backspace returns to the parent; Esc or `q` closes the browser. Recognized invalid entries remain visible as unavailable.
+| Key | Action |
+| --- | --- |
+| Arrows, Enter | Select a conversation/turn and open it |
+| `n`/`p`, PgDn/PgUp in lists | Next/previous list page |
+| Home in lists | Refresh the first page |
+| `c` / `s` | Open current/saved conversations |
+| Backspace | Return to the parent list |
+| Esc or `q` | Close the browser |
+| Arrows, PgUp/PgDn in text | Scroll the transcript |
+| `n`/`p` or Right/Left in text | Next/previous text page |
+| `g` / `r` in text | First page / refresh changed content |
+| `v` in text | Toggle readable text and raw JSONL |
+| `u` | Select the highlighted conversation |
+| `N` | Create an empty conversation |
+| `d` | Review deletion of an inactive conversation |
 
-Transcript pages contain up to 32 KiB of formatted requests, responses, thinking text and tool status. Strings and Unicode escapes are decoded incrementally, with bounded parser buffers instead of loading complete JSON records. Unknown/ambiguous/unfinished records remain visible as sanitized original text. Arrows or PgUp/PgDn scroll within the page; Home/End reach its edges. `n`/`p` or Right/Left move between pages, and `g` returns to the first page. The page trail is bounded by the existing 64 MiB per-turn input limit and at most 8,192 cursors. List paging needs no growing page trail. Terminal resize recalculates wrapping and scroll limits.
+Selecting a conversation restores its draft, images and history while keeping the
+design and camera position. It reconnects using the matching agent settings and
+waits for submission. Finish or cancel active agent, image or document operations
+before changing selection. A busy or incompatible conversation leaves the current
+selection available.
 
-`v` switches to the complete raw JSONL and back. Raw terminal controls are shown as visible escapes; damaged UTF-8 also shows its exact Base64 bytes. Raw mode retains the formatted page to return to it while the revision matches. Every new page checks the complete transcript hash before and after reading. A changed file leaves the previous page visible with a notice; `r` explicitly refreshes from the first page. History pages are not replayed into live event handling and cannot answer old permission requests. Explicit reviewed deletion is described below; user-owned retention and global cleanup are documented in [configuration](configuration.md#local-conversation-retention).
-
-To select saved local state, highlight a conversation and press `u`; the same key in its turn/text view selects that conversation. `N` creates an empty local conversation, preserving the previous draft and images in their original session. The **New empty conversation** palette action does the same. These are explicit state changes, separate from read-only browsing. They require idle agent/input/document work. Selecting the current conversation closes the browser without resetting live state.
-
-A successful change restores the selected draft, images and displayed history, closes the previous adapter, clears its permissions/events and resets displayed authentication. It leaves the document and preview position intact. The global header identifies the selected local session by its UUID prefix; exit prints its full UUID. Selection sends nothing. The selected session resumes in the background without submitting its draft. Busy, missing, foreign or incompatible agent/adapter/authentication targets leave the original selection and draft available. CLI `tui --session UUID` remains available with the corresponding settings.
-
-`d` reviews deletion of the selected inactive local conversation. The confirmation shows its full UUID, document, local size, draft and image counts; `y` permanently deletes that reviewed state, while `n`/Esc returns. The UUID and action keys stay pinned while arrows, PgUp/PgDn and Home/End scroll the review body, including at 50 columns × 16 rows and with long paths. A changed or busy target is refused; a stale-review error scrolls into view while the UUID/controls remain visible. The current conversation must first be closed or replaced with `u`/`N`; active agent/input/document operations also block deletion. Deleted local logs and images are separate from provider history, project assets and document checkpoints, which remain. The background task preserves the current draft, images and preview, and reports a committed deletion even when cancellation occurs after its atomic rename. Pending cleanup and filesystem-sync warnings remain visible. Interrupted cleanup is recoverable with `conversations cleanup FILE` or `cleanup --all` after the file moved. See [local deletion](agents.md#delete-local-conversation-data).
+Deletion shows the UUID, document, local size, draft and image counts. `y` confirms;
+`n` or Esc returns. Select another conversation before deleting the current one.
+Provider history, project assets and document checkpoints remain. If cleanup is
+interrupted, run `lazypencil conversations cleanup FILE` or `cleanup --all`.
+See [local deletion](agents.md#delete-local-conversation-data) and
+[retention settings](configuration.md#local-conversation-retention).
 
 ## Checkpoint restoration
 
-Explicit local retention and cleanup are described in [checkpoints and retention](checkpoints.md).
+Choose **Checkpoints · Browse and restore checkpoints…** in the palette. Entries
+are newest first. PgDn/`n` opens older entries, PgUp/`p` returns to newer ones,
+Home opens the latest page, and `r` reloads current document information.
 
-Choose **Checkpoints · Browse and restore checkpoints…** in the command palette. The list shows committed checkpoints, newest first, with sequence, creation time, revision, and request ID. It loads up to 50 entries per byte-bounded page. PgDn/n opens older entries, PgUp/p returns to newer entries, Home opens the latest page, and `r` explicitly reloads the current document/dependency revisions.
+Select a checkpoint and press Enter to review it. Press Enter again to restore,
+or Esc to return. Restoration creates a new history entry and preserves your
+prompt and attachments. Referenced assets use their current contents; restoring
+a checkpoint does not restore external files.
 
-Select an entry with arrows and press Enter to review its ID and current/target revisions. The review does not change the document. Esc returns to the list; a second Enter requests restoration. The shared CLI/MCP service validates the checkpoint and both captured revision preconditions, then restores it as a new history entry. The submitted draft, pending images, and source files are preserved. Referenced assets use their current contents; restoration does not roll back external asset edits.
+If the document or its dependencies changed since review, reload with `r` and
+review again. Esc cancels an operation while it is being prepared. If saving has
+already begun, the operation finishes and reports the saved result. See
+[checkpoints](checkpoints.md) for CLI restoration and history storage.
 
-Document or dependency changes after loading the list stop restoration and display a conflict. The UI does not automatically replace the expected revisions or retry. Reload with `r`, review again, and explicitly restore when the new conditions are appropriate. Candidates and restoration use a background worker; agent submission is blocked until that operation finishes. The existing preview can continue rendering.
+## Refresh and draft recovery
 
-Esc during an operation requests cancellation and closes its overlay; Ctrl+C also requests cancellation. Lock waits and preparation check the token. Once atomic replacement starts, the service completes the history commit and reports the saved result. Exiting requests cancellation of document, image, and preview work before waiting for the adapter to shut down. The shared cancellation path is also used by CLI/MCP history and restoration. Supported missing declared assets remain explicit diagnostics in a restored result; restoration does not make an incomplete design renderable.
+When files or settings change, the preview reloads while preserving drafts and
+attachments. If an update fails, the last completed frame stays visible with a
+**Showing previous preview** notice. Repair the reported problem and refresh.
+A stale preview cannot be exported as the current design.
 
-## Preview and input work
+The draft is saved after a one-second editing pause and on normal exit. A forced
+process stop can lose edits from that last interval. Submitted requests are kept
+separately from the next draft so failure or cancellation can preserve newer input.
 
-Document calculation/rendering, log reads, restores, and image conversion run outside
-the interactive input path. Revision/dependency changes reload the preview while
-preserving drafts and attachments. Failed updates keep the last completed preview,
-node list and selection, with a persistent “Showing previous preview” notice until
-a new frame succeeds. The notice stays visible during retries, and the old image
-cannot be exported as a current preview. With no completed frame, the initial
-failure still reports “Preview unavailable”. Preview state reports `stale` and
-preserves the displayed frame's revision. Repeated failures do not flood conversation
-history; a later refresh can recover.
-
-Clipboard input reads only this host's clipboard and is explicit. A bounded child
-worker normalizes images; conversion/storage runs on the input thread. Cancellation
-reclaims unadopted candidates while retaining original attachments. See
-[image input](image-attachments.md) and [attachment budgets](configuration.md#image-attachment-budgets).
-
-Script/page/shader workers independently expire after 60 idle seconds by default;
-cached pixels may remain. Configuration changes invalidate affected calculations and
-acquisitions. An explicit refresh starts the required runtimes again. Dedicated
-[authentication profiles](runtimes.md#dedicated-authentication-profiles) are opt-in;
-anonymous rendering never adopts a personal browser profile.
-
-For regression checks use `cargo xtask test --lib --filter tui::` and
-`cargo xtask test --test tui`; see [development](development.md). PTY image/cursor
-assertions do not measure physical display latency or certify every IME.
+For workspace development, see [architecture](design.md) and
+[focused checks](development.md#focused-development-checks).
 
 ### Agent permissions
 
-`/permissions` (alias `/mode`) and **Agent permissions…** in the command palette
-open the native permission-mode picker. Use Up/Down to choose, Enter to continue,
-PgUp/PgDn to scroll explanations or reviewed settings, Backspace to go back, and
-Esc to close without approving a tool request. Clickable rows and controls support
-mouse operation. At smaller terminal sizes the list and explanation stack vertically.
-The header reports the effective mode, rather than a pending selection.
+Open `/permissions` (`/mode`) or **Agent permissions…** in the palette. Up/Down
+selects, Enter continues, PgUp/PgDn scrolls explanations, Backspace goes back, and
+Esc returns without approving a tool request.
 
-Choose a temporary conversation mode or save a project/global default. Project
-settings require an explicit review and trust action; full access requires a separate
-confirmation. Tab switches the default Keep current/Apply decision on confirmation
-screens. While a turn is active, a confirmed change waits until it finishes; `c`
-cancels a change that has not been sent. Failed changes pause the send queue.
-An outstanding approval remains open beneath the settings dialog: `p` opens settings,
-and closing settings returns to the same approval. See [permission mode behavior](agents.md#change-permission-modes-in-the-tui).
+Choose a temporary mode or save a project/global default. Changes during a turn
+can be scheduled for after it finishes; `c` cancels an unsent change. Press `p` on
+an outstanding approval to open mode settings, then return to answer that original
+approval. See [permission modes](agents.md#change-permission-modes-in-the-tui)
+for confirmation and saving behavior.

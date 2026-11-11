@@ -1,307 +1,337 @@
-# ACP agents and prompt commands
+# AI agents and prompt commands
 
-The initial agent host uses the official Rust `agent-client-protocol` SDK 3.5.0 and schema 1.12.0. It negotiates **ACP protocol v1**. The SDK package version is separate from the protocol version. Draft v2 and provider-specific extensions that grant additional capabilities are not enabled automatically.
+Use Codex or Claude to create and edit designs from the terminal workspace or the
+`prompt` command. An ACP adapter connects lazypencil to your chosen AI runtime.
+If you prefer an existing MCP client, follow the [MCP setup](mcp.md) instead.
 
 ## Install and authenticate an adapter
 
-Adapters and their runtimes are separate dependencies. lazypencil does not download them while sending a prompt, parse a shell command string, or modify global MCP configuration.
-
-| Agent | Executable | Adapter | Underlying runtime |
-| --- | --- | --- | --- |
-| Codex | `codex-acp` | `@agentclientprotocol/codex-acp` | Codex App Server |
-| Claude | `claude-agent-acp` | `@agentclientprotocol/claude-agent-acp` | Claude Agent SDK |
-
-Use the adapter's installation and authentication instructions: [Codex ACP](https://github.com/agentclientprotocol/codex-acp), [Claude ACP](https://github.com/agentclientprotocol/claude-agent-acp). Authenticate with the selected runtime before starting a design session. lazypencil does not read or store ChatGPT/Claude login tokens. An optional `--auth-method ID` calls an agent-managed ACP authentication method only if the adapter advertises that ID. Terminal-based authentication methods are not implemented by the host; use the runtime's own login command.
-
-## Diagnose agent setup
+Install the adapter for the agent you use:
 
 ```sh
-lazypencil doctor
-lazypencil doctor --agent codex
-lazypencil --json doctor --strict
+# Codex
+npm install -g @agentclientprotocol/codex-acp@latest
+
+# Claude
+npm install -g @agentclientprotocol/claude-agent-acp@latest
 ```
 
-Doctor validates the user settings and resolves each configured adapter executable
-using the same user-profile paths and PATH order as a normal launch. Both installed
-adapters are checked unless `--agent codex` or `--agent claude` selects one. The chosen
-agent defaults to `agents.default`, then Codex; its failures are errors. A missing
-unselected adapter is listed without making it a requirement.
+| Agent | Executable | Runtime |
+| --- | --- | --- |
+| Codex | `codex-acp` | Codex App Server |
+| Claude | `claude-agent-acp` | Claude Agent SDK |
 
-For each installed adapter, doctor performs ACP v1 initialization and reads its
-advertised implementation version, steering capability and pushed authentication
-status. It does not create or load a session, call authenticate, send a model prompt,
-register MCP tools, open a browser or change a document. Normal user-profile
-adapter arguments are used, but never printed. Authentication identity, credentials
-and vendor metadata are excluded from the report. The runtime may maintain its own
-startup/cache state. Project executable settings are not loaded or executed by doctor.
-
-Missing executables, a missing Node.js interpreter, startup/protocol failures,
-unreported authentication and an explicitly reported signed-out state have distinct
-results. Authentication must match the user profile's `auth` route. An adapter that
-does not report authentication remains unverified; an installed executable alone
-does not establish that requests can run. Model availability, quota and actual model
-inference are not tested. Steering uses the same capability/version checks as the TUI.
-
-Each adapter has a five-second initialization/account-reporting deadline. Use
-`--timeout-seconds 10` (1–30 seconds) for slow startup. Owned probe processes are
-closed afterward. No dependency is downloaded and no login flow is started.
-
-The default output lists OK/WARN/FAIL/SKIP checks and remedies. `--json` keeps the
-previous build/runtime fields and adds `checks`, `summary` and `agents`. Doctor exits
-successfully when it can print a report; `--strict` returns 1 if the report contains
-errors while still printing the whole report. Optional-runtime and steering warnings
-do not fail strict mode. Normal command errors and cancellation retain their normal
-exit codes.
-
-See the [doctor reference](doctor.md) for the complete environment and automatic
-preview checks, including terminal transport receipts and their limits.
-
-Configuration, directory permission checks, configured font availability, terminal
-facts and optional Chromium installation status are included. Doctor does not create
-data/lock/configuration directories or launch Chromium. Directory checks inspect
-existing permissions rather than writing probe files. Font-file availability and
-actual loading are reported separately. Doctor also exercises image rendering and
-terminal transport automatically in an interactive terminal, without requesting
-user confirmation.
+Sign in using the adapter's instructions: [Codex ACP](https://github.com/agentclientprotocol/codex-acp)
+or [Claude ACP](https://github.com/agentclientprotocol/claude-agent-acp).
+Authentication stays with the selected runtime. For an adapter that advertises an
+ACP authentication method, `--auth-method ID` selects that method; otherwise use
+the runtime's login command.
 
 ## Send a prompt
-
-Before requesting a design edit, check the setup with `lazypencil doctor`.
-See [diagnose agent setup](#diagnose-agent-setup) for its checks and output.
-
-Project `[design]` settings can supply automatic guides, reference-only guides, styles, and a default style. The shared CLI/TUI conversation host reads the same catalogue as the bound MCP server. A local user must first review `config show FILE` and explicitly grant `config trust FILE`; unapproved or unavailable instructions stop a new turn before an adapter is started. The default style applies when `--style` is omitted, and an explicit `--style` takes precedence. Existing design conventions remain the starting point for edits. See [project design configuration](configuration.md#project-guides-and-styles).
-
-Startup sends the workflow, automatic project guide content, style tokens/instructions, example identities and reusable component IDs. It fetches a complete example through MCP when needed instead of putting every example document into the initial prompt. Turn-start records keep initial guide/style IDs, versions and hashes, including the project instruction fingerprint. Successful guide/style queries made through the owned MCP server are also recorded for that turn, as described below. The user's request takes precedence over project rules, selected styles, and standard guidance.
-
-User font preferences from `config.toml` merge with per-field project overrides. The host passes an absolute `LAZYPENCIL_CONFIG_DIR` in its MCP server descriptor before the adapter changes to the document directory, so a relative launch-time setting selects the same file in nested projects. This requires no global environment or agent configuration changes. A deterministic ACP test queries the actual MCP child and verifies its selected user configuration and font paths. Persistent adapter and runtime preferences are described in [configuration](configuration.md).
 
 ```sh
 lazypencil prompt design.pen --agent codex "Improve the spacing and hierarchy"
 lazypencil prompt new.pen --create --agent claude "日本語の設定画面を作って"
 lazypencil prompt design.pen --image reference.png --style standard-ui "Use this reference"
+```
+
+`--create` creates a document and refuses to overwrite an existing file. The agent
+works from the document's directory and receives its path, the design tools, and
+guidance for inspecting, editing, validating and rendering the result.
+
+| Option | Purpose |
+| --- | --- |
+| `--agent codex` / `claude` | Choose the AI runtime |
+| `--model MODEL` | Select a model advertised by the adapter |
+| `--mode MODE` | Select an advertised permission mode |
+| `--style ID` | Apply a design style; overrides the project's default style |
+| `--image PATH` | Attach a reference image; repeat for several images |
+| `--auth subscription` | Use the runtime's subscription login; the default |
+| `--auth api` | Use explicitly configured API authentication |
+| `--session UUID` | Continue a saved local conversation |
+| `--timeout SECONDS` | Set a turn's time limit; the default is 600 seconds |
+
+Save recurring choices under `[agents.codex]` or `[agents.claude]` in your
+[user configuration](configuration.md#user-agent-profiles). Project defaults can
+be shared after [reviewing and trusting the project's executable settings](configuration.md#project-agent-profiles).
+Explicit command-line options take precedence.
+
+For a custom adapter, use `--adapter /absolute/path/to/program` and repeat
+`--adapter-arg=VALUE` for its arguments. A replacement adapter replaces the entire
+configured command and argument list. Relative executable paths in settings
+resolve against the configuration file that defines them.
+
+### Authentication and models
+
+Subscription mode removes API-key and provider-override environment variables
+from the adapter's environment so they do not accidentally select API billing.
+API mode preserves them for the runtime's configured API route. Select and sign
+in to the route you intend to use; lazypencil checks the adapter's reported route
+before sending a prompt and stops if it conflicts with your selection.
+
+The TUI header shows the connected adapter's model, effort and account information.
+Preparing a session leaves the draft unsent until you submit it. Account identity
+is displayed for the session and is not saved in conversation logs.
+
+`--require-auth-status` also requires an authentication report from adapters that
+do not advertise the standard reporting capability. Use it for custom adapters
+when an unknown route should prevent submission.
+
+`--model` and `--mode` accept the connected adapter's advertised values. With the
+standard adapters, the initial modes are Codex `read-only` and Claude `default`.
+Custom adapters have no implicit permission mode; select one if needed.
+
+For Codex, `--fast` enables Fast mode and `--fast=false` disables it for the current
+connection. You can save the choice as `[agents.codex] fast`. Omission leaves the
+adapter's inherited setting in effect. If inheritance is unreliable, pass the
+choice explicitly; see the upstream [Fast-mode issue](https://github.com/agentclientprotocol/codex-acp/issues/285).
+
+### Project design guidance
+
+Project `[design]` settings can provide guides, styles and a default style. Review
+`lazypencil config show design.pen` and run `lazypencil config trust design.pen`
+before using project-supplied instructions. Your current request takes precedence
+over project guidance. See [project guides and styles](configuration.md#project-guides-and-styles).
+
+Font and rendering preferences follow the same user/project settings in CLI,
+MCP and TUI operations. See [configuration](configuration.md).
+
+## Diagnose agent setup
+
+```sh
+lazypencil doctor --agent codex
+lazypencil doctor --agent claude --timeout-seconds 10
+```
+
+Follow the report's suggested fixes for missing executables, Node.js, login or
+connection problems. Doctor checks adapter connectivity and reported login state
+without sending a model prompt. For report meanings and script-friendly output,
+see [setup diagnostics](doctor.md).
+
+## Permissions and cancellation
+
+By default, `--document-tools allow` lets the agent use this conversation's
+registered lazypencil tools with one-time approvals. It applies to those document
+tools, rather than granting general shell or filesystem access. Use
+`--document-tools ask` to review each request yourself.
+
+Other approval requests display the adapter's choices. In a noninteractive
+invocation, unresolved approvals are rejected and the command fails. This also
+applies when `--non-interactive` is supplied:
+
+```sh
 lazypencil --json prompt design.pen --non-interactive "Inspect the current design"
 ```
 
-`--create` refuses to overwrite any existing file. The working directory is the document's directory. The agent receives a dedicated `lazypencil mcp` configuration with private document-scoped grants and the absolute document path. It calls `open_document` first and passes its returned `document_id` to subsequent document tools. It also receives the original English workflow guide, the requested style, and the user's text. Instructions ask the agent to inspect the document, use current revisions, check layout, render the result, and preserve the user's language. The host does not implement its own LLM loop and does not claim that an instruction guarantees visual verification.
+Permission modes belong to the AI runtime. Review the connected adapter's mode
+and approval choices before allowing broader access.
 
-For an explicitly configured executable, use `--adapter /absolute/path/to/program` and repeat `--adapter-arg=VALUE`. Arguments are passed as a vector, without shell expansion. For example, a project-local Node adapter can be started with an absolute Node executable and a script path argument. Persist per-agent defaults in user `config.toml` under `[agents.codex]` / `[agents.claude]`, and select the default agent with `[agents] default = "codex"`. Project `lazypencil.toml` can override these fields after a separate local `config trust FILE --executables` grant. Explicit CLI values override both scopes; an explicit adapter replaces the command and its entire argument list. Relative executable paths resolve against the physical file supplying that adapter. Each turn rechecks the captured project table and execution grant, and turn-start records include the selected project root, scope and fingerprint. A design-instruction grant does not authorize execution, and MCP cannot grant permission. The grant covers settings rather than executable or script bytes. See [project agent profiles](configuration.md#project-agent-profiles) for review, revocation, reload and validation status.
+Ctrl+C cancels an active request and rejects pending approvals. An unresponsive
+adapter is stopped after five seconds. Setup has a separate 60-second limit.
+Edits already saved remain in the document; use [checkpoints](checkpoints.md) to
+review or restore them. Before retrying an interrupted request, inspect the
+current design so you can see what completed.
 
-`--auth subscription` is the default. The child does not inherit `OPENAI_API_KEY`, `CODEX_API_KEY`, `ANTHROPIC_API_KEY`, or `ANTHROPIC_AUTH_TOKEN`. It also removes `DEFAULT_AUTH_REQUEST`, OpenAI/Anthropic base-URL overrides, and Claude cloud-provider environment switches, so those overrides do not silently select API access. `--auth api` preserves the environment for explicitly configured API access. Neither option reads credentials or signs the user out to enforce a login method. Native settings, key helpers, and managed policy remain owned by the runtime.
+In the TUI, submitting text while the agent works can steer the active turn.
+Use `/queue <text>` to send it as the next turn instead. Steering requires
+codex-acp 2.3.0+ or claude-agent-acp 0.100.0+ with the advertised capability;
+other adapters queue follow-ups. Images always go to a subsequent turn.
+If delivery cannot be confirmed, the queue pauses for your review.
 
-The host consumes the adapters' read-only `_auth/status_update` reports. It normalizes `account`, `api_key`, `gateway`, `external`, and `none` into subscription, API-key, gateway, external-provider, and unauthenticated states. Logs retain only the route and optional plan. The TUI additionally displays a bounded account email/name/ID in memory, without serializing it into events, transcripts or saved state. Tokens, arbitrary labels and vendor metadata are discarded. After a document is selected, TUI startup prepares the actual provider session without sending a prompt, reports its resolved model/reasoning effort and account, and retains the connection for explicit submission. Drafts remain unsent, startup permission requests are rejected, and shutdown cancels session setup. The same adapter, working directory and inherited runtime environment are used for startup and prompting. The evidence is explicitly `adapter_report`; it is not an independently audited invoice or a promise of model access. OpenAI distinguishes subscription and API authentication and provides account introspection through its runtime. See [official authentication documentation](https://learn.chatgpt.com/docs/auth) and [App Server authentication](https://learn.chatgpt.com/docs/app-server#auth-endpoints).
+### Change permission modes in the TUI
 
-Before sending each prompt, the reported route must match the request: subscription rejects API keys, gateways, and external providers; API rejects subscription authentication. An unauthenticated state is rejected. A conflicting report during a turn triggers ACP cancellation and preserves committed edits. There is no automatic retry or login through another route. The host does not change stored credentials to force a match. For API mode, configure/authenticate the runtime for the intended API route, or explicitly select an advertised agent-managed `--auth-method`.
+Open **Agent permissions…** from the command palette or use `/permissions`
+(`/mode`). The picker lists the connected adapter's modes, descriptions and
+current working directory. The header shows the confirmed effective mode.
 
-When an adapter advertises its `authStatus` capability, the host waits up to five seconds for a usable report and blocks unverified prompts. `--require-auth-status` also enforces this for other adapters, including development wrappers. Older adapters without this capability may operate with unknown authentication unless that flag is set; startup events label the source unknown. A previous conversation's report is cleared at reconnect and is not reused as evidence for the new process.
+Choose **This conversation only**, **Save as project default**, or **Save as global
+default**. Temporary choices last until the TUI closes. Saved choices follow
+command-line > project > user > built-in precedence on future launches.
+Saving updates only the selected agent's `mode`.
 
-`--model MODEL` selects a value from the adapter's advertised model configuration, including grouped selectors, and requires the adapter to confirm the new value. `--mode MODE` likewise validates the advertised permission mode and applies it through ACP. Unsupported values fail before prompting. With the standard executables, the initial native mode is Codex `read-only` or Claude `default`; an explicit CLI or user-profile adapter override has no implicit mode, so specify one when needed. Applied modes and configuration options are recorded in the ready event. Model catalogs describe options; actual access is established by a successful inference turn.
+Project saving shows the destination and resulting agent settings. **Trust & apply**
+grants execution trust for those reviewed settings. Full-access and bypass modes
+require an additional confirmation. To answer an outstanding tool approval, use
+that approval's original choices; changing mode affects later requests.
 
-`--fast` enables Codex Fast mode and `--fast=false` disables it for the connection. Omission leaves the adapter's effective speed setting untouched; actual inheritance of Codex defaults and saved native settings depends on the adapter. `[agents.codex] fast` supplies the same preference in user or trusted project settings; explicit CLI values take precedence. The host applies the advertised `fast-mode` selector after changing the model and requires confirmation before prompting. Missing, ambiguous or unsupported selectors fail explicitly. Codex ACP currently has an upstream [Fast/priority inheritance bug](https://github.com/agentclientprotocol/codex-acp/issues/285); use an explicit `fast = true` or `--fast` until it is fixed. The host does not advertise ACP boolean config controls, so Codex ACP exposes its `on`/`off` select form. These controls do not edit Codex's global configuration. Fast mode availability and increased usage follow [OpenAI's speed settings](https://learn.chatgpt.com/docs/agent-configuration/speed).
-
-## Herdr conversation status
-
-When launched inside a Herdr pane, `lazypencil tui` and `lazypencil prompt`
-automatically report conversation activity as `working`, permission decisions
-as `blocked`, and readiness for another prompt as `idle`. The TUI uses the same
-state as its activity indicator, including cancellation and failed turns. Reports
-use `lazypencil` as both the agent label and integration source. Exiting releases
-the pane's lifecycle authority; switching conversations or documents in the TUI
-keeps the integration active.
-
-The integration requires `HERDR_ENV=1`, a nonempty `HERDR_PANE_ID`, and an absolute
-`HERDR_BIN_PATH`, supplied by Herdr. Outside that environment it starts no worker
-and executes no Herdr command; Herdr is not a required dependency. Reports run on
-a background thread, retain only the latest queued state, discard command output,
-and stop each command after 300 ms. Notification failures never fail a conversation.
-Shutdown waits only for an in-flight report and the release command to finish or
-reach their deadlines. This integration reports activity only; it does not register
-a session resume command or copy conversation contents to Herdr.
-
-See [Herdr's agent integration reference](https://herdr.dev/tui/docs/add-herdr-support/)
-for sidebar state, completion notifications and permission notifications.
+During an active turn, choose **Apply after turn**. Queued prompts wait for the
+adapter to confirm the change. Press `c` in the picker to cancel an unsent change.
+If applying or saving fails, the UI reports the effective mode and pauses queued
+prompts as needed. Reconnect after a mode-change timeout before sending again.
 
 ## Images and assets
 
-Repeat `--image` for static PNG, JPEG, or WebP files. The default limits are eight images, 20 MiB per source and normalized image, 50 MiB total before and after normalization, and 32 megapixels per image. Files are decoded one at a time, orientation is applied, and immutable PNG copies are retained with the conversation. No image is silently resized or omitted; explicit `--image-max-size` can select a send size. User [attachment budgets](configuration.md#image-attachment-budgets) can change the count and aggregate limits.
+Repeat `--image` for static PNG, JPEG or WebP files. Use `--image-max-size WIDTHxHEIGHT`
+to choose a smaller send size. Defaults allow eight images, 20 MiB per image,
+50 MiB in total for source data and for send data, and 32 megapixels per image.
+See [image attachments](image-attachments.md) for clipboard input, resizing and
+configurable budgets.
 
-Images are sent as ACP image blocks containing MIME-typed Base64 data. The host checks the negotiated image capability; an unsupported agent receives no text-only substitute. Each image also has an ordered display name and attachment ID. The prompt does not insert reference images into the document automatically.
-
-The session's MCP connection receives a private manifest bound to that document. `get_document` exposes registered image metadata. `put_asset` can import one with:
+A reference image is sent to the agent as an attachment. Ask the agent to add it
+to the design if you also want a document layer. Through MCP, the agent can import
+an attachment using `put_asset`:
 
 ```json
 {"kind":"image","source":{"attachment_id":"img_<sha256>"}}
 ```
 
-The normal atomic edit operations then reference the returned asset URI. Unknown IDs, grants for another document, modified stored files, and image attachments requested as code are rejected. The connection's grant file is removed on normal cleanup; stored conversation images and already imported project assets remain. On Unix, a private close-on-exec owner file is held exclusively by the conversation host. Each owned MCP request checks the matching connection identity and a nonblocking shared-lock probe; losing the host expires the grant even when its JSON file survives a hard crash. Cached MCP access cannot substitute another connection's identity. When an owned connection expires, every tool call, including document reads and edits, fails with `AGENT_ERROR` before dispatch. A save already in progress keeps the existing atomic-save rules; revocation does not undo committed edits. Standalone MCP without conversation grants retains its ordinary behavior. Old transient Unix grants without an owner require reconnecting; saved conversation images and session metadata are unchanged. Each conversation currently retains at most 256 distinct images. Local browsing, selection and reviewed deletion are described below; user-owned retention and global cleanup are documented in [configuration](configuration.md#local-conversation-retention). Clipboard capture follows the [image-input reference](image-attachments.md).
+Use the returned asset URI in the document. Imported assets stay with the project;
+saved reference images stay with the conversation. Each conversation can retain
+up to 256 distinct images.
 
 ## Conversations and events
 
-The [TUI](tui.md#opening-a-document) automatically restores its last explicitly selected
-or submitted conversation for each document. `tui FILE --new-conversation` bypasses this
-selection; CLI `prompt` continues to require an explicit `--session` for reuse.
-
-Every invocation prints a local conversation UUID. Resume it with the same document, adapter arguments, and requested authentication mode:
+The [TUI](tui.md#opening-a-document) restores the last selected or submitted
+conversation for each document. Use `tui FILE --new-conversation` for a fresh one.
+The CLI prints a local conversation UUID; reuse it explicitly to continue:
 
 ```sh
-lazypencil prompt design.pen --agent codex --session <local-uuid> "Make the main action clearer"
+lazypencil prompt design.pen --agent codex --session LOCAL_UUID "Make the main action clearer"
 ```
 
-The native session ID is saved before sending the prompt. Reload occurs only when the adapter advertises `loadSession`; an ordinary transcript is not treated as resumable agent state. If that capability is absent, CLI and TUI create a new native session within the same local conversation and report `session_restarted`. The ready event identifies its `session_origin` as `new`, `loaded`, or `restarted`. A conversation lock prevents concurrent local reuse. There is no automatic replay of a failed prompt. The shared host supports multiple sequential turns on one live connection; the CLI reloads the native session between process invocations.
+Use the same document, adapter settings and authentication mode. Only one live
+frontend can use a local conversation at a time.
 
-A replacement native session receives the current document path/revision and descriptive excerpts from at most four recent local turn transcripts. Each request excerpt has at most 1,024 Unicode characters. History scanning stops after 4,096 directory entries and reads at most the first and last 64 KiB of each selected transcript. Only matching conversation/document/turn records count; corrupt or unavailable history is disclosed, and incomplete turns are not labeled successful. This is a bounded context summary, not restored model memory. The prompt instructs the agent to inspect the current document, treat past requests as context, and execute only the current request. Previous images remain registered but are not automatically reattached. Existing transcripts and committed edits are preserved.
+When the adapter supports native session loading, lazypencil reconnects to it.
+Otherwise, it starts a replacement session with the current document and excerpts
+from up to four recent turns. Reattach previous images if the new request needs
+them. Reopening a conversation leaves failed or interrupted requests for explicit review.
 
-An advertised `session/load` failure is reported without silently opening a new session or sending the pending prompt. After checking the error, explicitly use `lazypencil prompt design.pen --session LOCAL_UUID --restart-session "Continue from the current document"`, or the same options on `tui`, to replace the native session with the same bounded context. This option requires a local conversation ID and applies only to the next connection; it does not relax model, authentication, permission, or document-binding checks. Library `AgentHost` callers retain strict loading by default and must opt into fallback and provide frontend context themselves.
+If native loading fails, check the error before opting into a replacement session:
 
-A replacement session saves `continuity_pending` before its first prompt can be sent. Cancellation, connection failure, and a failed local turn preserve this flag. The next explicit request adds current document context and the same bounded descriptive history even when native loading succeeds, and reports `local_context` rather than claiming another native restart. A successfully completed local turn clears the flag; a final transcript-write failure restores it with the draft and pending attachments. Local metadata version 3 records this state. Versions 1 and 2 upgrade on opening without discarding drafts, native IDs, or stored images; unknown newer versions are rejected before saving.
+```sh
+lazypencil prompt design.pen --agent codex --session LOCAL_UUID --restart-session "Continue from the current document"
+```
 
-Metadata, normalized images, and one JSONL transcript per turn live below the document's directory in the lazypencil **user data store**, not alongside the `.pen` source. Unix directories/files are created with private permissions. Logs include guide/style versions and hashes, user text, native session metadata, updates, permission decisions, and the actual final document revision. Image payloads in events are replaced with length/hash metadata in transcripts and CLI NDJSON. Adapter stderr is continuously drained without retaining its contents; connection errors report the drained byte count where available. ACP request and transport errors expose a host-defined phase and the numeric protocol error code when available. Adapter error messages and arbitrary error data are omitted from terminal output, NDJSON and transcripts. Host cancellation, authentication-route checks and setup deadlines retain their own errors across the SDK boundary; remote error data cannot select a host error code.
-
-CLI/TUI conversations save detailed ACP errors separately as `adapter-error-UUID.json` in the local conversation directory (`documents/DOCUMENT_KEY/conversations/LOCAL_UUID/` under the user data store). Each file contains a timestamp, the failing phase, and the SDK error's full `code`, `message`, and optional `data`. This includes startup and `session/load` failures before a prompt is submitted or a turn transcript exists. Files are created exclusively, with mode `0600` on Unix, and follow the conversation's deletion and retention lifecycle. These diagnostic files can contain credentials or private document text supplied by an adapter; inspect them locally before sharing. The displayed error includes the diagnostic path; structured frontend error details also include `adapter_diagnostic_path`, or `adapter_diagnostic_write_error` if saving failed. The original ACP failure remains the reported error. Library `AgentOptions` callers can opt in by setting `diagnostic_directory` to an existing private directory.
-
-`--json prompt` is NDJSON rather than a single JSON object. Event types currently include `start`, `initialized`, `session_restarted`, `local_context`, `ready`, `auth_status`, `update`, `agent_notification`, `permission_request`, `permission_response`, `design_resource`, `tool_timing`, `turn_complete`, `turn_error`, `connection_error`, `complete`, `failed`, and a terminal CLI `error` on failure. Unknown update fields and extension notifications are preserved; the recognized authentication notification is normalized as described above. Text terminal output removes control characters; NDJSON uses ordinary JSON escaping. Per-turn transcripts have a 64 MiB limit, and incoming ACP lines have a 16 MiB limit. A final transcript-write failure reports `failed` and restores the draft and pending attachments; it does not undo committed document edits. If restoring local metadata also fails, the failure is reported explicitly and the live host retains the draft in memory.
-
-New transcript events include wall-clock and monotonic timestamps. Owned MCP calls also persist queue and execution durations, including errors and drained cancellations, without adding tool arguments or result bodies to the timing records. See [conversation and tool timing](performance-logging.md) for fields, correlation, storage and measurement limits.
+The same options are available on `tui`. A replacement keeps the local conversation
+and its files, while giving the agent the current document and recent context.
+It does not recreate the previous model's full internal state.
 
 ### Read saved conversations without an agent
 
 ```sh
 lazypencil conversations list design.pen --json
 lazypencil conversations turns design.pen LOCAL_UUID --json
-lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
 lazypencil conversations view design.pen LOCAL_UUID TURN_UUID
+lazypencil conversations read design.pen LOCAL_UUID TURN_UUID --json
 ```
 
-These read-only commands use the document's local data directory and work while a frontend owns the conversation or after its adapter has been removed. They do not authenticate, launch an adapter, resume a session, clear a draft, or resend a prompt. The document must still exist at its registered path. This is browsing local records, separate from restoring a model's internal context.
+Use `view` for readable text and `read` for raw JSONL. The original document must
+still exist at its registered path. These commands read local records and do not
+need a running adapter.
 
-Lists accept `--limit 1..200` and `--cursor`, returning `next_cursor` and `previous_cursor`. Entries use stable ascending UUID order rather than an inferred chronology. Listings are live (`snapshot: false`): concurrent new entries before the current cursor appear after refreshing. Cursors are bound to the document and listing; a conversation cursor cannot select turns or another conversation. Invalid recognized entries remain visible as unavailable instead of being treated as successful history.
+Lists accept `--limit 1..200` and `--cursor`; results return `next_cursor` and
+`previous_cursor`. Refresh the list to see concurrent additions. `view --json`
+returns a text page and its next cursor. `read` returns up to 64 KiB; continue with
+`--offset` set to `next_offset` and the returned `--expected-revision`.
+If the stored content changes, refresh rather than reusing an old cursor or revision.
 
-`read` returns up to 64 KiB of the original JSONL, including an unfinished final record. Follow `next_offset` with `--offset` and the returned `--expected-revision`; continuation requires that revision. Every page checks the entire transcript before and after reading, so even a same-size edit with a preserved modification time invalidates continuation. Normal pages end at UTF-8 boundaries. Damaged UTF-8 returns display text with replacement characters plus exact `bytes_base64`, with `utf8_valid: false`; no saved suffix is silently discarded. This is a bounded raw transcript interface, not a formatted TUI history browser.
-
-`view` decodes complete user requests and streamed responses, thinking text, tool status and completion/failure markers. It prints a bounded text page; `--json` returns the page with its `next_cursor`, supplied to `--cursor` for continuation. Display cursors bind the document, session, turn, whole transcript revision and formatter version. Text values, including long strings and JSON Unicode escapes, are decoded incrementally; complete records are not deserialized or accumulated. Unknown, ambiguous, unfinished or out-of-profile JSON records remain visible as sanitized original text. Tool details and exact original bytes remain available through `read` or the TUI's raw mode. A content change rejects continuation and requires an explicit refresh.
-
-Reads retain the existing 64 MiB per-turn bound, accept cancellation and have a 30 second cooperative deadline. Listings keep one page and one lookahead in memory; transcript hashing uses a 64 KiB buffer. Conversation metadata and first-record identity are checked against the selected document/session/turn. Recognized symlink directories, symlink file leaves, non-regular files and foreign headers are rejected. This does not make local logs tamper-proof against their filesystem owner. The [TUI's saved-log browser](tui.md#saved-conversation-logs) uses these shared APIs. Explicit TUI selection is described below; [reviewed deletion](#delete-local-conversation-data) and [user-owned aggregate retention](configuration.md#local-conversation-retention) are available.
-
-Transcript writes run on a dedicated worker with an 8 MiB queue. Streamed chunks
-share disk synchronization at intervals of at most 100 ms while storage responds.
-Initial prompt submissions and permission responses wait for preceding records to become durable
-before delivery; successful turn completion waits for its final record too. Slow or
-failed storage does not block terminal input. Queue exhaustion or a write/sync failure
-fails the turn and keeps its draft; it is never reported as a successful saved turn.
-An abrupt process or machine failure can lose the latest unsynchronized stream chunks.
+Use the [TUI log browser](tui.md#saved-conversation-logs) for interactive browsing.
 
 ### Select local conversation state
 
-CLI requests continue to choose a local UUID with `prompt --session UUID` or `tui --session UUID`. Library frontends can call `Conversation::select(Some(id))` while idle, or `select(None)` to create an empty local conversation. The TUI exposes these through the saved browser’s `u` and `N` keys and the **New empty conversation** palette action. Selecting the current ID is a no-op.
+Select another conversation in the TUI's saved browser with `u`, or press `N` to
+create an empty one. **New empty conversation** is also in the command palette.
+Finish or cancel the active request and pending image/file operations first.
 
-Selection keeps each conversation’s own draft, pending/retained images, transcripts, and native session ID. It validates and leases the target before closing the previous adapter and revoking its connection grants, then resets live permissions, events and displayed authentication. The shared selection API does not itself send either draft. The TUI then prepares the selected session in the background, negotiating native loading or the bounded continuity fallback; inference still requires explicit submission. A target must match the document, configured agent, adapter fingerprint and requested authentication route; incompatible or busy targets fail without replacing the current local state. Choose the corresponding CLI agent/adapter settings to open an incompatible session.
-
-Agent requests, image input and local document operations must finish or be cancelled before TUI selection. The short registry lease serializes session opening with local lifecycle operations; the active conversation retains its own exclusive lease. Symlink directories, metadata/lock symlinks and non-regular leaves are rejected.
+Each conversation keeps its own draft, images, transcript and native session ID.
+Selection leaves the draft unsent. If a conversation belongs to another document,
+uses incompatible agent settings or is already open, the current conversation stays
+selected; correct the settings or close its other frontend before trying again.
 
 ### Delete local conversation data
 
+Review an inactive conversation, then use the returned revision to confirm deletion:
+
 ```sh
-# Review an inactive conversation without changing or sending its draft.
 lazypencil conversations delete design.pen LOCAL_UUID --json
-# Copy revision from that review, then explicitly commit the deletion.
 lazypencil conversations delete design.pen LOCAL_UUID --expected-revision REVIEWED_SHA256 --json
-# Finish committed deletions interrupted during filesystem cleanup.
-lazypencil conversations cleanup design.pen --json
 ```
 
-The review identifies the full local UUID, document, byte/file totals, draft characters and image counts. The shared API holds an exclusive conversation lease while hashing every local file with a 64 KiB buffer. It has a 30 second cooperative deadline and a 100,000 entry/64-level limit; a missing, busy, foreign, unsupported-format or changed conversation is rejected. Revision checking covers contents, names and filesystem identities, including same-length content changes whose modification time was preserved. Metadata/lock symlinks and non-regular files are rejected; ordinary symlink leaves inside the payload are recorded without following their targets.
+The review shows the document, full local UUID, size, draft and image counts.
+Close the conversation or select another one before deleting it. Confirmation
+removes its local drafts, reference images, transcripts and usage records. The
+`.pen` file, checkpoints, imported project assets and provider-side history remain.
 
-Commit atomically moves the reviewed directory out of the live conversation namespace under the stable registry lease, then removes its local drafts, attachments, transcripts and usage journals. The `.pen`, document checkpoints, imported project assets, provider-side conversation history and authentication stores remain. An inactive unsent draft may be deleted only through this explicit reviewed operation. Every live CLI/TUI keeps its conversation leased, including while idle; select another or close it first. No adapter or authentication is needed.
+If cleanup is interrupted after deletion is committed, run:
 
-After the rename, cancellation or cleanup failure cannot restore the conversation. Results retain `deleted: true` and report `cleanup_complete`, any cleanup error and directory-sync errors. A private journal outside the payload allows `cleanup` to finish after a crash or partial recursive removal, even if `session.json` has already disappeared. Cleanup leaves busy, foreign, malformed or symlink tombstones available for diagnosis. The TUI's `d` review and `y` confirmation call the same API.
+```sh
+lazypencil conversations cleanup design.pen --json
+lazypencil conversations cleanup --all --json
+```
 
-Cleanup waiting observes the shared deadline and cancellation while a bounded internal worker retains standard non-following filesystem removal. Cleanup may finish while the frontend remains alive; process exit leaves the journal recoverable. `conversations cleanup --all` works after original documents have moved or disappeared. Cleanup results include total counts, at most 200 detailed removed/retained records and explicit truncation. Cancellation retains completed results. The TUI shows pending cleanup and directory-sync warnings, and a late interrupt cannot turn a committed deletion into a cancelled review.
+`deleted: true` means the deletion was committed; `cleanup_complete: false` means
+file cleanup still needs attention. Repeat cleanup for the remaining work.
+`--all` also handles records whose original documents have moved or disappeared.
 
-User `[conversations.retention]` settings control a reviewed aggregate `conversations prune` across all local document stores. Defaults keep everything; active sessions, drafts, pending images and incomplete continuity are protected even when they prevent satisfying the byte limit. See [retention policy and commands](configuration.md#local-conversation-retention).
+For deletion across conversations, configure and review
+[conversation retention](configuration.md#local-conversation-retention).
+
+### Local logs and diagnostics
+
+Conversation records live in the lazypencil user data directory, under
+`documents/DOCUMENT_KEY/conversations/LOCAL_UUID/`. They include your requests,
+responses, permission decisions and document revisions. Image payloads are
+represented by size/hash metadata in transcripts; the saved images are separate.
+
+Detailed connection errors are saved as `adapter-error-UUID.json`. The displayed
+error gives the path. These files can contain private text or credentials supplied
+by the adapter; inspect them locally before sharing. Deleting the conversation
+also deletes its diagnostics.
+
+A transcript-storage failure fails the turn and preserves its draft. Saved document
+edits remain available even if logging or the connection later fails. Back up the
+user data directory if you want to preserve conversations as well as `.pen` files.
 
 ### Design-resource records
 
-Automatic project guides use the identity of the embedded guide resource. Fetching the same project guide separately adds catalogue metadata and produces a different contextual identity. Compare the corresponding response form; `source_hash` identifies the raw guide-file bytes.
+Logs record the guide/style IDs, versions and hashes supplied to a turn. Successful
+`get_guidance`, `get_style` and `list_styles` responses produce `design_resource`
+events when the turn ends. These identify the resources made available to the agent;
+a catalogue listing records the list response, rather than each style's contents.
 
-The shared CLI/TUI host gives its owned MCP process a document- and connection-bound usage grant. Each prompt publishes a new turn UUID, also present in `start`, `complete`, and `failed`. For successful `get_guidance`, `get_style`, and `list_styles` calls, the server syncs a bounded metadata record before returning the result. A guide record includes its ID, version, language and resource hash; the workflow also records each automatic project guide included with it. Styles record their full resource hash, including their example. A style catalogue record describes the returned page's IDs/versions and a SHA-256 of the complete structured response (`hash_scope: "response"`); a catalogue page does not count as reading each style's full instructions. Project revisions and available instruction/catalogue fingerprints accompany the records.
+Records include the turn UUID and relevant document/configuration revisions.
+Resource bodies, image payloads and credentials are omitted. Interrupted turns
+can also leave local `design-usage-CONNECTION/TURN.jsonl` records for diagnosis.
 
-At turn completion, cancellation, or failure, the host freezes the journal, validates it, and appends `design_resource` events to that turn's transcript and NDJSON before the final host result. These events therefore arrive when the turn ends, rather than being a live progress feed. Failed queries are not recorded as retrieved resources. A request captured for an older turn cannot append to a newer turn. Normal connection close removes its grant. A journal write or capacity failure makes the resource tool fail; an unreadable or corrupt journal makes the turn fail and retains the draft. Each record is limited to 64 KiB and each turn's journal to 4 MiB. Resource bodies, tokens, examples, source paths and image payloads are omitted from these records.
+### Machine-readable events
 
-The journals remain under `design-usage-CONNECTION/TURN.jsonl` in the conversation's user-data directory, alongside their small lock file, so an interrupted transcript has bounded per-turn evidence available for diagnosis. This is a local record of results prepared by the owned server: it does not prove network delivery, the model's internal reasoning, or that the model applied the instructions. It is not a tamper-proof audit against a process with the user's filesystem access. Unix usage grants have the same live-owner requirement as image grants; their private manifest version is 2, while the retained Windows implementation keeps version 1. An already connected MCP process cannot append after its owner expires. Resuming the same local conversation reclaims recognized expired image/usage manifests and owner files under its exclusive conversation lock, including owner files left before a manifest was published. Cleanup holds only a shared probe, so it cannot make an expired grant appear live. Unknown or malformed records and symlinks are retained; image files, transcripts, usage journals and project assets are preserved. Standalone MCP clients have no host-owned turn journal. Unreferenced project assets use the separate explicit `assets prune` review.
+`--json prompt` writes one JSON event per line (NDJSON). Events include `start`,
+`initialized`, `session_restarted`, `local_context`, `ready`, `auth_status`, `update`,
+`agent_notification`, `permission_request`, `permission_response`, `design_resource`,
+`tool_timing`, `turn_complete`, `turn_error`, `connection_error`, `complete` and
+`failed`. A command failure can also produce a terminal `error` event.
 
-Journal operations wait up to five seconds for a busy peer, checking cancellation while waiting. The timeout retains `LOCK_UNAVAILABLE` and reports the elapsed/allowed wait in error details. Unrelated I/O errors are not retried as contention.
+`session_origin` in `ready` is `new`, `loaded` or `restarted`. `local_context` means
+recent local context was supplied while continuity is being re-established.
+Diagnostic paths appear as `adapter_diagnostic_path`, or
+`adapter_diagnostic_write_error` when saving the diagnostic failed.
 
-## Permissions and cancellation
+Transcripts allow up to 64 MiB per turn and incoming ACP lines up to 16 MiB.
+See [conversation and tool timing](performance-logging.md) for timestamps and
+queue/execution duration fields.
 
-`--document-tools allow` is the default for an explicitly requested document prompt. It selects **allow once** only for registered tools on this conversation's bound lazypencil MCP server. Claude's programmatic tool name is checked against the registry; Codex's name-free approvals are correlated by session and tool-call ID with explicit MCP/server/tool metadata from its earlier tool-call event. Titles are never authorization evidence. Completed calls expire from this correlation, other sessions/servers and unknown tool names are rejected, and no persistent allow option is selected.
+## Herdr conversation status
 
-Use `--document-tools ask` to disable this preauthorization. Remaining permission requests display the adapter's options when stdin and stderr are terminals. `--non-interactive`, or a non-terminal invocation, rejects unresolved permissions. An agent's later `end_turn` or cancellation after rejection does not hide a non-interactive denial: the CLI exits with an agent error. The host advertises no filesystem or terminal execution callbacks. Other unsupported client requests receive the SDK's method-not-found response.
+Inside a Herdr pane, conversation activity appears as `working`, waiting for a
+permission decision as `blocked`, and readiness for another request as `idle`.
+The integration is automatic when Herdr supplies its pane environment. It reports
+activity rather than conversation contents, and failures to update the sidebar
+leave the design session running.
 
-Authorization for document edits does not grant arbitrary shell or filesystem access. The document-bound MCP server is not a sandbox for the external agent. The native modes above are requested and acknowledged through ACP; they do not prove OS-level isolation for every runtime, hook, plugin, or explicitly supplied adapter. Broader runtime diagnostics and cross-platform restriction tests remain required. A blanket approval mode is not used to make tests pass.
-
-Ctrl+C sends `session/cancel` for an active turn and denies pending permissions.
-An unresponsive adapter is terminated after five seconds. `--timeout` defaults to
-600 seconds per turn; setup has its own 60-second deadline. Closing reaps the owned
-adapter. Unix guardians watch a separate close-on-exec ownership channel; Windows
-workers join a host-owned Job before spawning the adapter. Owner death revokes
-host-bound grants and stops ordinary owned descendants. Deliberately escaping
-processes and universal OS-crash cleanup are outside that guarantee.
-
-The TUI can send text into a running turn through `_session/steering`, while
-`/queue <text>` keeps the normal sequential prompt lifecycle. Steering is enabled
-only for an advertised capability and recognized versions with a host-owned idle
-fallback (codex-acp 2.3.0+, claude-agent-acp 0.100.0+). The host sends
-`_meta.steering.idleBehavior = "promptRequired"` so a completion race cannot silently
-start another turn. A `promptRequired` receipt leaves the input queued; an `injected`
-receipt records it as user input in the active transcript. Unconfirmed delivery stays
-in a paused queue for review, including after reopening. Steering neither resets the
-turn deadline nor changes document-tool permissions, authentication or image grants.
-
-Committed edit batches remain in the document after cancellation or a crash. The CLI rereads the actual document after stopping, records its revision, and leaves committed history available through `history` and `restore`. It does not automatically roll back or retry. Invalid final document data produces a failure rather than a successful completion event.
+See [Herdr's integration reference](https://herdr.dev/tui/docs/add-herdr-support/)
+for sidebar state and notifications.
 
 ## Library embedding and development
 
-Use `Conversation::open_with_executable(args, data_dir, lazypencil_binary)` to bind
-MCP and process supervision to an absolute, existing lazypencil executable. Library
-`AgentHost` callers also set `AgentOptions.supervisor_executable`. The CLI uses its
-own executable. A saved transcript is not an independently resumable provider session.
+The host negotiates ACP protocol v1 through the Rust `agent-client-protocol` SDK.
+Dependency versions are maintained in [Cargo.toml](../Cargo.toml).
+Use `Conversation::open_with_executable(args, data_dir, lazypencil_binary)` with an
+absolute executable path. Direct `AgentHost` callers also set
+`AgentOptions.supervisor_executable`; detailed diagnostics can be enabled with
+`AgentOptions.diagnostic_directory` pointing to an existing private directory.
 
-Run `cargo xtask test --test agent` for deterministic process/protocol checks with
-isolated settings and the native helper. Direct invocations can set
-`LAZYPENCIL_TEST_HELPER` to an already built helper. Installed-adapter and live-workflow
-tests are opt-in; the latter send real prompts and consume account usage. See their
-filters/options in `tests/agent.rs` and `tests/agent_workflow.rs` and the
-[development guide](development.md).
-
-### Change permission modes in the TUI
-
-Open **Agent permissions…** from the command palette or `/permissions` (`/mode`).
-The header shows the adapter-reported effective mode; the picker shows its source,
-reported modes and descriptions, and the current working directory. Codex commonly
-advertises `read-only`, `workspace-write`, `agent` (automatic review), and
-`agent-full-access`. Claude commonly advertises `default`, `acceptEdits`, `plan`,
-and conditional `auto` and `bypassPermissions`. Only the connected adapter's
-advertised modes can be selected. These modes are provider-specific, not a shared
-sandbox contract. `dontAsk`, when not advertised, cannot be selected through ACP.
-
-Choose **This conversation only**, **Save as project default**, or **Save as global
-default**. Temporary choices override the current invocation and are remembered
-while switching conversations in the same TUI; they expire when the TUI closes.
-Saved defaults still follow explicit CLI > project > user > built-in precedence on
-future launches. Saving changes only the selected agent's `mode`, preserving other
-settings and comments, and follows an existing user configuration symlink to its
-physical file. A concurrent edit requires a fresh review instead of being overwritten.
-
-Project saving displays the destination and the complete resulting agent settings.
-**Trust & apply** explicitly grants the existing project execution trust scope for
-those reviewed settings. Design-instruction trust stays separate. Full access and
-Claude's bypass mode require an additional explicit confirmation. No setting changes
-an outstanding tool approval: use the original approval choices to respond. Press
-`p` or click **Permissions…** on that approval to change later turns' permissions.
-
-During an active turn, confirm **Apply after turn** to schedule a change. The current
-turn keeps its permissions, and queued prompts wait for the adapter's confirmation.
-Press `c` in the permission picker to cancel an unsent change. Mode application does
-not resend a prompt or clear a draft. A failed or unconfirmed change pauses queued
-prompts and reports the actual mode separately from the requested one. A timeout
-closes the connection; reconnect before sending again. If the adapter applies the
-mode but saving defaults fails, the UI reports that distinction explicitly.
+Run `cargo xtask test --test agent` for process/protocol checks. Installed-adapter
+and live-workflow tests are opt-in; live requests consume account usage. See
+[development](development.md#focused-development-checks),
+[agent tests](../tests/agent.rs) and [workflow tests](../tests/agent_workflow.rs).

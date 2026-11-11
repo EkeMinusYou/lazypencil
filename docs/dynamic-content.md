@@ -1,9 +1,16 @@
 # Dynamic content
 
-Script nodes generate ordinary layout nodes in a QuickJS worker. Browser nodes capture
-web pages, and GLSL fills/strokes/effects use software WebGL in a separate Chromium
-process. Skia composites the results with native graphics. Chromium is installed
-[explicitly](runtimes.md); rendering never downloads a missing runtime.
+Add generated charts with JavaScript, embed web-page captures with browser nodes,
+or create animated fills and effects with GLSL. Start from the bundled examples:
+
+```sh
+lazypencil render examples/script-chart.pen --output chart.png
+lazypencil runtime setup chromium
+lazypencil render examples/dynamic-panel.pen --output dynamic-panel.png
+```
+
+Keep `examples/assets` beside the documents. JavaScript generates ordinary design
+nodes; browser content and GLSL use the [Chromium runtime](runtimes.md).
 
 ## JavaScript
 
@@ -37,11 +44,11 @@ or source node. A retained `snapshot_id` reads the same calculation without reru
 code. A script reading a content-sized dimension needs a definite dependency or explicit
 fallback; nonconvergent calculations fail rather than inventing a size.
 
-The defaults are 2 seconds/64 MiB per evaluation, 8 layout passes, 128 evaluations, and
-a 10-second generated-layout budget. Code is limited to 1 MiB, protocol frames to 4 MiB,
+Defaults allow 2 seconds and a 64 MiB JavaScript heap per evaluation, 8 layout
+passes, 128 evaluations, and 10 seconds for generated layout. Code is limited to 1 MiB, protocol frames to 4 MiB,
 output to 1,000 nodes/64 levels, and the JS stack to 512 KiB. Captured
 [JavaScript policy](configuration.md#javascript-execution-limits) controls configurable
-limits; catching an interpreter interruption cannot turn that evaluation into success.
+limits. If a calculation exceeds one, simplify the script or adjust that setting.
 
 ## Script copy and detach
 
@@ -50,13 +57,11 @@ geometry. An independent component copy closes component, variable, theme, and s
 asset dependencies without executing or rewriting JavaScript. Use `options.script_assets`
 for files selected only inside code, keyed by the qualified source script node.
 
-Code, output, saved-input, variable, and browser-resource namespaces remain distinct
-through nested generation and recopy. An explicit code/input update selects the caller's
-context for that field even when its JSON is unchanged; other fields keep inheritance.
-Private `metadata.lazypencil` scope/binding/input-generation records preserve this
-ownership. They are not user-editable path permissions or a Pencil round-trip contract.
-Missing legacy provenance produces a diagnostic and requires recopying from the source.
-See [component import](mcp.md#importing-components).
+Copied components preserve the origins of code, inputs and referenced resources.
+Edit the owning script or its inputs to change generated content. Internal
+`metadata.lazypencil` records keep those relationships; leave them intact when
+editing files by hand. If a legacy component lacks the required origin data,
+recopy it from its source. See [component import](mcp.md#importing-components).
 
 ## Browser nodes
 
@@ -78,9 +83,8 @@ The canonical original directory URL ends in `/`; `path` is relative to the owni
 document. A node can then reference `file:///original/site/index.html`. Only captured
 files from its namespace are served. `pack_browser_resources` saves them as a portable
 managed bundle. Empty roots remove the declaration. Changed resources invalidate old
-rasters and retained DOM. Code/URL text is not rewritten during copy. Complete native
-file metadata, range/media loading, worklets, popups, and all worker bootstrap cases
-are outside the current compatibility guarantee.
+rasters and retained DOM. Code/URL text is not rewritten during copy. Local page capture supports declared files. Pages relying on native file metadata,
+range/media loading, worklets, popups or complex worker startup may need adaptation.
 
 ### Capture policies and reproducibility
 
@@ -88,7 +92,7 @@ Capture waits for load, web fonts, decoded images, and two animation frames. Opt
 network-idle, selector, extra-wait, animation, and online/offline settings share the
 existing acquisition/render deadline. These are host settings, not extra node fields;
 see [browser configuration](configuration.md#browser-shader-and-raster-cache-limits).
-They do not guarantee that future requests or application state have settled.
+Use an application-specific ready selector for content that appears after load.
 
 CLI/MCP normally reuse captured rasters but create fresh isolated contexts for new
 anonymous acquisitions. `--refresh` / `refresh: true` requests fresh pixels. The TUI
@@ -96,10 +100,9 @@ opts into up to eight retained per-node page contexts, refreshing DOM without na
 where identity remains compatible. Dedicated [authentication profiles](runtimes.md#dedicated-authentication-profiles)
 are explicit and separate from personal browser profiles.
 
-Acquisition metadata includes its identity, time, actual browser/renderer, view, limits,
-inputs, and image hashes. URLs are redacted. A calculation snapshot and page acquisition
-have distinct identities; cached metadata describes its original acquisition, not a
-promise that a page process is still alive.
+Capture metadata identifies the browser, view, settings, time and image hashes.
+A cached image describes its original capture. Use refresh when you need the
+current page state.
 
 ## GLSL fills and effects
 
@@ -119,17 +122,13 @@ resolution cannot be arrays or overridden in the document. Resolution and
 `gl_FragCoord.xy` use local logical dimensions even at enlarged output; z/w retain
 WebGL semantics. Render time defaults to zero.
 
-Bounded Wasm preprocessing uses the actual compiler's predefined macros, preserving
-selected annotations, original source hashes, and diagnostics. The checked-in component
-requires neither Node nor a Wasm toolchain for ordinary application builds. Exact type,
-default, structure, and array syntax is described in the shared
-[shader guide](../resources/guidance/shaders.md).
+See the shared [shader guide](../resources/guidance/shaders.md) for declaration,
+default, structure and array syntax.
 
 Effects can sample `pencil:object` and the previously painted `pencil:background`.
 Effect order and parent/backdrop context matter. The shader process explicitly uses
 SwiftShader, with Chromium's OS sandbox enabled; it cannot fetch HTTP(S), file, or FTP
-inputs directly. Failure to create a context or compile/link/bind a shader is an error,
-not permission to drop the effect.
+inputs directly. Shader compilation or binding errors identify the failing effect so you can repair it.
 
 Limits include 1 MiB of source, 262,144 declaration tokens/events, 256 names/leaf patterns,
 256 array elements, 4,096 supplied/active numeric components, 16 structure levels,
@@ -168,43 +167,39 @@ a new project capture can fetch new bytes. Browser-profile cookies are not impor
 Policy follows `runtime.browser.network_policy` and its timeout, capped at 30 seconds
 across one project's HTTP image acquisition, 20 MiB per encoded image, 4,096-byte URLs,
 and five redirects. Embedded credentials, protocol changes, and HTTPS-to-HTTP downgrade
-are rejected. A cancellation/owner-bound worker contains network work.
-`runtime.browser.image_origins` optionally restricts requests and every redirect to exact
+are rejected. `runtime.browser.image_origins` optionally restricts requests and every redirect to exact
 HTTP(S) scheme/host/port origins. Omit it to inherit; `[]` denies all HTTP images. A project
 can only narrow a user allowlist. This restriction applies to image acquisition, not
 Chromium page requests. `network_policy = "offline"` also denies all HTTP images.
 
 Missing remote images remain explicit incomplete assets for structural repair. Copies
-retain acquired bytes locally and remain renderable after source removal. This does not
-freeze future remote content or guarantee authenticated-service compatibility.
+retain acquired bytes locally and remain renderable after source removal. A later capture can fetch changed remote content. For authenticated pages, use a
+[browser profile](runtimes.md#dedicated-authentication-profiles).
 
 ## Runtime lifetime and cache
 
 JS, page, and shader processes independently expire after 60 seconds without actual
 execution by default. Cache hits do not extend their life. Cached pixels and unexpired
 calculations can survive cleanup; a later execution or refresh restarts workers.
-Library hosts schedule `expire_idle` using the runtime's `idle_deadline`.
 
 Dynamic images are limited to 8,192 pixels per side, 16 megapixels, and 32 MiB PNG.
 Browser/shader launch defaults to 15 seconds; acquisitions default to 30/15 seconds and
 a shared render to 45 seconds. The default 32-entry/64 MiB LRU covers encoded rasters
 and expanded shader-source text, not complete process RSS or decoded/native memory.
-Policy changes invalidate acquisitions; zero capacity disables reuse. Native operations
-are cooperatively checked, so an individual synchronous call can finish after a deadline.
+Policy changes invalidate captures; zero cache capacity disables reuse.
 
 TUI playback requests up to 5 fps by default (1–10 configurable) and drops obsolete
 frames. Page DOM follows browser time; seeking shader time does not rewind a web page
 or put document script generation on a clock. Pausing stops new requests while an
 already requested frame may finish. See [TUI controls](tui.md).
 
-## Initial compatibility limitations
+## Compatibility limits
 
 - Pencil-specific device presets beyond omitted/desktop/phone/tablet return
   `UNSUPPORTED_FEATURE`; basic modes do not emulate a particular named device.
 - Shader fills cannot sample `pencil:object` and return `SHADER_COMPILE_FAILED`.
   Shader effects can sample it.
 
-These settings remain stored during unrelated edits. Rendering rejects the unsupported
-combination instead of returning a complete-looking partial image. Other graphics,
-font, network, and device behavior is limited to the documented implementation;
-complete Pencil parity is not claimed.
+Unsupported settings remain stored during unrelated edits. To render the affected
+document, replace the unsupported feature or use an editor that supports it. See
+[document semantics](pen-semantics.md) for the supported format.

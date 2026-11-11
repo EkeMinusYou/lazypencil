@@ -1,56 +1,47 @@
-# Browser runtime installation
+# Install Chromium for browser content and GLSL
 
-Static Skia rendering and script-generated geometry require no Chromium. Browser
-nodes and GLSL fills/effects need a separate browser. The supported release platform
-is macOS Tahoe 26 or later on Apple Silicon; retained Linux/Windows/Intel catalogue
-entries do not expand that support.
-
-## Managed installation
+Browser nodes and GLSL fills/effects use a separate Chromium runtime. Install it
+when you start using those features:
 
 ```sh
 lazypencil runtime setup chromium
 lazypencil runtime status
 ```
 
-Use the same `--data-dir` / `LAZYPENCIL_DATA_DIR` for setup and rendering. Installation
-uses `runtimes/chromium/<version>/<platform>` in that user data directory and needs no
-administrator privileges to write its files. Rendering never downloads or updates it.
+Ordinary shapes, text, icons and script-generated geometry render locally without
+this runtime.
 
-The [manifest](../resources/runtimes/chromium.json) pins Chrome for Testing
-`chrome-headless-shell`, with exact HTTPS archive URLs, lengths, SHA-256, and installed
-file hashes/modes. The hashes are computed from official downloads, not presented as
-publisher-supplied checksums. Updating a pin requires acquiring/reviewing the official
-archives and checking installation and rendering.
+## Managed installation
 
-Setup verifies before bounded extraction, rejects traversal/links/unlisted files,
-checks the installed tree, synchronizes data and directories, and activates by rename.
-Valid installations are reused; modified ones fail with `RUNTIME_INTEGRITY` and are
-not silently overwritten. Status verifies files without launching a browser.
+Setup installs the selected Chrome for Testing `chrome-headless-shell` in your
+lazypencil data directory. It verifies the download and installed files and reuses
+an existing valid installation. Use the same `--data-dir` or `LAZYPENCIL_DATA_DIR`
+for setup and rendering.
 
-Ctrl+C cancels lock waits, download, hashing, and extraction. Owned network workers
-observe host death and bounded cleanup. Normal cancellation removes that attempt's
-temporary archive/staging directory; an abrupt crash can leave inactive entries.
-Once activation starts, synchronization finishes with a complete installed tree.
-These are OS/storage-dependent durability rules, not a power-loss guarantee.
+Rendering leaves runtime installation to `runtime setup`; it does not download a
+missing browser in the middle of an export. Ctrl+C cancels setup. If setup is
+interrupted, rerun it to complete the installation.
 
 ## Read-only diagnosis
 
 ```sh
-lazypencil --json runtime status
-lazypencil --json doctor
+lazypencil runtime status
+lazypencil doctor
 ```
 
-`available` means the selected files are present, not that startup succeeded. Reports
-mark startup, sandbox-profile inspection, and shared-library inspection as `not_checked`.
-Retained Linux diagnostics include observed namespace/AppArmor-related host settings;
-unknown values are null, not inferred permission. Reads do not create runtime/settings
-or lock directories or modify OS policy.
+Status reports whether the selected runtime files are available and intact. To
+check that the browser can actually start, render a document with a browser node
+or GLSL. Follow the reported stage when troubleshooting:
 
-A failed launch includes `details.stage: "browser_startup"`; navigation failures retain
-`PAGE_LOAD_FAILED` with `details.stage: "page_navigation"`. A bounded `net::ERR_` code
-can identify the navigation failure without returning arbitrary page text or URLs.
-Automatic startup/library/profile probing is not implemented. Do not disable Chromium's
-sandbox to turn an environment failure into success.
+| Result | What to check |
+| --- | --- |
+| Runtime unavailable | Run `runtime setup chromium` with the rendering command's data directory |
+| `RUNTIME_INTEGRITY` | Installed files differ from the expected runtime; inspect the reported path before repairing the installation |
+| `browser_startup` | Check the selected executable and its ability to start on this system |
+| `PAGE_LOAD_FAILED`, `page_navigation` | Check the page URL, access requirements and [capture/network settings](configuration.md#browser-shader-and-raster-cache-limits) |
+
+Keep Chromium's sandbox enabled when diagnosing startup problems.
+For structured output, add `--json` to `runtime status` or `doctor`.
 
 ## Offline archives
 
@@ -58,22 +49,27 @@ sandbox to turn an environment failure into success.
 lazypencil runtime setup chromium --archive /path/to/chrome-headless-shell-mac-arm64.zip
 ```
 
-Supply the exact current platform/version archive. Offline setup uses the same archive
-and installed-file checks; a matching filename alone is insufficient.
+Use the archive for the platform and version in the
+[runtime manifest](../resources/runtimes/chromium.json). Offline setup performs
+the same integrity checks as an online installation.
 
 ## An explicitly selected browser
+
+To use another compatible executable, set `LAZYPENCIL_CHROMIUM`:
 
 ```sh
 LAZYPENCIL_CHROMIUM=/absolute/path/to/chrome-headless-shell lazypencil runtime status
 LAZYPENCIL_CHROMIUM=/absolute/path/to/chrome-headless-shell lazypencil render design.pen --output design.png
 ```
 
-The override is reported as `external-unverified`, `managed: false`, and
-`integrity_verified: false`. Actual browser identity appears in acquisitions. Its
-installation, libraries, licensing, CDP compatibility, and software WebGL support are
-the caller's responsibility. No existing personal browser profile is adopted.
+The report identifies it as `external-unverified`. You manage that installation,
+its updates and its compatibility with the required browser features. The
+managed runtime is the simplest starting point for ordinary captures and GLSL.
 
 ## Dedicated authentication profiles
+
+For pages that need a login, create a lazypencil profile and sign in using a
+visible full Chromium browser:
 
 ```sh
 lazypencil runtime profile create work
@@ -82,72 +78,45 @@ lazypencil runtime profile login work \
   --browser /absolute/path/to/full-chromium --url https://example.com/login
 ```
 
-Login needs a visible full browser. Use that same canonical executable for subsequent
-acquisitions; matching major versions do not make full-browser/headless-shell stores
-interchangeable. First use binds the profile to a hash of its canonical executable
-path, under its lease. A symlink to that path is accepted. Moving to another browser
-path requires a new profile/login; updates at the same path remain browser-owned.
+Close the login tab/window to return. Ctrl+C also closes the login browser.
+`--timeout-seconds` defaults to 600 and accepts 1–3,600 seconds.
 
-Close the owned login tab/window or browser to return. Ctrl+C and `--timeout-seconds`
-(default 600, range 1–3,600) close it through normal cleanup. Select the profile in
-**user** configuration:
+Select the profile in your user configuration:
 
 ```toml
 [runtime.browser]
 profile = "work"
 ```
 
-A project can disable it with `profile = ""`, but cannot select a nonempty name.
-Names use 1–64 lowercase ASCII letters/digits/hyphens, starting with a letter/digit.
-`runtime profile path work` returns its private directory for management.
+Use the same browser executable path for login and subsequent captures. Switching
+to another path requires a new profile and login, even if the browser versions
+match. Updates at the same path continue to use the profile.
 
-Persistent cookies, localStorage, IndexedDB, and Cache Storage live under
-`browser-profiles/<name>` in the selected data directory. They are not imported into
-`.pen` files or conversations, profile names are omitted from acquisition metadata,
-and shader jobs never use them. Host cleanup preserves persistent storage.
+Profile names use 1–64 lowercase ASCII letters, digits or hyphens, beginning with
+a letter or digit. `runtime profile path work` returns its storage directory.
+Cookies, local storage and related browser data remain there across sessions.
+They are separate from `.pen` files and conversations.
 
-One guardian-owned browser leases a profile. On macOS a private local page worker
-serializes acquisitions from retained TUI previews and bound MCP frontends, scoping
-retained tabs, cancellation, resources, and disconnect cleanup per frontend. It verifies
-peer ownership, profile identity, browser path, and supervisor identity. Each frontend
-retains at most eight pages, with at most sixteen connected frontends. Independent
-browser processes cannot use the same store simultaneously; explicit login still needs
-its exclusive lease. Network-policy changes can restart the page browser and reset DOM
-while preserving disk authentication data.
+A project can disable the selected profile with `profile = ""`; choosing a named
+profile is a user setting. Close an active login browser before capturing pages
+with that profile. Concurrent lazypencil previews share the managed profile browser;
+separate browser processes cannot open its storage at the same time.
+Network-policy changes can reset open pages while preserving stored login data.
 
 ## Execution and licensing
 
-Rust uses CDP directly; this rendering path needs neither Node.js nor Puppeteer.
-Anonymous new acquisitions use fresh isolated contexts with downloads denied. TUI
-retention and explicit profiles change only the documented page-state lifetime.
-Page and shader jobs use separate processes.
+Anonymous captures use isolated contexts; authenticated captures use the selected
+profile. Browser pages and GLSL run separately. GLSL uses software WebGL, and its
+image inputs are supplied through the document's captured assets. See
+[dynamic content](dynamic-content.md) for supported features and limitations.
 
-Only the shader process selects `--use-gl=angle --use-angle=swiftshader-webgl
---enable-unsafe-swiftshader`. This software WebGL opt-in has weaker security guarantees
-than Chromium's normal GPU path; it receives captured GLSL/images and blocks direct
-HTTP(S), file and FTP acquisition. The page process has no such flags. Chromium's own
-OS sandbox remains enabled; `--no-sandbox` is not added.
-
-The downloaded runtime keeps its complete pinned official contents, notices and
-supporting resources. Its licenses remain separate from lazypencil's MIT license.
-The product binary does not bundle a browser archive. Redistribution requires the
-applicable original notices; see [distribution](development.md#licenses-and-third-party-inputs).
+The downloaded runtime retains its original Chromium files and notices. Its
+licenses are separate from lazypencil's MIT license. If redistributing it, retain
+the applicable notices; see [distribution](development.md#licenses-and-third-party-inputs).
 
 ## Integration checks
 
-Real-browser tests are opt-in and require a working sandboxed executable:
-
-```sh
-LAZYPENCIL_CONFIG_DIR="$(mktemp -d)" \
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
-  cargo test --locked --test dynamic_render -- --ignored --test-threads=1
-```
-
-Installer opt-ins use `LAZYPENCIL_TEST_CHROMIUM_ARCHIVE` with the exact pinned ZIP.
-MCP, browser-readiness, uniform, and terminal tests have their own explicit filters;
-prepare their helper/settings as described in [development](development.md).
-
-The [Chromium workflow](../.github/workflows/chromium.yml) delegates to the existing
-CI pipeline, using the supported Mac default. Reuse an existing matching full run
-instead of dispatching overlapping browser verification. Explicit deferred-platform
-diagnostics and their host-library/sandbox setup do not certify a supported release.
+Runtime and browser contributors can run opt-in integration tests using
+`LAZYPENCIL_TEST_CHROMIUM` and `LAZYPENCIL_TEST_CHROMIUM_ARCHIVE` with the matching
+executable and pinned archive. See [development](development.md#focused-development-checks)
+and [dynamic rendering tests](../tests/dynamic_render.rs) for specific filters.

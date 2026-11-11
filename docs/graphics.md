@@ -1,98 +1,12 @@
-# Graphics implementation
+# Graphics and PNG export
 
-The original inputs under `tests/fixtures/render-corpus` are checked against independent mathematical expectations in `xtask/src/fixtures/oracles`. No Pencil-exported images or decoded observation records are used or distributed in the current source. The triangle is expressed as a fresh, self-authored 144×144 white frame and inscribed red regular polygon. Its test retains the 2.19 color edit, exact source preservation, dimensions and bounded edge-antialiasing checks. These checks establish the documented lazypencil contract; they do not establish Pencil pixel parity. Fixture contributions must follow the [independent-oracle rules](development.md#test-fixtures-and-documentation).
-
-The renderer uses Skia CPU and SkParagraph. CLI and MCP share the same layout snapshot, shaped text, captured assets, and rendering code. The target remains the complete agreed `.pen` scope. This document describes verified increments, not a reduced release specification or a claim of Pencil parity.
-
-The current format reference defines text decorations, stroke alignment and per-side widths, normalized image crop transforms, and inner/outer shadows. See the [official `.pen` schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema). The implementations and examples here are original lazypencil code; full behavioral comparison still requires suitable permitted fixtures.
-
-## Rounded polygons
-
-Polygons accept a nonnegative scalar `cornerRadius` through the ordinary variable, theme, and instance property path. Vertices keep their existing placement on the declared ellipse. Circular fillets are constructed from each vertex's original two edges, with their endpoints calculated independently; deriving the next tangent from the previous arc endpoint changes oversized corners. The same path feeds fills, uniform strokes, masks, effects, and visual bounds. Zero-radius and collapsed-edge shapes retain the sharp/degenerate path. Invalid radii are reported as document errors.
-
-The original corpus includes triangles at radii 0, 10, 25, 30, 50, and 100, four-sided and five-sided shapes, unequal width/height, and oversized corners. The documented lazypencil rule caps the radius at half the shortest edge. Circular tangent geometry and nonzero winding define intersecting large fillets. An independent scanline area integrator generates expected RGBA pixels without Skia or application geometry code. Separate tests check its circle and rounded-triangle areas against analytic equations. All four corpora run for 2.19, 2.21, and 2.22 with the original per-image mean-channel and differing-pixel limits; no vendor output is a current oracle.
-
-## Text and outlines
-
-Text content is one string; arbitrary rich-text spans are not a supported serialization.
-
-`underline` and `strikethrough` are boolean properties resolved through the ordinary variable/theme path. SkParagraph paints their decoration masks, so they follow wrapping and line alignment. Paint fills, including gradients and images, are masked by the resulting text and decorations.
-
-Text strokes use the positioned glyph runs visited from the same Paragraph that paints the text. This preserves mixed Japanese/Latin runs, wrapping, alignment, spaces, and variable font weights. The renderer outlines glyphs rather than the text box, supports inner/center/outer alignment and stroke joins/caps, and uses the stroke's own fills and property origin. Empty glyphs such as spaces do not require a path.
-
-Ordinary vector glyphs retain their native paths. Color-table faces and visible glyphs without paths use a bounded native-alpha silhouette, since a color font's base vector path can differ from its painted layers. Sampling uses four pixels per document unit, capped at 2,048 pixels along the longer glyph dimension before padding. Directed marching-squares contours preserve holes and disconnected ink; the isovalue is half an 8-bit alpha step so low-opacity painted parts are retained. Palette boundaries do not create strokes. These sampled contours are an approximation of native raster ink, not recovered font design curves or a claim of Pencil equality. Native colored fills remain unchanged. The layout identity advances to `layout-7`.
-
-Silhouette generation is lazy for active text strokes, reuses repeated glyphs within each shaped run, and checks cancellation during sampling and tracing. A paragraph permits 64 Mi sampled glyph pixels and 1 Mi contour points; these are work limits, not process-RSS guarantees. Clipped temporary masks and malformed/open contours fail explicitly.
-
-The Paragraph's raster glyphs and the extracted paths both use unhinted geometry. Hinting must match glyph-path extraction so an inner outline does not occupy pixels absent from the fill. Fractional-size checks compare both decorated and undecorated text against native masks. The policy is reported as `hinting: "none"` in text metrics; see [font behavior](fonts.md).
-
-The line box and painted ink have separate bounds. Font glyph bounds and decoration metrics contribute to the paint mask and export area, so a small `lineHeight` does not crop letters or decorations above/below that box. The requested line height continues to control layout. A regression test compares against the same Paragraph painted directly on a larger canvas.
-
-Decoration contours also participate in the text stroke, including when `fill` is empty. The contour is the union of positioned glyphs and actual native decoration rectangles. Overlapping strike-through/glyph contours therefore receive a translucent stroke paint only once. Inner/center/outer alignment and the stroke's color, gradient, or image paint use the ordinary stroke path; layout/export bounds include that combined contour.
-
-The glyph visitor does not expose decorations. For text with both decorations and an active stroke, a private adapter records the same Paragraph through Skia's SVG canvas, skips glyph text, and recovers the pinned native solid rectangles and transforms. It does not load arbitrary user SVG or add a browser/runtime. This temporary recording is discarded after creating the geometry and is limited to 16 MiB before XML parsing; it is not a total RSS limit. Unexpected native geometry fails rather than silently omitting the decorations. Ordinary unoutlined text avoids this recording.
-
-## Borders and export bounds
-
-Native vector icons share the shape paint/effect path. Lucide, Feather and Phosphor use pinned geometry; Material uses pinned font outlines. See [icons](icons.md) for discovery and installation.
-
-Uniform strokes are converted to filled geometry with Skia's cap, join, and miter settings. Clipping to the original shape or subtracting it implements inner and outer alignment. This geometry can receive the same color, gradient, image, or shader fills as an ordinary shape. Image and shader sources retain the origin of the `stroke` property, including when inherited from an external component.
-
-Rectangles, frames, and browser nodes support independent top/right/bottom/left widths. A border is the area between outer and inner rounded rectangles, with widths and corner radii adjusted by alignment. Sharp miter, round, and bevel corners are explicit. The border is painted as one shape, avoiding overlapping translucent side strips.
-
-Other shapes use the `top` entry as a uniform width; an omitted `top` means zero. All supplied widths still require finite nonnegative numbers. Resolution is shared by layout, glyph outlines and painting, while the stored side values remain intact.
-
-Layout includes the actual stroke geometry in visual bounds, including long miters at acute path corners and positioned text outlines. This prevents export from cropping strokes to a simple half-width expansion. Disabled and zero-width strokes reserve no space and do not evaluate shader paints. Ordinary node geometry and conservative text boxes can still leave transparent space in an export; these bounds are not an assertion of a minimal nontransparent pixel rectangle.
-
-## Image crop transforms
-
-Image fill `transform` is a six-number affine matrix mapping normalized source-image coordinates into the normalized crop box. The default is identity. For example, `[2, 0, 0, 1, -1, 0]` selects the right half.
-
-The inverse matrix determines the crop's physical aspect from the source image's dimensions. `cover` and `contain` preserve that aspect; `stretch` fits it to the node. Rotation and shear are retained. `contain` clips to the fitted crop viewport so discarded source pixels do not fill the letterbox area. `cover` increases scale and constrains the sampled center when needed to keep the visible viewport inside the source image. Image strokes can sample the edge color outside their node box rather than losing the outer half of their border.
-
-These are the serialized mode values in the targeted schema; UI names such as Fill and Fit are not aliases. Invalid values or non-string modes return the allowed modes in diagnostic details. A paint object missing its type reports the complete image-paint shape and explains that an `update.set.fill` replaces the whole paint rather than merging its fields. The operations guide and image prompt context give the same instructions.
-
-Sampling is linear. Subpixel crop boundaries can therefore interpolate adjacent source pixels; this is not nearest-neighbor extraction or a new immutable cropped image file. Singular, malformed, nonfinite, and numerically unrepresentable transforms fail explicitly. Exact sampling/color-space correspondence with Pencil remains unverified.
-
-## Shadow and paint blending
-
-Inner shadows use the inverse alpha of an offset, blurred copy of the preceding effect result and tint it. Normal uses source-atop; other modes apply color blending inside the destination alpha. The final alpha remains the object's alpha, including translucent pixels. Inner shadows do not expand export bounds.
-
-All eighteen serialized color modes in the current [format schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema) are available for native shadows and implemented paints. Non-normal outer shadows use the scene before the node as their blend backdrop, then place the object's preceding effect result over that shadow. Blended source contribution and replacement coverage stay separate, so the backdrop's alpha is not added twice. Parent opacity follows the combined content/effects. Effects retain array order, including intervening foreground blur, background blur, and GLSL stages. Plain shadows do not launch Chromium.
-
-Color and alpha follow source-over blending, using the [W3C compositing model](https://www.w3.org/TR/compositing-1/#blending) for the standard modes. `linearBurn` clamps the sum of straight colors minus one; `linearDodge` clamps their sum. Both then use source-over alpha. Native color, image, gradient, and stroke painting share this operation; Skia `Plus` is not equivalent because it also adds alpha. Built-in native expressions provide these two modes and the shadow color stages. The same names retain their schema spelling, including `light`. Non-string mode values and invalid shadow kinds fail explicitly, and disabled effects skip evaluation.
-
-Intermediate node rasters snap outward to the destination pixel grid and retain its phase. Layer allocation, painting, capture, and composition share one raster geometry instead of fitting rounded-up bitmaps back into fractional bounds. Zero-area layers remain empty without starting a shader. Ordinary descendants that need no backdrop avoid capturing the entire parent canvas, and nested passes share decoded image data.
-
-A successful structural validation does not prove that every paint/effect in a document can render or match Pencil.
-
-## Mesh gradients
-
-`mesh_gradient` paints run entirely on Skia CPU. The [public schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema) describes a row-major color grid, normalized positions, and optional left/right/top/bottom Bézier handles expressed as relative offsets. A point may be a two-number array or an object with `position` and any combination of the four handles. Colors, opacity, enabled state, and blend modes pass through the usual component/variable/theme resolution. Shape fills, glyph/decorations masks, text outlines, and native border geometry use the same paint path. Stroke sampling clamps to the mesh image at the node-box edges.
-
-Each cell is a Coons surface defined by its four cubic boundary curves. Corner colors interpolate bilinearly in premultiplied sRGB, including alpha, before conversion to native vertex colors. For automatic handles, an interior tangent is the difference between the next and previous point divided by six; an endpoint uses the one-sided difference divided by three. Left/top handles negate the tangent; right/bottom handles use its positive direction. An explicit handle replaces only that direction. Omitted `points` create a regular grid, and omitted `columns`/`rows` default to two. The schema does not specify these defaults, auto-handle details, color interpolation space, or folded-mesh behavior: these are the current documented lazypencil rules, not a claim of exact Pencil equivalence. Supply dimensions and handles explicitly for precise interchange, and keep edge points at default positions as the schema requests.
-
-Geometry subdivision uses conservative second-derivative bounds with a quarter-device-pixel target, and color subdivision bounds the bilinear-versus-triangle error separately. This geometric target is not a bound on final pixel differences: native scan conversion, antialiasing, and image sampling also contribute, particularly near very steep boundaries at extreme aspect ratios. Neighboring cells share subdivision counts along their common boundaries, and shared curves evaluate identically. Large patches split into native 16-bit-index strips with repeated boundary vertices. This prevents changing subdivision density from introducing gaps or extra alpha along joins. Geometry calculations use double precision before conversion to Skia coordinates. A temporary native raster has the requested scale and is linearly sampled through the existing shape mask; it is not silently replaced by a lower-resolution picture-shader tile. Opacity and blend mode apply when that completed field is painted into the scene, followed by the existing node/effect/parent compositing.
-
-Rows and columns must be integral within 2..64. Colors must contain exactly `columns * rows` entries; explicit points must have the same count, positions in 0..1, and finite two-number handles. Fractional JSON representations of whole counts, such as `2.0`, are accepted. The renderer rejects malformed active meshes with node/property/source context. Disabled paints skip evaluation. The mesh raster shares the 16,384-side, 32-megapixel and 512-MiB working-reservation limits; even a small output crop can require the complete mesh raster. Tessellation additionally caps subdivisions at 2,048 per cell direction and combined generated vertices at 2,097,152. Excessive curvature/density fails with `RESOURCE_LIMIT` before native vertex allocation. Self-intersections are not topology-repaired; overlapping triangles replace earlier mesh-raster pixels in row-major cell/triangle order.
-
-## Background blur and compositing
-
-`background_blur` filters the previously painted scene on Skia CPU; it does not start Chromium. The node's foreground content remains sharp unless a later effect blurs it. Like the existing native blur, its radius maps to Gaussian sigma `radius / 2`. Missing radius defaults to zero. Negative, nonfinite, and oversized support fail explicitly; disabled effects are skipped.
-
-Backdrop-aware layers carry color and replacement coverage separately. A translucent captured backdrop replaces the corresponding previous pixels instead of being painted over them a second time. This also preserves transparency through multiple parent opacity layers. Fills, children, and strokes retain their paint order, and parent opacity is applied after the parent's content and effects. A new outer shadow derives its coverage from actual painted alpha, rather than treating a translucent captured backdrop as opaque.
-
-Geometric shapes use their shape as a backdrop mask, including rotation and rounded corners. Text uses the shaped paragraph mask. Groups use the rendered coverage of their contents. Parent clipping limits the final composite while backdrop inputs can extend beyond the parent box. Effects retain array order: a later foreground blur or GLSL shader can process the intermediate result containing the captured backdrop. Shader output alpha can differ from replacement coverage; transparent shader results must not reveal an old copy of the backdrop.
-
-Node previews and region previews are crops of the composited document. `--node` / MCP `node_id` selects the node's visual bounds as the default viewport and retains the document's surrounding and overlapping context. It does not isolate just that node on a transparent canvas. A CLI region is specified as `--region X Y WIDTH HEIGHT`, including negative coordinates. This implements the design's requirement that a crop correspond to the same area in the full image.
-
-The renderer retains extra pixels around the output for filter inputs and crops only after compositing. Native working rasters remain limited to 16,384 pixels per side and 32 megapixels, including overscan. Explicit CPU working rasters have conservative shared scratch reservations capped at 512 MiB and release them on completion or failure. These reservations are not a bound on total process RSS: font data, captured assets, codecs, internal Skia allocations, and optional external runtimes are separate. Support is currently conservative across the document, and intermediate layers can still use complete node bounds; complex filters and large documents can require substantial memory even for small output regions.
-
-Nodes whose visual bounds miss the working viewport are skipped, with one device pixel retained for antialiasing. This avoids unrelated browser and shader jobs when cropping a document. Complete intermediate-layer culling and tighter filter dependency regions remain unfinished; a small output rectangle can still require a large backdrop layer.
-
-`tests/background.rs` covers actual pixels and alpha, parent opacity and clipping, rotation, later shadows, effect order, disabled/invalid filters, scaled crops, selected-node context, and real CLI execution without a browser. The stdio MCP tests check actual transparent PNG image content. A separate real SwiftShader test checks both orders of background blur and a shader that changes alpha. Exact agreement with Pencil across all fonts, color spaces, and effect combinations remains unverified.
+Use `lazypencil render` to export a design, a selected node's area, or a region as
+PNG. Shapes, text, icons, gradients, borders, shadows and background blur render
+locally. Browser nodes and GLSL use the optional [Chromium runtime](runtimes.md).
 
 ## Examples
+
+From a repository checkout, try:
 
 ```sh
 lazypencil render examples/graphics-study.pen --output graphics-study.png
@@ -100,12 +14,136 @@ lazypencil render examples/backdrop-panel.pen --output backdrop-panel.png
 lazypencil render examples/backdrop-panel.pen --region 64 156 872 424 --output backdrop-crop.png
 ```
 
-The editable example combines Japanese decorations, outlined text, unequal rounded borders, an inner shadow, and three crop sizing modes. Its original raster source is included alongside the editable [source design](../examples/assets/crop-source.pen). Neither a browser runtime nor an AI connection is required.
+| Example | What it shows |
+| --- | --- |
+| [Graphics study](../examples/graphics-study.pen) | Text decorations and outlines, borders, inner shadows, and image crop modes |
+| [Backdrop panel](../examples/backdrop-panel.pen) | A translucent panel with background blur, text, a border and a shadow |
+| [Shadow blends](../examples/shadow-blends.pen) | The eighteen blend modes applied to inner and outer shadows |
+| [Mesh study](../examples/mesh-study.pen) | Mesh gradients with moved grid points and explicit handles |
 
-The backdrop-panel example combines a tinted rounded panel over original geometry, sharp Japanese text, a border, and a later shadow. It requires no external assets or runtime.
+Keep `examples/assets` beside the graphics study: its reference image and
+[editable image source](../examples/assets/crop-source.pen) are included there.
+See the [gallery](../examples/README.md) for complete screens and editing prompts.
 
-The original editable [shadow study](../examples/shadow-blends.pen) displays all eighteen modes with outer and inner shadows, translucent surfaces, and Japanese/Latin text. Render it with `lazypencil render examples/shadow-blends.pen --output shadow-blends.png`. It uses bundled fonts and native graphics without Chromium.
+## Rounded polygons
 
-The original editable [mesh study](../examples/mesh-study.pen) combines a hero surface, regular and moved grids, explicit handles, Japanese/Latin lettering, and a mesh border. Render it with `lazypencil render examples/mesh-study.pen --output mesh-study.png`; it uses the bundled font without external assets or Chromium.
+Set a polygon's `cornerRadius` to round its vertices. The radius must be a finite,
+nonnegative number and can come from a variable, theme or instance override.
+Zero keeps sharp corners. Large radii are capped at half the shortest edge.
+The rounded shape is used consistently for fills, strokes, masks and effects.
 
-`tests/graphics.rs` checks actual pixels, bounds, alpha, source origins, mixed/wrapped text runs, corner joins, crop modes and transformed coverage, inactive shaders, and the bundled example. `tests/dynamic_render.rs` additionally checks a real software-WebGL stroke inherited from a library. `tests/render.rs`, `tests/layout.rs`, and `tests/text.rs` retain the earlier regression coverage. These are implementation tests, not an aesthetic comparison with Pencil or verification of every OS and font.
+## Text and outlines
+
+A text node contains one string. Use separate text nodes when you need independently
+styled spans. Set `underline` or `strikethrough` to `true` to decorate the text;
+decorations follow wrapping and alignment and use the text's fills.
+
+A text stroke follows the letters and their decorations, rather than the text box.
+It supports inner, center and outer alignment and can use color, gradient, image
+or shader paints. The line height controls layout; glyphs and decorations that
+extend outside the line box still contribute to the exported area.
+
+Color and bitmap fonts use the painted glyph silhouette for outlines. These
+outlines approximate the rasterized shape, so their edges can differ from a
+font's original vector curves. See [fonts](fonts.md) for family selection,
+missing-character handling and reproducible font inputs.
+
+## Borders and export bounds
+
+Strokes support cap, join, miter and alignment settings. Rectangles, frames and
+browser nodes also support independent top, right, bottom and left widths.
+For other shapes, the `top` width supplies a uniform stroke; omitting it gives
+zero width. Widths must be finite and nonnegative.
+
+Strokes contribute to the exported bounds, including long miters at sharp corners.
+Disabled or zero-width strokes add no area. Text boxes and other conservative
+bounds can leave transparent space around the painted content.
+
+[Icons](icons.md) support the same native fills, strokes and effects as shapes.
+Image and shader paints inherited from a component resolve relative to the
+component that supplied them.
+
+## Image crop transforms
+
+An image fill's six-number `transform` maps normalized source-image coordinates
+into the normalized crop box. The default is the identity transform. For example,
+`[2, 0, 0, 1, -1, 0]` selects the image's right half. Rotation and shear are supported.
+
+| Mode | Result |
+| --- | --- |
+| `cover` | Fill the node while preserving the crop's aspect ratio |
+| `contain` | Fit the crop inside the node, leaving space where necessary |
+| `stretch` | Fit the crop to the node's dimensions |
+
+Use these exact mode values in `.pen` files. When replacing a fill through an
+edit operation, supply the complete paint object, including its `type`;
+`update.set.fill` replaces the previous fill rather than merging individual fields.
+
+Image sampling uses linear interpolation, including near crop boundaries.
+A crop changes how the original image is displayed; it does not create a new
+image file. Invalid or singular transforms produce an error.
+
+## Shadow and paint blending
+
+Inner shadows stay inside the object's painted alpha and do not expand export
+bounds. Outer shadows extend beyond the object. Both support the eighteen blend
+modes from the [`.pen` schema](https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema).
+Effects run in their stored array order, and parent opacity applies to the combined
+content and effects.
+
+Standard modes follow the [W3C compositing model](https://www.w3.org/TR/compositing-1/#blending).
+`linearBurn` clamps the sum of the straight colors minus one; `linearDodge` clamps
+their sum. Both use source-over alpha. Mode names retain their schema spelling,
+including `light`. Disabled effects are skipped.
+
+Run layout validation to find structural problems, then render the document to
+check its paints and effects. These are separate checks: a valid structure can
+still reference a missing image or contain an effect that cannot render.
+
+## Mesh gradients
+
+A `mesh_gradient` uses a row-major grid of colors. `columns` and `rows` default to
+two and must be whole numbers from 2 to 64. Supply exactly `columns * rows` colors.
+Omitted `points` form a regular grid. Explicit points must have the same count,
+with normalized positions between 0 and 1.
+
+A point can be a two-number position or an object with `position` and optional
+left, right, top and bottom Bézier handles. Handles are finite two-number relative
+offsets. An explicit handle replaces only that direction; omitted directions use
+automatic tangents. Interior tangents use the next point minus the previous point,
+divided by six; endpoints use the one-sided difference divided by three.
+
+Cells follow their four boundary curves, with bilinear color interpolation in
+premultiplied sRGB. Supply dimensions and handles explicitly when exchanging
+precise meshes between editors. Folded meshes are drawn in row-major cell/triangle
+order, so later overlapping triangles replace earlier ones.
+
+Mesh fills also work on text, icons and borders. Excessive mesh curvature or
+complexity produces `RESOURCE_LIMIT`; simplify the grid or handles if this occurs.
+
+## Background blur and compositing
+
+`background_blur` blurs the scene behind a node while keeping its foreground
+content sharp. A later blur or shader can change that result, so effect order
+matters. The blur radius maps to Gaussian sigma `radius / 2`; an omitted radius
+is zero. Negative and nonfinite radii are rejected.
+
+Shapes use their outlines as blur masks, text uses its glyphs, and groups use
+their painted contents. Rotation, rounded corners, clipping and parent opacity
+apply to the final composition. Background blur renders locally without Chromium.
+
+Node and region exports are crops of the composed document. `--node` selects the
+node's visual bounds and includes the surrounding or overlapping scene in that
+area. To choose coordinates directly, use `--region X Y WIDTH HEIGHT`; negative
+coordinates are allowed.
+
+## Large exports
+
+Working rasters are limited to 16,384 pixels per side and 32 megapixels. Filters
+need extra pixels around the requested region, and meshes or intermediate layers
+may require their full bounds even for a small crop. If a render exceeds its
+limits, reduce the export scale, the effect radius or the design's complexity.
+
+For supported properties and interchange limits, see [document semantics](pen-semantics.md).
+Renderer contributors should start with [architecture](design.md) and the
+[render fixture rules](development.md#test-fixtures-and-documentation).

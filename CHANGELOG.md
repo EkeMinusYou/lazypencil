@@ -1,13 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.6
 
 - Add `lazypencil demo [FILE]` to create an editable dashboard without an AI connection or runtime downloads, preserving existing destination files.
-- Add workflow-based quick-start routes, a Japanese getting-started guide, an illustrated example gallery, and issue forms for bugs, setup help and environment requests.
+- Rewrite documentation around installation, editing and troubleshooting tasks, with a Japanese guide, illustrated example gallery and issue forms.
+- Correct browser-network policy, playback controls and document-expansion guidance supplied to agents.
+- Improve preview reuse and memory accounting by sharing retained raster pixels, transferring local preview pixels directly and avoiding redundant pan replay for large previews.
+- Separate lightweight node search from exact detail reads and make the document expansion budget configurable with a 256 MiB default.
+- Restrict native gesture capture to the active app and report conversation lifecycle to Herdr only inside Herdr panes.
+- Preserve detailed ACP failures in private conversation diagnostics.
+- Keep conversation selection, resume, session context and checkpoint restoration notices in the footer instead of the conversation body.
 
 ## 0.2.5
 
-- Keep conversation selection, resume, session context and checkpoint restoration notices in the footer instead of the conversation body.
 - Restore conversations at the latest saved response without replaying native history, hide routine completion markers, and keep activity indicators aligned with conversation status.
 - Unify workspace dialogs with the command palette, improve file search and saved conversation formatting, and preserve the prompt while reviewing permissions.
 - Keep native gesture warnings and agent stderr off the terminal workspace.

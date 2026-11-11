@@ -1,9 +1,7 @@
 # Shell completion
 
 Install `lazypencil` on `PATH`, then enable its completion hook in your shell.
-Hooks use the installed executable's CLI definition, so nested subcommands,
-options and their values stay aligned with the installed build. TUI panel keys
-are independent of shell completion.
+Press Tab to complete commands, options, file paths and built-in design resources.
 
 ## Zsh
 
@@ -61,32 +59,23 @@ Completion covers the command hierarchy, visible flags and aliases, declared
 enum values, bundled guides/styles/icon packs/node types, and paths. Directory
 arguments offer directories; file paths preserve spaces and Unicode. Free-form
 values, including document node IDs and adapter-advertised model IDs, remain
-free-form. Generating hooks or requesting candidates does not open a document,
-load project/user configuration, start an agent/Chromium, acquire document
-locks, or create the application data directory.
+free-form.
 
 The hook resolves `lazypencil` through `PATH`. A binary in a directory containing
 spaces or Unicode works when that directory is on `PATH`. When testing a
 different executable, update `PATH` to select it before generating/loading the
 hook.
 
-Generate the hook on shell startup as shown above. Completion uses the pinned
-clap dynamic protocol, which upstream marks unstable; refreshing the hook on
-startup keeps it matched with an upgraded executable. `lazypencil completions
-SHELL --json` returns the shell name and hook text for tooling. Upstream also
-provides `powershell` and `elvish` hook generators; the initial Mac interactive
-checks focus on Bash, Zsh and Fish.
+Keep the hook in your shell startup file so it uses the current executable after
+an upgrade. `lazypencil completions SHELL --json` returns the shell name and hook
+text for tools that manage shell configuration.
 
-`LAZYPENCIL_COMPLETE` and `_CLAP_COMPLETE_*` are internal, per-request variables
-used by the hooks. Do not export them globally. To disable completion, remove
-the startup hook and open a new shell.
+## Troubleshooting
 
-## Verification
+If completion stops working after an upgrade, open a new shell. Check that
+`command -v lazypencil` selects the executable you intend to use. If you manage
+completion settings yourself, avoid exporting `LAZYPENCIL_COMPLETE` or
+`_CLAP_COMPLETE_*`: the hook sets them only for its completion requests.
 
-`tests/completions.rs` checks generation/JSON output, the completion protocol for
-all three primary shells, deep command nesting, values from the owned bundled
-catalogues, hidden-argument exclusion and paths with spaces/Unicode. Separate
-shell processes source the generated hooks and call the real executable; Zsh's
-ZLE-only final presentation is replaced by a capture function in that test.
-Every process has a deadline and bounded captured output. Run it with `cargo xtask test --test completions`; see [development](development.md)
-for helper and isolated-settings setup.
+To disable completion, remove the startup hook and open a new shell.
+For completion development and tests, see [development](development.md).

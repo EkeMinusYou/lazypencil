@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         English and Japanese requests are welcome. Releases currently target macOS Tahoe 26 or later on Apple Silicon.
-        This form collects use cases for prioritization; submitting it does not promise support or a delivery date.
+        Describe the task you want to complete so we can prioritize environment support.
   - type: input
     id: environment
     attributes:
@@ -37,4 +37,4 @@ body:
     id: testing
     attributes:
       label: Existing results or willingness to test (optional)
-      description: If you tried a build, include its version and relevant results. No need to build from source to submit this request.
+      description: If you already tried a build, include its version and relevant results.

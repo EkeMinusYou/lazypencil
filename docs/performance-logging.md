@@ -1,10 +1,11 @@
 # Conversation and tool timing
 
-New CLI/TUI conversation transcripts (`turn-TURN.jsonl` under the document's
+Use conversation timestamps and MCP timing metadata to investigate where a request
+spends time. CLI/TUI conversation transcripts (`turn-TURN.jsonl` under the document's
 conversation directory) record `recorded_at_unix_ms` and `elapsed_us` on every
 event. The first is wall time in milliseconds since the Unix epoch; the second
-uses a monotonic clock from transcript creation. Historical transcripts remain
-readable and do not acquire inferred timestamps.
+uses a monotonic clock from transcript creation. Older transcripts without these
+fields remain readable; their timestamps stay unspecified.
 
 Match ACP `tool_call` and terminal `tool_call_update` events by `toolCallId` to
 measure the host-observed call interval. Match `permission_request` and
@@ -15,7 +16,7 @@ a measurement of model inference alone. Parallel call intervals overlap and
 must not be added together as wall time.
 
 Executed MCP calls also return `_meta["lazypencil/timing"]` and, for an owned
-conversation, append a `tool_timing` record to the existing bounded per-turn
+conversation, append a `tool_timing` record to the per-turn
 `design-usage-CONNECTION/TURN.jsonl` journal. The host copies journal records into
 the transcript at turn completion, including failed/cancelled turns. Use the
 timing object's own timestamps, not the later transcript-copy time. The journal

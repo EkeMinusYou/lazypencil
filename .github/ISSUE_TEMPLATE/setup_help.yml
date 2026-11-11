@@ -6,7 +6,7 @@ body:
       value: |
         English and Japanese reports are welcome.
         Start with the [quick start](https://github.com/EkeMinusYou/lazypencil#quick-start) or [日本語の導入ガイド](https://github.com/EkeMinusYou/lazypencil/blob/main/docs/getting-started.ja.md).
-        PNG export and MCP do not require an ACP adapter. The `demo` command is new in the current source; releases such as 0.2.5 can use the download described in the guide.
+        Include the step where you got stuck and the error you saw.
         Do not include credentials, account details, or private designs and conversations.
   - type: input
     id: version
@@ -46,4 +46,4 @@ body:
     id: diagnostics
     attributes:
       label: Relevant doctor results (optional)
-      description: Run lazypencil doctor, optionally with --agent codex or --agent claude for TUI setup. Include relevant checks after removing private paths or details. Missing ACP adapters are expected for MCP-only or PNG-only use. Doctor does not test model access or quota.
+      description: If available, include the relevant checks from lazypencil doctor. For TUI setup, select --agent codex or --agent claude. Remove private paths or details before sharing.

@@ -1,9 +1,8 @@
-# Development checks and completion
+# Development
 
-Choose the checks and completion condition from the requested behavior before editing.
-An ordinary fix is complete after the relevant checks and a coherent commit. Creating a
-PR, merging it, installing a local executable and publishing a release have their own
-completion conditions. Report which checks ran and which did not.
+Build, test and contribute to lazypencil using the commands below. For the code
+structure, start with [architecture](design.md). For ordinary installation and use,
+see the [README](../README.md).
 
 ## Build from source
 
@@ -34,9 +33,8 @@ certify a supported Linux application release.
 
 ## Focused development checks
 
-The existing `cargo xtask test` remains the explicit complete developer check: both
-feature configurations, Clippy and a normal development build. Use the focused form
-for a small change:
+`cargo xtask test` runs both feature configurations, Clippy and a development build.
+For a small change, select the affected targets:
 
 ```sh
 cargo xtask test --lib --filter collapsed_panels
@@ -49,9 +47,9 @@ cargo xtask test --core --lib --filter config::
 selected target; run separate commands when their filters differ. A selected target
 that executes zero tests fails, including a misspelled filter or a selection consisting
 only of ignored tests. These focused commands stop at the first failure. `--lint` checks
-only the selected targets. Without `--lib` or `--test`, the original full checks remain.
+only the selected targets. Without `--lib` or `--test`, the full check set runs.
 
-Both forms isolate `LAZYPENCIL_CONFIG_DIR` and prepare the native test helper. An explicit
+Both full and focused checks isolate `LAZYPENCIL_CONFIG_DIR` and prepare the native test helper. An explicit
 `LAZYPENCIL_TEST_HELPER` can reuse an already prepared executable. No test changes the
 user's real configuration. Keep target directories stable across iterations. Limit local
 Cargo jobs to two and run only one build at a time across active worktrees. Heavy or cold
@@ -66,11 +64,8 @@ checks affected by that edit, rather than starting every unrelated suite again.
 
 ## Pull requests and integration
 
-CI compares the PR merge result with its tested base parent to select a completion
-contract. GitHub may refresh that merge after capturing the event's base SHA; base-only
-changes must not expand a PR's consumer set or whitespace checks. A missing or invalid
-base or mismatched PR head requires full verification. Main, manual CI and reusable CI calls keep
-the complete graph and the existing verified-baseline behavior.
+CI selects checks from the PR's tested changes. Main pushes, manual runs and
+reusable full-verification calls use the complete graph.
 
 | Contract | PR changes | Required work |
 | --- | --- | --- |
@@ -79,43 +74,25 @@ the complete graph and the existing verified-baseline behavior.
 | focused | Known presentation/key paths, including input, saved conversations and document UI | Library/TUI/agent/configuration/history checks on Mac |
 | focused | Portable ACP client and adapter settings | Core library, agent, history, MCP and adapter configuration checks on Linux |
 | focused | Runtime installation and downloads | Core library and runtime consumer checks on Linux |
-| focused | Embedded design guidance | Its existing core consumer checks on Linux |
-| full | Rendering, dependencies, build/CI/distribution inputs, unknown or mixed changes | Original complete verification |
+| focused | Embedded design guidance | Core guidance checks on Linux |
+| full | Rendering, dependencies, build/CI/distribution inputs, unknown or mixed changes | Complete verification |
 
-Embedded resources are compiler inputs, even when their file extension is Markdown.
-The planner emits `verification` and `verification_reason`. These bounded source routes use
-the existing focused native workflow without adding a release build or full consumers.
-Changes spanning these domains, shared rendering, browser profiles, manifests, native
-code (including agent process supervision) and CI still require the complete graph. Source selection remains conservative;
-new paths require an explicit consumer mapping before using a focused contract.
-Focused jobs build and run affected regressions before Clippy checks their library and
-selected test targets. Main retains all-target Clippy, all test consumers and the release
-lane; publishing still requires fully verified main source.
-Portable focused contracts reuse the full workflow's existing Linux core lane, avoiding
-scarce Mac runners. Terminal UI changes still use the native Mac workflow.
-Application checkpoints include the reviewed native pinch bridge's build script,
-Cargo metadata and native outputs. Reuse binds both source files, the native build
-identity, and the selected macOS tools and SDK. Changed or unreviewed build scripts
-disable reuse; changed native inputs invalidate the checkpoint. Cargo still checks
-freshness after restore. A cache download alone does not prove application reuse.
-Full verification builds the complete executable catalog before handing regressions
-to their normal, pixel, runtime and terminal consumers. Standalone focused runs keep
-their early reproductions; the full builder does not repeat the consumers' tests.
-Do not interpret focused success as a full product verification result.
+Markdown embedded through `include_str!` is a compiler input, not documentation-only
+prose. Shared rendering, native code, dependencies, manifests and mixed/unknown
+paths require complete verification. New focused paths need an explicit consumer
+mapping. The planner reports its choice as `verification` and `verification_reason`.
 
-The final `Verification` job publishes its selected contract, selection reason, and
-every job's actual and required status in the Actions step summary. Expected skips
-are distinguished from failed, cancelled, missing, or incorrectly skipped required
-checks. The `verification-contract-<sha>-attempt-<n>` artifact retains the same JSON
-assessment even when the gate fails. Inspect the listed jobs in that existing run
-before retrying; a successful focused contract never claims complete-source verification.
+The final **Verification** job checks every required job and publishes a JSON
+assessment in `verification-contract-SHA-attempt-N`. Inspect that report and failed
+logs before retrying. A focused success covers its selected checks; the complete
+route also publishes **Verified source artifact** after source/provenance gates.
+Use **Verification** for branch protection so intentional skips outside a selected
+contract do not block a PR.
 
-The stable `Verification` check requires precisely the jobs selected by the contract.
-A required failure, cancellation, skip or missing result fails the check. A focused run
-cannot issue a complete-source result. The original `Verified source artifact` job and
-its complete consumer, source and provenance gates remain on the full route. Where
-branch protection is used, select `Verification` as the required PR check so legitimate
-skipped full jobs do not block a focused PR.
+Native dependency and application caches are tied to source, build scripts, compiler,
+SDK and native inputs. Restored application outputs still pass Cargo freshness
+checks. Full verification builds the executable catalogue once and passes it to
+normal, pixel, runtime and terminal consumers.
 
 ## Observe one existing CI run
 
@@ -182,11 +159,21 @@ Third-party archives/fonts retain their exact upstream notices and pinned proven
 See the [render corpus](../tests/fixtures/render-corpus/README.md) and
 [font fixtures](../tests/fixtures/fonts/README.md).
 
-Keep maintained user/developer contracts and concise release notes in the repository.
-Task diaries, audit reports, verification timelines, installation histories, and one-off
-measurement outputs belong in conversation, temporary directories, or CI artifacts.
-Do not turn a test report into an unconditional compatibility or performance claim.
-Reusable fixtures and required license/provenance records remain source inputs.
+Keep reusable fixtures, user/developer references, release notes and required
+license/provenance materials in the repository. Store per-run measurements and
+audit output in temporary directories or CI artifacts.
+
+### Write documentation
+
+Start each page with its reader's task and a usable first step. Put prerequisites
+where they are needed: installation conditions beside installation, terminal options
+beside the workspace, and advanced settings in their reference. Keep commands
+complete and verify them against the current CLI or MCP schema.
+
+Describe limits through their effect and remedy. Keep implementation algorithms,
+test machinery and benchmark methodology in developer references. Avoid local-machine
+validation stories, repeated disclaimers and version branches that no longer help a
+current user. Update links and examples together when changing a workflow.
 
 ## Distribution and build provenance
 
@@ -210,16 +197,20 @@ build/linkage inputs, packages the candidate, and smokes it with build trees hid
 `release_ready` describes the declared supported build/evidence conditions; it does not
 replace signature verification or imply Apple code signing/notarization.
 
-Verify GitHub provenance against the reviewed source and signer commit:
+### Verify a downloaded release
+
+Verify the archive against its reviewed release tag and source commit. Replace
+`VERSION` and `EXPECTED_COMMIT_SHA` with the release version and tagged commit:
 
 ```sh
 gh attestation verify /path/to/lazypencil-candidate.tar.gz \
   --repo EkeMinusYou/lazypencil \
   --signer-workflow EkeMinusYou/lazypencil/.github/workflows/release-evidence.yml \
   --source-digest EXPECTED_COMMIT_SHA --signer-digest EXPECTED_COMMIT_SHA \
-  --source-ref refs/heads/main --deny-self-hosted-runners
+  --source-ref refs/tags/vVERSION --deny-self-hosted-runners
 ```
 
+For an unpublished candidate built on main, use `--source-ref refs/heads/main`.
 For source archives select `.github/workflows/ci.yml` as signer workflow. Match the
 archive's actual source/ref and review them independently; an arbitrary successful
 workflow or a matching filename is insufficient. Keep verification/install/publish
@@ -279,7 +270,8 @@ To publish a **new** version:
 
 1. Update `Cargo.toml`, the application entry in `Cargo.lock`, `resources/release.json`,
    and release notes together. Regenerate `resources/licenses/rust` with the Rust
-   notice collector after changing the package identity, then verify the bundle.
+   notice collector after changing the package identity, then verify the bundle
+   using the commands in [licenses](#licenses-and-third-party-inputs).
    Merge the reviewed commit to `main` and wait for its
    existing push CI run to succeed. The release workflow reuses that result; it does
    not dispatch another full CI run.
@@ -305,7 +297,7 @@ publication succeeds but the tap update fails, fix the tap token and re-run only
 failed job so that the published binaries remain unchanged. Rotate the certificate and
 API credentials before expiration; renewals retain the same secret/variable names.
 
-Once the first signed release has populated the tap:
+Install or update from the tap:
 
 ```sh
 brew install --cask ekeminusyou/lazypencil/lazypencil
@@ -332,11 +324,21 @@ cargo xtask notices rust verify --cargo-home /path/to/cargo-home
 cargo deny --all-features --locked check licenses sources advisories
 ```
 
-Collection uses checksum-verified original archives and reviewed upstream sources, not
-generic replacement terms. Source-dependent native/toolchain/link-map evidence is built
-and checked by the release workflow. Asset licences and runtime installation are described
-in [icons](icons.md), [fonts](fonts.md), and [runtimes](runtimes.md). Dependency changes
-must update the corresponding source pins and inventories before distribution.
+To regenerate the Rust bundle, collect into a new output directory:
+
+```sh
+lazypencil_notices_dir=$(mktemp -d)
+cargo xtask notices rust collect --upstream resources/licenses/rust/upstream.json \
+  --output "$lazypencil_notices_dir/rust"
+```
+
+The output directory must not already exist. Review the generated bundle against
+`resources/licenses/rust`, replace the checked-in bundle, and run verification.
+Collection reads checksum-verified original archives and reviewed upstream sources.
+Dependency updates must include the matching source pins and inventories.
+Source-dependent native, toolchain and link-map evidence is checked by the release
+workflow. See [icons](icons.md), [fonts](fonts.md) and [runtimes](runtimes.md) for
+asset-specific terms.
 
 ## State ownership boundaries
 

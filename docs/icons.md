@@ -1,75 +1,96 @@
-# Vector icons
+# Icons
 
-The renderer supports `.pen` 2.21 `type: "icon"` nodes using pinned SVG geometry or original variable-font outlines. Icon rendering does not require a browser, AI service, terminal font, or system installation of an icon font.
-
-## Packs and installation
-
-| Library | Pinned source | Available names | Distribution | License |
-| --- | --- | --- | --- | --- |
-| `lucide` | `lucide-static` 1.57.0 | 1,890 canonical icons and 264 aliases | Compiled into the executable | ISC and MIT |
-| `feather` | `feather-icons` 4.29.2 | 287 icons | Explicit installation | MIT |
-| `phosphor` | `@phosphor-icons/core` 2.1.1, regular style | 1,512 canonical names and 1,548 original PascalCase/deprecated aliases | Explicit installation | MIT |
-| `Material Symbols Outlined` | Google commit `10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7` | 4,304 names | Explicit original TTF download | Apache-2.0 |
-| `Material Symbols Rounded` | Same Google commit | 4,304 names | Explicit original TTF download | Apache-2.0 |
-| `Material Symbols Sharp` | Same Google commit | 4,304 names | Explicit original TTF download | Apache-2.0 |
-
-Lucide works offline immediately. Optional packs use the persistent data directory selected by `--data-dir` or `LAZYPENCIL_DATA_DIR`. Setup and rendering must use the same directory.
-
-```sh
-lazypencil icons list --pack lucide --name settings
-lazypencil icons setup feather
-lazypencil icons list --pack feather --name check
-lazypencil icons license lucide
-lazypencil icons license feather
-lazypencil icons setup phosphor
-lazypencil icons setup 'Material Symbols Outlined'
-lazypencil icons setup 'Material Symbols Rounded'
-lazypencil icons setup 'Material Symbols Sharp'
-```
-
-`icons license` returns the complete embedded upstream license, hash, source, and version without installing anything. Use `--json` for machine-readable output. Lucide's notice includes the MIT terms for its Feather-derived icons; its ISC portion alone is insufficient.
-
-For offline Feather installation, obtain the exact archive named in [the catalogue](../resources/icons/catalogue.json):
-
-```sh
-lazypencil icons setup feather --archive /path/to/feather-icons-4.29.2.tgz
-```
-
-Phosphor similarly accepts its exact `phosphor-core-2.1.1.tgz` archive. Material packs download one original TTF each; their codepoint indices and complete license are embedded metadata. For offline setup, supply the exact pinned TTF with `--input /path/to/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf`. `--input` is an alias of the existing `--archive` option; no archive extraction is performed on a font. Each installed font retains its original bytes and copyright/name tables.
-
-Setup verifies the source SHA-256, converts only the expected geometry/index, checks normalized data and complete license hashes, and publishes a staged version directory under a per-pack lock. It reads archive members without extracting paths or executing package scripts. Concurrent installations converge on the same validated contents. Existing valid contents are reused; modified contents are rejected rather than overwritten. HTTPS retrieval has a 60 second global timeout. Cancellation is checked around retrieval and publication; a blocking HTTP call can take until its timeout to return.
-
-Rendering and queries never install a missing pack. Missing optional data produces `ASSET_NOT_FOUND` with a correctly quoted setup command; corrupt installed data produces `ICON_INTEGRITY`. Unsupported libraries and weights produce explicit errors, and the stored document is preserved.
+Use an `icon` node to add a vector icon to a design. Lucide is bundled; install
+another pack when a document uses it. Icons support the same fills, transforms
+and effects as other shapes.
 
 ## Creating an icon
 
 ```json
 {
-  "id": "settings-icon",
-  "type": "icon",
-  "library": "lucide",
-  "icon": "settings",
-  "width": 24,
-  "height": 24,
-  "fill": "#2563EB"
+  "id":"settings-icon",
+  "type":"icon",
+  "library":"lucide",
+  "icon":"settings",
+  "width":24,
+  "height":24,
+  "fill":"#2563EB"
 }
 ```
 
-`library` defaults to `lucide`. Names and paints are resolved after variables, themes, component inheritance, and overrides. Aliases such as Lucide `home` resolve to a canonical name (`house`); calculation metadata retains both names.
+`library` defaults to `lucide`. Find names with:
 
-Lucide and Feather use round two-unit strokes in a 24×24 view box. The renderer converts strokes to filled geometry and unions overlapping coverage. Phosphor uses its original filled regular paths in a 256×256 view box. Material uses captured original fonts and codepoints, with its 960-unit design box. Its paths are extracted without font hinting and use the same native vector renderer. Holes remain transparent, and translucent intersections do not accumulate opacity. Non-square bounds fit and center the icon while preserving its aspect ratio. Native paints, gradients, transforms, and effects use the same geometry as ordinary shapes.
+```sh
+lazypencil icons list --pack lucide --name settings
+```
 
-Omit `weight` for Lucide, Feather and Phosphor Regular; they do not provide continuous font weights. Phosphor's other named upstream styles are not substituted for regular and are not invented as numeric weight mappings.
+Names and paints can use variables, themes and component overrides. Recognized
+aliases resolve to canonical names; for example Lucide `home` resolves to `house`.
+Non-square bounds center the icon while preserving its aspect ratio.
 
-Material `weight` supports the original continuous range 100..700, including fractions, with default 400. It can bind to a numeric document variable and participate in inherited component themes and overrides. `FILL=0`, `GRAD=0`, and `opsz=24` are fixed design defaults; `.pen` icon `fill` is the native paint, not the font's FILL axis. The font's actual axes/units are checked when first instantiated, and requested positions must be applied by Skia. No synthetic bold is used. Calculation metadata includes the resolved weight, axis positions and font hash. Explicit `null`, strings that are not numeric variables, non-finite/out-of-range values, and weights on a fixed pack are rejected.
+## Packs and installation
 
-The [editable icon study](../examples/icon-study.pen) demonstrates Japanese labels, gradients, non-square bounds, and translucent geometry with a shadow:
+| Library | Installation | Style | License |
+| --- | --- | --- | --- |
+| `lucide` | Bundled | Outline | ISC and MIT |
+| `feather` | `lazypencil icons setup feather` | Outline | MIT |
+| `phosphor` | `lazypencil icons setup phosphor` | Regular | MIT |
+| `Material Symbols Outlined` | `lazypencil icons setup 'Material Symbols Outlined'` | Variable weight | Apache-2.0 |
+| `Material Symbols Rounded` | `lazypencil icons setup 'Material Symbols Rounded'` | Variable weight | Apache-2.0 |
+| `Material Symbols Sharp` | `lazypencil icons setup 'Material Symbols Sharp'` | Variable weight | Apache-2.0 |
+
+For example:
+
+```sh
+lazypencil icons setup feather
+lazypencil icons list --pack feather --name check
+```
+
+Packs are installed in the selected data directory. Use the same `--data-dir` or
+`LAZYPENCIL_DATA_DIR` for installation and rendering. Setup reuses valid contents
+and reports modified files rather than replacing them.
+
+| Error | What to do |
+| --- | --- |
+| `ASSET_NOT_FOUND` for a pack | Run the setup command in the diagnostic |
+| Unknown icon name | Search the pack's available names with `icons list` |
+| Invalid weight | Use a supported Material weight or omit weight for a fixed pack |
+| `ICON_INTEGRITY` | Inspect the reported pack installation before repairing its files |
+
+### Offline installation
+
+Use the exact archive or font from the [pack catalogue](../resources/icons/catalogue.json):
+
+```sh
+lazypencil icons setup feather --archive /path/to/feather-icons-4.29.2.tgz
+lazypencil icons setup phosphor --archive /path/to/phosphor-core-2.1.1.tgz
+```
+
+Material packs accept their pinned original TTF with `--input`, an alias of
+`--archive`. Setup checks the expected source hashes in either case.
+
+## Weights and appearance
+
+Omit `weight` for Lucide, Feather and Phosphor Regular. These packs provide fixed
+geometry; other Phosphor styles are separate from the supported regular pack.
+
+Material `weight` accepts 100–700, including fractions, with default 400. A numeric
+variable can supply it. Other axes are fixed at `FILL=0`, `GRAD=0` and `opsz=24`.
+The node's `fill` specifies paint, separately from the font's FILL axis.
+
+## Examples
+
+From a repository checkout:
 
 ```sh
 lazypencil render examples/icon-study.pen --output icon-study.png
 ```
 
-After installing the five optional packs above, render [the icon families study](../examples/icon-families.pen) to compare all six libraries and three real Material weights in one editable design:
+The [icon study](../examples/icon-study.pen) includes Japanese labels, gradients,
+non-square bounds and translucent icons with shadows.
+
+After installing the five optional packs, compare all six libraries and several
+Material weights with the [icon families study](../examples/icon-families.pen):
 
 ```sh
 lazypencil render examples/icon-families.pen --output icon-families.png
@@ -77,47 +98,43 @@ lazypencil render examples/icon-families.pen --output icon-families.png
 
 ## MCP and snapshots
 
-`list_icons` is available with or without rendering. Arguments are `pack`, `name`, `limit` (1–500, default 100), and `cursor`. Search is case-insensitive and also searches available upstream tags. Results include aliases, weights, versions, hashes, licenses, and pack installation diagnostics. Cursors bind to the pack version and query. The English `icons` guide explains the format and workflow.
+`list_icons` accepts `pack`, `name`, `limit` (1–500, default 100) and `cursor`.
+Case-insensitive search includes available names, aliases and tags. Results include
+installation status, weights, versions, hashes and licenses. Repeat the query with
+its cursor to page the same catalogue.
 
-Successful layout records include resolved icon metadata. Discovery reports per-pack `variable_weight`, `weight_range`, and `default_weight`, rather than synthesizing a discrete list for a continuous font. Unavailable packs, names, and weights produce layout errors; rendering fails instead of substituting an icon or returning a placeholder. Installed manifests, geometry/index, licenses and original fonts become captured dependencies. Changes invalidate the snapshot. Packs first used by script-generated nodes become runtime dependencies. Installing a previously missing pack also invalidates the failed snapshot; a TUI refresh reloads the project.
-
-Every load revalidates the original captured file bytes before sharing a pack. Live snapshots can share immutable geometry and font bytes, as well as lazy native typefaces; a modified file is still rejected before cache reuse. Native Material instances have an eight-position LRU per live pack. The cache uses weak pack references, so it does not retain every previously opened font after its snapshots are released.
-
-Each snapshot also retains the requested installation paths and their resolved file targets independently of the shared pack. Retargeting an individual file or an ancestor directory invalidates the snapshot, even if the new target contains identical pinned bytes. Recalculation captures the new targets and dependency revision; returning a link to its original target restores the old snapshot's path condition. These checks also cover packs first loaded by generated content.
-
-When a live pack already owns the original bytes, validation hashes the current geometry/font file through a 64 KiB buffer before reusing them. Project dependency checks use the same bounded streaming hash for all captured binary assets, with cancellation checks between reads. This avoids allocating another full font for each validation while retaining SHA-256 comparison, regular-file checks and input size limits. Native typefaces continue to own their Skia data; they do not borrow a snapshot's Rust byte slice.
+Layout records report the resolved icon and weight. Packs expose
+`variable_weight`, `weight_range` and `default_weight` for continuous weights.
+Changed installed data invalidates old calculations. After installing a missing
+pack, refresh the TUI or obtain a fresh MCP calculation.
 
 ## Provenance and reproduction
 
-[The catalogue](../resources/icons/catalogue.json) pins upstream URLs, source SHA-256/SHA-512 integrity values, normalized geometry and license hashes, counts, and versions. npm archives retain their registry-published SHA-512 integrity; hashes for the immutable Google files are computed from the acquired originals, not presented as publisher-supplied checksums or signatures. The [resource notice](../resources/icons/README.md) describes redistribution; the [fixture notice](../tests/fixtures/icons/README.md) identifies the offline archives.
+`lazypencil icons license PACK` prints the complete notice and source information.
+Retain each pack's original terms when redistributing it. Lucide's notice includes
+MIT terms for its Feather-derived icons as well as ISC terms. See the
+[resource notice](../resources/icons/README.md).
 
-With both exact archives in an existing directory, run the Rust reproducer:
+The [catalogue](../resources/icons/catalogue.json) pins versions, original download
+locations, source hashes and normalized-data hashes. Contributors updating packs
+can reproduce the resources from those exact originals:
 
 ```sh
 cargo xtask icons base /path/to/archives --output /tmp/lazypencil-icon-resources
+cargo xtask icons optional /path/to/optional-sources --output /tmp/lazypencil-icon-resources
 ```
 
-It verifies the archives, checks every canonical Lucide primitive against the original SVG, resolves aliases by matching geometry, and writes the catalogue and notices. Lucide geometry goes under the output directory; normalized Feather data goes beside the input archives for comparison with the Rust installer. It makes no network requests and executes no package scripts. Compare regenerated resources with `resources/icons` before accepting an update. Updating pins requires reviewing licenses and rendering evidence.
-
-For Phosphor and Material, [icons.rs](../xtask/src/icons.rs) accepts a directory containing the original Phosphor archive, all three pinned TTF and `.codepoints` files, and `Material-LICENSE`. It verifies their pinned hashes before deriving indices and normalized-data hashes. Run `cargo xtask icons optional SOURCES --output resources/icons` after reproducing the existing base catalogue. Per-pack `provenance.json` records source paths/commits, hashes, copyright, and normalization; the original Material codepoint/license bytes are preserved. This developer reproducer performs no network requests and never evaluates package JavaScript.
+Base inputs are the pinned Lucide and Feather archives. Optional inputs include
+the Phosphor archive, three Material TTF and `.codepoints` files, and
+`Material-LICENSE`. Compare the generated catalogue, geometry and notices before
+updating checked-in resources. Source requirements are maintained in
+[icons.rs](../xtask/src/icons.rs).
 
 ## Development checks
 
-Native tests cover catalogue discovery, original archive installation, tamper/path
-checks, component/variable resolution, and returned PNG pixels. Use
-`cargo xtask test --test icons --test optional_icons` for the affected native path.
-
-Optional upstream-source comparisons require the exact pinned originals:
-
-```sh
-LAZYPENCIL_TEST_CHROMIUM=/path/to/chrome-headless-shell \
-LAZYPENCIL_TEST_LUCIDE_ARCHIVE=/path/to/lucide-static-1.57.0.tgz \
-cargo test --locked --test icons -- --ignored
-```
-
-Material opt-ins use `LAZYPENCIL_TEST_MATERIAL_DIR` containing the three pinned TTFs
-and `.codepoints` files. The normal native checks and browser source comparisons have
-distinct prerequisites; an ignored test is not a passed test. Follow
-[development setup](development.md) for isolated settings and the native helper.
-Only the catalogued styles are supported; arbitrary user-defined packs and complete
-Pencil output equivalence are not promised.
+Use `cargo xtask test --test icons --test optional_icons` for catalogue,
+installation and rendering changes. Upstream comparisons are opt-in and require
+the pinned originals through `LAZYPENCIL_TEST_LUCIDE_ARCHIVE` or
+`LAZYPENCIL_TEST_MATERIAL_DIR`, and Chromium where the selected test uses it.
+See [development](development.md#focused-development-checks) and
+[fixture provenance](../tests/fixtures/icons/README.md).

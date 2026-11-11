@@ -1,5 +1,8 @@
 # Architecture
 
+This reference is for contributors changing the document engine, frontends or
+runtime ownership. User workflows are documented in the [README](../README.md).
+
 lazypencil exposes one document engine through a CLI, a terminal viewer, and an
 MCP server. ACP connects its own conversations to external Codex/Claude adapters;
 the application does not implement an LLM loop or store provider credentials.
@@ -47,14 +50,14 @@ selected document. Multi-document atomic saves are not provided.
 | `guidance`, `resources/guidance`, `resources/styles` | Shared English agent guides and original editable styles |
 | `xtask` | Independent build/test/CI, fixture, distribution, and provenance tools |
 
-The tools workspace does not depend on the application or Skia. Browser/ABI inputs
-and the separately built shader-preprocessor component are explicit source inputs,
-not replacement Python/Shell build orchestrators.
+The independent `xtask` workspace can run build, packaging and verification tools
+without compiling the application or Skia. Browser/ABI metadata and the checked-in
+shader-preprocessor component are tracked source inputs.
 
 ## Document and save invariants
 
-The `.pen` file is authoritative. Read adapters accept 2.19, 2.21, and 2.22, and new files
-use 2.22. Edits preserve the existing version, comments, unknown fields, and unrelated
+The `.pen` file is authoritative. Read adapters accept 2.19, 2.21, and 2.22, and new empty files
+use 2.22. Copied examples retain their original version. Edits preserve the existing version, comments, unknown fields, and unrelated
 source text. An unknown version fails explicitly; it is not silently upgraded.
 
 A batch resolves references against captured inputs, validates the resulting document,
@@ -131,6 +134,28 @@ guides. English guide text does not change the user's response/design language.
 Validation and rendered visual inspection remain separate; a successful tool call
 does not certify aesthetic quality or complete Pencil compatibility.
 
-For changes, use [development checks](development.md). Current user contracts belong
-in the linked references; task diaries, per-run results, and installation histories
-stay outside the source repository.
+For changes, use [development checks](development.md).
+
+## Preview caches and memory ownership
+
+Preview navigation preserves exact device pixels while reusing completed work.
+Prepared neighboring camera frames never change the published camera on their own;
+input requests take priority over prediction. Dependency, background or viewport
+changes invalidate incompatible entries.
+
+| Cache | Default budget | Contents |
+| --- | --- | --- |
+| Prepared frames and upload sources | 256 MiB | Exact camera frames and up to two recent raw sources |
+| Native raster cache | 128 MiB, eight entries | Premultiplied device-pixel rasters |
+| Local Kitty transfer files | 256 MiB | Immutable RGBA payloads for negotiated file uploads |
+
+Local file transfers use a separate disposable link per upload. Eviction releases
+the cache's link while allowing an in-flight terminal read to finish. Inline PNG
+or ZLIB remains the lossless fallback.
+
+On macOS, large native rasters use application-owned buffers shared by immutable
+images. A writer with live readers obtains a separate buffer. Idle workers release
+reusable buffers after 500 ms. The executable maps eligible Rust allocations of at
+least 16 MiB directly; embedded library users keep the host allocator. Large system
+font captures can use immutable mappings. See `render/raster_pool.rs`,
+`native_memory` and the preview code before changing these ownership rules.
