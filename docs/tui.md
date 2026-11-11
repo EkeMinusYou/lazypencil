@@ -272,6 +272,9 @@ gestures do not also resize the terminal font. The bridge is independent of term
 brands and stops when the TUI exits. When access has already been granted, local
 sessions start it automatically. `native_pinch = false`
 disables native pinch, and `native_scroll = false` disables precise native scrolling.
+Foreground ownership is queried live; failed or timed-out focus queries leave input
+untouched. A terminal focus-loss report clears calibration and prevents late mouse
+reports from reclaiming input until focus returns and a new pointer report arrives.
 SSH sessions do not start the bridge. PTY regression tests set
 `LAZYPENCIL_DISABLE_NATIVE_INPUT=1` to isolate themselves from desktop input.
 

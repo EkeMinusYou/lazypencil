@@ -33,6 +33,24 @@ bool lp_pinch_authorized(bool request) {
     return AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 }
 
+static int32_t foreground_host(void) {
+    // NSWorkspace caches application state until the main AppKit run loop runs.
+    // The TUI runs Tokio instead, so query the live accessibility focus and leave
+    // input untouched whenever its owner cannot be established promptly.
+    AXUIElementRef system = AXUIElementCreateSystemWide();
+    if (!system) return 0;
+    CFTypeRef application = NULL;
+    pid_t host = 0;
+    if (AXUIElementSetMessagingTimeout(system, 0.01f) == kAXErrorSuccess
+        && AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute, &application) == kAXErrorSuccess
+        && application && CFGetTypeID(application) == AXUIElementGetTypeID()) {
+        if (AXUIElementGetPid((AXUIElementRef)application, &host) != kAXErrorSuccess) host = 0;
+    }
+    if (application) CFRelease(application);
+    CFRelease(system);
+    return host > 0 ? host : 0;
+}
+
 void lp_pinch_pointer(double *x, double *y, int32_t *host, double *scale) {
     @autoreleasepool {
         CGEventRef event = CGEventCreate(NULL);
@@ -50,7 +68,7 @@ void lp_pinch_pointer(double *x, double *y, int32_t *host, double *scale) {
                 CGDisplayModeRelease(mode);
             }
         }
-        *host = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+        *host = foreground_host();
     }
 }
 

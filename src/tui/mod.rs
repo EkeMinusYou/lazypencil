@@ -752,12 +752,13 @@ impl App {
                 self.dirty = true;
             }
             Event::FocusLost => {
-                self.native_input.cancel();
+                self.native_input.set_focused(false);
                 self.selection.abort();
                 self.pointer.cancel();
                 self.refresh_selection_presentation(&screen.picker, worker)?;
                 self.finish_camera_gesture(worker);
             }
+            Event::FocusGained => self.native_input.set_focused(true),
             Event::Resize(_, _) => {
                 self.native_input.cancel();
                 self.selection.abort();

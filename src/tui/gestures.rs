@@ -98,13 +98,36 @@ impl Pointer {
     }
 }
 
+struct Calibration {
+    pointer: Option<Pointer>,
+    focused: bool,
+}
+
+impl Default for Calibration {
+    fn default() -> Self {
+        Self {
+            pointer: None,
+            // Terminals without focus reporting can still use native input.
+            focused: true,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Shared {
-    pointer: Mutex<Option<Pointer>>,
+    calibration: Mutex<Calibration>,
     pending: Mutex<std::collections::VecDeque<GestureEvent>>,
     wake: Notify,
 }
 impl Shared {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn observe_pointer(&self, pointer: Option<Pointer>) {
+        let mut calibration = self.calibration.lock().unwrap();
+        if calibration.focused {
+            calibration.pointer = pointer;
+        }
+    }
+
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn receive(
         &self,
@@ -118,10 +141,10 @@ impl Shared {
         if delta.iter().any(|value| !value.is_finite()) {
             return false;
         }
-        let Ok(pointer) = self.pointer.lock() else {
+        let Ok(calibration) = self.calibration.lock() else {
             return false;
         };
-        let Some(pointer) = *pointer else {
+        let Some(pointer) = calibration.pointer.filter(|_| calibration.focused) else {
             return false;
         };
         let Some(position) = pointer.locate(screen, host) else {
@@ -281,7 +304,7 @@ impl Input {
                     scroll: settings.native_scroll,
                 })
             });
-            *self.shared.pointer.lock().unwrap() = pointer;
+            self.shared.observe_pointer(pointer);
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -290,14 +313,24 @@ impl Input {
     }
 
     pub fn cancel(&self) {
-        *self.shared.pointer.lock().unwrap() = None;
+        self.shared.calibration.lock().unwrap().pointer = None;
+        self.shared.pending.lock().unwrap().clear();
+    }
+
+    pub fn set_focused(&self, focused: bool) {
+        let mut calibration = self.shared.calibration.lock().unwrap();
+        calibration.focused = focused;
+        calibration.pointer = None;
         self.shared.pending.lock().unwrap().clear();
     }
 
     pub fn retain_canvas(&self, canvas: Option<ratatui::layout::Rect>) {
-        let mut pointer = self.shared.pointer.lock().unwrap();
-        if pointer.is_some_and(|pointer| Some(pointer.canvas) != canvas) {
-            *pointer = None;
+        let mut calibration = self.shared.calibration.lock().unwrap();
+        if calibration
+            .pointer
+            .is_some_and(|pointer| Some(pointer.canvas) != canvas)
+        {
+            calibration.pointer = None;
             self.shared.pending.lock().unwrap().clear();
         }
     }

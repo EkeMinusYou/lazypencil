@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 
 fn source(scale: f64) -> Shared {
     let source = Shared::default();
-    *source.pointer.lock().unwrap() = Some(Pointer {
+    source.observe_pointer(Some(Pointer {
         position: Position::new(20, 10),
         screen: [100.0, 100.0],
         host: 42,
@@ -13,7 +13,7 @@ fn source(scale: f64) -> Shared {
         scale,
         pinch: true,
         scroll: true,
-    });
+    }));
     source
 }
 
@@ -37,7 +37,11 @@ fn pinch_survives_small_pointer_motion_and_coalesces_fractional_scale() {
 fn gestures_stay_in_their_canvas_and_foreground_host_at_both_display_scales() {
     for scale in [1.0, 2.0] {
         let source = source(scale);
-        assert!(!source.receive(0, [0.1, 0.0], [100.0, 100.0], 43, 0, false));
+        for host in [-1, 0, 43] {
+            for kind in [0, 1] {
+                assert!(!source.receive(kind, [0.1, 0.0], [100.0, 100.0], host, 0, false));
+            }
+        }
         for outside in [[-1.0, 100.0], [201.0, 100.0], [100.0, -1.0], [100.0, 201.0]] {
             assert!(!source.receive(0, [0.1, 0.0], outside, 42, 0, false));
             assert!(!source.receive(1, [0.125, 0.25], outside, 42, 0, false));
@@ -49,7 +53,7 @@ fn gestures_stay_in_their_canvas_and_foreground_host_at_both_display_scales() {
 #[test]
 fn canvas_bounds_never_include_a_neighbor_for_any_offset_in_the_reported_cell() {
     for scale in [1.0, 2.0] {
-        let pointer = source(scale).pointer.lock().unwrap().unwrap();
+        let pointer = source(scale).calibration.lock().unwrap().pointer.unwrap();
         for position in [
             Position::new(10, 5),
             Position::new(20, 10),
@@ -137,16 +141,73 @@ fn changed_canvas_or_modal_discards_calibration_and_pending_native_input() {
 }
 
 #[test]
+fn focus_loss_rejects_delayed_mouse_reports_until_focus_returns_and_pointer_is_recalibrated() {
+    let input = Input {
+        shared: Arc::new(source(1.0)),
+        ..Default::default()
+    };
+    let pointer = input.shared.calibration.lock().unwrap().pointer;
+    let scroll = || {
+        input
+            .shared
+            .receive(1, [0.125, 0.25], [100.0, 100.0], 42, 0, false)
+    };
+    assert!(scroll());
+    input.set_focused(false);
+    assert!(input.shared.pending.lock().unwrap().is_empty());
+    input.shared.observe_pointer(pointer);
+    assert!(
+        !scroll(),
+        "A delayed mouse report must not reclaim background input"
+    );
+    input.cancel();
+    input.retain_canvas(Some(Rect::new(10, 5, 20, 10)));
+    input.shared.observe_pointer(pointer);
+    assert!(
+        !scroll(),
+        "Redraws and cancellations must preserve lost focus"
+    );
+    input.set_focused(true);
+    assert!(
+        !scroll(),
+        "Returning focus must not restore stale calibration"
+    );
+    input.shared.observe_pointer(pointer);
+    assert!(scroll());
+}
+
+#[test]
 fn disabled_unscoped_invalid_and_overflowing_packets_remain_on_the_terminal_path() {
     let source = source(1.0);
     assert!(!source.receive(0, [f64::NAN, 0.0], [100.0, 100.0], 42, 0, false));
     assert!(!source.receive(1, [0.0, f64::INFINITY], [100.0, 100.0], 42, 0, false));
     assert!(!source.receive(0, [0.1, 0.0], [f64::NAN, 100.0], 42, 0, false));
-    source.pointer.lock().unwrap().as_mut().unwrap().pinch = false;
+    source
+        .calibration
+        .lock()
+        .unwrap()
+        .pointer
+        .as_mut()
+        .unwrap()
+        .pinch = false;
     assert!(!source.receive(0, [0.1, 0.0], [100.0, 100.0], 42, 0, false));
-    source.pointer.lock().unwrap().as_mut().unwrap().scroll = false;
+    source
+        .calibration
+        .lock()
+        .unwrap()
+        .pointer
+        .as_mut()
+        .unwrap()
+        .scroll = false;
     assert!(!source.receive(1, [0.1, 0.0], [100.0, 100.0], 42, 0, false));
-    source.pointer.lock().unwrap().as_mut().unwrap().scroll = true;
+    source
+        .calibration
+        .lock()
+        .unwrap()
+        .pointer
+        .as_mut()
+        .unwrap()
+        .scroll = true;
     for index in 0..128 {
         assert!(source.receive(1, [0.1, 0.0], [100.0, 100.0], 42, index % 2, false));
     }
@@ -168,6 +229,33 @@ fn disabled_unscoped_invalid_and_overflowing_packets_remain_on_the_terminal_path
 #[cfg(target_os = "macos")]
 mod native {
     use std::ffi::c_void;
+
+    #[test]
+    fn native_foreground_tracks_app_switches_and_declines_unknown_owners_without_posting_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("foreground.m");
+        let executable = temp.path().join("foreground");
+        std::fs::write(&source, include_str!("tests/foreground.m")).unwrap();
+        let output = std::process::Command::new("clang")
+            .args(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])
+            .arg("-I")
+            .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tui/gestures"))
+            .arg(&source)
+            .args([
+                "-framework",
+                "AppKit",
+                "-framework",
+                "ApplicationServices",
+                "-o",
+            ])
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let output = std::process::Command::new(executable).output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+
     unsafe extern "C" {
         fn CGEventCreate(source: *const c_void) -> *mut c_void;
         fn CGEventCreateScrollWheelEvent(
