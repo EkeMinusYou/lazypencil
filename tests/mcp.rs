@@ -15,6 +15,9 @@ mod fixture_support;
 #[path = "../src/mcp/output.rs"]
 mod output_contract;
 
+#[path = "support/node_queries.rs"]
+mod node_queries;
+
 #[path = "support/mcp_metadata.rs"]
 mod metadata_queries;
 
@@ -162,7 +165,8 @@ fn passive_document_tools_never_fetch_http_images_and_explicit_acquisition_keeps
         "IMAGE_ACQUISITION_REQUIRED"
     );
     for (tool, arguments) in [
-        ("read_nodes", json!({})),
+        ("read_nodes", json!({"node_id":"image"})),
+        ("search_nodes", json!({})),
         ("list_components", json!({})),
         ("get_variables", json!({})),
         ("get_guidance", json!({"id":"start"})),
@@ -213,6 +217,7 @@ fn passive_document_tools_never_fetch_http_images_and_explicit_acquisition_keeps
     for tool in tools {
         if [
             "get_document",
+            "search_nodes",
             "read_nodes",
             "validate_document",
             "apply_operations",
@@ -3022,7 +3027,7 @@ fn failed_script_source_rejects_a_retargeted_link_even_when_bytes_match() {
     .unwrap();
     fs::write(&file,json!({"version":"2.21","children":[{"id":"chart","type":"script","scriptUri":"outer.js","width":20,"height":20}]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
-    let failure = client.call("read_nodes", json!({"calculated":true}));
+    let failure = client.call("search_nodes", json!({"calculated":true}));
     let hash = &failure["structuredContent"]["error"]["details"]["source_hash"];
     assert_eq!(
         client.data("read_asset", json!({"hash":hash}))["content"],
@@ -3056,7 +3061,7 @@ fn failed_script_sources_are_bounded_and_reject_arbitrary_file_reads() {
     for number in 0..5 {
         let code = format!("// Broken header {number} 日本語\nthrow new Error('never executed');");
         fs::write(temp.path().join("nested.js"), &code).unwrap();
-        let failure = client.call("read_nodes", json!({"calculated":true}));
+        let failure = client.call("search_nodes", json!({"calculated":true}));
         assert_eq!(
             failure["structuredContent"]["error"]["details"]["script_diagnostic"]["stage"],
             "header"
@@ -3114,7 +3119,7 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
     fs::write(&file,json!({"version":"2.21","children":[{"id":"chart","type":"script","scriptUri":"outer.js","width":40,"height":20}]}).to_string()).unwrap();
     let saved = fs::read(&file).unwrap();
     let mut client = Client::start(&file, &data);
-    let failed = client.call("read_nodes", json!({"calculated":true}));
+    let failed = client.call("search_nodes", json!({"calculated":true}));
     let source_hash = lazypencil::document::hash(code.as_bytes());
     assert_eq!(
         failed["structuredContent"]["error"]["code"], "SCRIPT_EXECUTION_FAILED",
@@ -3130,7 +3135,7 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
-    let failed = client.call("read_nodes", json!({"calculated":true}));
+    let failed = client.call("search_nodes", json!({"calculated":true}));
     let second = client.data("read_asset", json!({"hash":source_hash}));
     assert_eq!(second["content"], code);
     assert_eq!(
@@ -3143,7 +3148,7 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
         outer.replace("enabled:false", "enabled:true"),
     )
     .unwrap();
-    let active_failure = client.call("read_nodes", json!({"calculated":true}));
+    let active_failure = client.call("search_nodes", json!({"calculated":true}));
     let active = client.data("read_asset", json!({"hash":source_hash}));
     assert_eq!(active["content"], code);
     assert_eq!(
@@ -3158,7 +3163,7 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
-    let unverifiable = client.call("read_nodes", json!({"calculated":true}));
+    let unverifiable = client.call("search_nodes", json!({"calculated":true}));
     assert_eq!(unverifiable["isError"], true);
     assert!(
         unverifiable["structuredContent"]["error"]["details"]
@@ -3180,7 +3185,7 @@ fn failed_script_sources_track_generated_icon_files_bindings_and_missing_packs()
         fs::write(&second_target, &original).unwrap();
         fs::remove_file(&license).unwrap();
         symlink(&first_target, &license).unwrap();
-        client.call("read_nodes", json!({"calculated":true}));
+        client.call("search_nodes", json!({"calculated":true}));
         assert_eq!(
             client.data("read_asset", json!({"hash":source_hash}))["content"],
             code
@@ -3242,23 +3247,23 @@ fn real_stdio_script_source_inputs_and_generated_pixels_form_one_workflow() {
         fresh["nodes"][0]["children"][0]["id"],
         layout["nodes"][1]["id"]
     );
-    let page = client.data("read_nodes", json!({"calculated":true,"depth":0,"limit":1}));
+    let page = client.data("search_nodes", json!({"calculated":true,"limit":1}));
     assert_eq!(page["total_matches"], 2);
     let next = client.data(
-        "read_nodes",
-        json!({"snapshot_id":page["snapshot_id"],"depth":0,"limit":3,"cursor":page["next_cursor"]}),
+        "search_nodes",
+        json!({"snapshot_id":page["snapshot_id"],"limit":3,"cursor":page["next_cursor"]}),
     );
     assert_eq!(next["nodes"].as_array().unwrap().len(), 1);
     assert_eq!(next["nodes"][0]["id"], layout["nodes"][1]["id"]);
     assert!(next["next_cursor"].is_null());
-    let unavailable = client.call("read_nodes", json!({"snapshot_id":"not-retained"}));
+    let unavailable = client.call("search_nodes", json!({"snapshot_id":"not-retained"}));
     assert_eq!(
         unavailable["structuredContent"]["error"]["code"],
         "SNAPSHOT_UNAVAILABLE"
     );
     let updated=client.data("apply_operations",json!({"request_id":"script-input","expected_revision":edited["revision"],"expected_dependency_revision":edited["dependency_revision"],
         "operations":[{"op":"update","target":id,"set":{"inputs":{"color":"#FF0000"}}}]}));
-    let stale = client.call("read_nodes", json!({"snapshot_id":layout["snapshot_id"]}));
+    let stale = client.call("search_nodes", json!({"snapshot_id":layout["snapshot_id"]}));
     assert_eq!(
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
@@ -3398,7 +3403,7 @@ fn cancelling_a_running_script_unblocks_the_mcp_document_worker() {
         if tool == "validate_document" {
             arguments["scope"] = json!("layout");
         } else if tool == "read_nodes" {
-            arguments = json!({"calculated":true});
+            arguments = json!({"calculated":true,"node_id":"chart"});
         }
         let request =
             client.start_request("tools/call", json!({"name":tool,"arguments":arguments}));
@@ -3484,7 +3489,7 @@ fn runtime_generated_script_sources_can_be_read_only_from_a_current_captured_sna
     assert_eq!(source["snapshot_id"], layout["snapshot_id"]);
     let nodes = client.data(
         "read_nodes",
-        json!({"snapshot_id":layout["snapshot_id"],"depth":2}),
+        json!({"snapshot_id":layout["snapshot_id"],"node_id":"chart","depth":2}),
     );
     assert_eq!(
         nodes["nodes"][0]["children"][0]["properties"]["scriptUri"],
@@ -3504,7 +3509,7 @@ fn runtime_generated_script_sources_can_be_read_only_from_a_current_captured_sna
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
     );
-    let stale = client.call("read_nodes", json!({"snapshot_id":layout["snapshot_id"]}));
+    let stale = client.call("search_nodes", json!({"snapshot_id":layout["snapshot_id"]}));
     assert_eq!(
         stale["structuredContent"]["error"]["code"],
         "REVISION_CONFLICT"
@@ -3969,12 +3974,12 @@ fn node_search_combines_with_preview_state_and_generic_preview_tools() {
         assert_eq!(tool["annotations"]["idempotentHint"], idempotent);
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
-    let mut query = json!({"name":"login","type":"rectangle","depth":0});
+    let mut query = json!({"name":"login","type":"rectangle"});
     #[cfg(feature = "rendering")]
     {
         query["calculated"] = json!(true);
     }
-    let matches = client.data("read_nodes", query.take());
+    let matches = client.data("search_nodes", query.take());
     let ids: Vec<_> = matches["nodes"]
         .as_array()
         .unwrap()

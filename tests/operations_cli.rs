@@ -563,12 +563,12 @@ fn malformed_variables_and_reference_cycles_fail_validation() {
 #[test]
 fn node_pagination_rejects_changed_revisions_and_changed_filters() {
     let doc = scene();
-    let first = service::read_nodes(&doc, None, None, None, 0, 1, None).unwrap();
+    let first = service::inspect_nodes(&doc, None, None, None, 0, 1, None).unwrap();
     let cursor = first["next_cursor"].as_str().unwrap();
-    let second = service::read_nodes(&doc, None, None, None, 0, 1, Some(cursor)).unwrap();
+    let second = service::inspect_nodes(&doc, None, None, None, 0, 1, Some(cursor)).unwrap();
     assert_eq!(second["nodes"][0]["id"], "label");
     assert_eq!(
-        service::read_nodes(&doc, None, None, Some("text"), 0, 1, Some(cursor))
+        service::inspect_nodes(&doc, None, None, Some("text"), 0, 1, Some(cursor))
             .unwrap_err()
             .code,
         "INVALID_ARGUMENT"
@@ -576,7 +576,7 @@ fn node_pagination_rejects_changed_revisions_and_changed_filters() {
     let mut changed = doc.clone();
     changed.set_property("", "name", &json!("new")).unwrap();
     assert_eq!(
-        service::read_nodes(&changed, None, None, None, 0, 1, Some(cursor))
+        service::inspect_nodes(&changed, None, None, None, 0, 1, Some(cursor))
             .unwrap_err()
             .code,
         "REVISION_CONFLICT"

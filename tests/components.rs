@@ -460,7 +460,7 @@ fn store_fixture() -> (TempDir, Store) {
 }
 
 fn read(store: &Store, query: Value) -> lazypencil::Result<Value> {
-    service::read_store_nodes(store, &[], &serde_json::from_value(query).unwrap())
+    service::inspect_store_nodes(store, &[], &serde_json::from_value(query).unwrap())
 }
 
 #[test]
@@ -504,7 +504,7 @@ fn raw_node_catalog_includes_owned_overrides_and_depth_bounds_them() {
         {"op":"replace_override","target":{"node_id":"first","instance_path":["action","label"]},"node":{"type":"rectangle","width":20},"client_ref":"replacement"},
         {"op":"set_slot_children","target":{"node_id":"first","instance_path":["body"]},"children":[{"type":"text","content":"Slot"}],"client_refs":["child"]}
     ]))).unwrap();
-    let found = service::read_nodes(&with_nodes, None, None, None, 0, 100, None).unwrap();
+    let found = service::inspect_nodes(&with_nodes, None, None, None, 0, 100, None).unwrap();
     let ids = found["nodes"]
         .as_array()
         .unwrap()
@@ -513,10 +513,12 @@ fn raw_node_catalog_includes_owned_overrides_and_depth_bounds_them() {
         .collect::<Vec<_>>();
     assert!(ids.contains(&result["bindings"]["replacement"]));
     assert!(ids.contains(&result["bindings"]["child"]));
-    let shallow = service::read_nodes(&with_nodes, Some("first"), None, None, 0, 1, None).unwrap();
+    let shallow =
+        service::inspect_nodes(&with_nodes, Some("first"), None, None, 0, 1, None).unwrap();
     assert_eq!(shallow["nodes"][0]["descendant_overrides_count"], 2);
     assert!(shallow["nodes"][0].get("descendants").is_none());
-    let bounded = service::read_nodes(&with_nodes, Some("first"), None, None, 1, 1, None).unwrap();
+    let bounded =
+        service::inspect_nodes(&with_nodes, Some("first"), None, None, 1, 1, None).unwrap();
     assert_eq!(
         bounded["nodes"][0]["descendants"]["body"]["children_count"],
         1

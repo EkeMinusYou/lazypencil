@@ -258,9 +258,17 @@ impl DocumentWorker {
             value["document_id"] = json!(id);
             crate::query::check_response_size(
                 value,
-                MAX_TOOL_BYTES,
+                if matches!(kind, ToolKind::SearchNodes) {
+                    service::MAX_SEARCH_BYTES
+                } else {
+                    MAX_TOOL_BYTES
+                },
                 Some(cancel),
-                "Tool result exceeds 4 MiB; reduce depth or page size",
+                if matches!(kind, ToolKind::SearchNodes) {
+                    "Search result exceeds 64 KiB"
+                } else {
+                    "Tool result exceeds 4 MiB; reduce depth or page size"
+                },
             )?;
             let text = value.to_string();
             if let Some(usage) = usage {

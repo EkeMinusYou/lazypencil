@@ -11,11 +11,18 @@ use std::{cell::RefCell, path::PathBuf};
 #[cfg(feature = "rendering")]
 mod calculated_nodes;
 mod guidance;
+mod node_queries;
 pub(crate) use guidance::{PreparedDesignStart, prepare_design_start};
+pub use node_queries::{
+    MAX_SEARCH_BYTES, NodeTarget, ReadNodesRequest, SearchNodesRequest, read_store_nodes,
+    read_store_nodes_with_cancellation, search_project_nodes, search_store_nodes_with_cancellation,
+};
+#[cfg(feature = "rendering")]
+pub use node_queries::{read_calculated_nodes, search_calculated_nodes};
 mod validation;
 pub use crate::project::VariablesRequest;
 #[cfg(feature = "rendering")]
-pub use calculated_nodes::{read_calculated_nodes, validate_calculated_nodes_request};
+pub use calculated_nodes::{inspect_calculated_nodes, validate_calculated_inspect_request};
 pub use guidance::{
     project_design_start, project_guidance, project_guidance_with_cancellation, project_style,
     project_style_with_cancellation, project_styles, project_styles_with_cancellation,
@@ -488,7 +495,8 @@ pub fn document_metadata_with_images(
         "instance_overrides":true,"managed_assets":true,"attachments":false,
         "document_expansion":{"allocation_budget_bytes":crate::config::runtime::DocumentSettings::default().expansion_bytes(),"shared_across_roots":true,"shared_generated_outputs":true,"preserve_string_values":true,"limit_error":"RESOURCE_LIMIT","budget_is_process_rss":false},
         "variables":{"resolved_values":true,"sources":true,"node_theme_context":true,"property_namespace":true,"pagination":true},
-        "node_reads":{"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},
+        "node_search":{"tool":"search_nodes","default_limit":20,"max_limit":100,"response_budget_bytes":MAX_SEARCH_BYTES},
+        "node_reads":{"requires_node_id":true,"default_depth":0,"calculated":cfg!(feature="rendering"),"generated":cfg!(feature="rendering"),"snapshot_reuse":cfg!(feature="rendering")},
         "validation":{"structure":true,"layout":cfg!(feature="rendering"),"diagnostic_pagination":true,"rendered_visual_check":false},
         "script":{"execution":true,"rendering":cfg!(feature="rendering"),"schemas":crate::script::header::SUPPORTED_SCHEMAS,"engine":crate::script::ENGINE},
         "browser":{"rendering":cfg!(feature="rendering"),"runtime_setup_required":true,"devices":["desktop","phone","tablet"],"file_url_rendering":cfg!(feature="rendering"),"file_url_requires_declared_resources":true,"resource_bundle":{"version":1,"declare":true,"pack":true,"preserve_original_urls":true}},
@@ -830,7 +838,7 @@ fn layout_snapshot_with_text_policy(
     Ok((project, snapshot))
 }
 
-pub fn read_nodes(
+pub fn inspect_nodes(
     document: &Document,
     id: Option<&str>,
     name: Option<&str>,
@@ -909,7 +917,7 @@ pub fn read_nodes(
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ReadNodesRequest {
+pub struct InspectNodesRequest {
     /// Execute scripts and inspect the resolved tree used by layout and rendering.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub calculated: bool,
@@ -936,7 +944,7 @@ pub struct ReadNodesRequest {
     pub cursor: Option<String>,
 }
 
-impl ReadNodesRequest {
+impl InspectNodesRequest {
     fn validate_page(&self) -> Result<()> {
         validate_node_page(self.depth, self.limit)
     }
@@ -997,27 +1005,27 @@ fn node_limit() -> usize {
     100
 }
 
-pub fn read_store_nodes(
+pub fn inspect_store_nodes(
     store: &Store,
     fonts: &[PathBuf],
-    request: &ReadNodesRequest,
+    request: &InspectNodesRequest,
 ) -> Result<Value> {
-    read_store_nodes_with_cancellation(store, fonts, request, None)
+    inspect_store_nodes_with_cancellation(store, fonts, request, None)
 }
 
-pub fn read_store_nodes_with_cancellation(
+pub fn inspect_store_nodes_with_cancellation(
     store: &Store,
     fonts: &[PathBuf],
-    request: &ReadNodesRequest,
+    request: &InspectNodesRequest,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<Value> {
-    read_store_nodes_with_images(store, fonts, request, false, cancel)
+    inspect_store_nodes_with_images(store, fonts, request, false, cancel)
 }
 
-pub fn read_store_nodes_with_images(
+pub fn inspect_store_nodes_with_images(
     store: &Store,
     fonts: &[PathBuf],
-    request: &ReadNodesRequest,
+    request: &InspectNodesRequest,
     acquire_images: bool,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> Result<Value> {
@@ -1030,7 +1038,7 @@ pub fn read_store_nodes_with_images(
         ));
         #[cfg(feature = "rendering")]
         {
-            validate_calculated_nodes_request(request)?;
+            validate_calculated_inspect_request(request)?;
             if request.snapshot_id.is_some() {
                 return Err(Error::new(
                     "SNAPSHOT_UNAVAILABLE",
@@ -1041,7 +1049,7 @@ pub fn read_store_nodes_with_images(
             runtime.set_cancellation(cancel.cloned());
             let (project, snapshot) =
                 layout_snapshot_with_runtime(store, fonts, None, None, &mut runtime)?;
-            let result = read_calculated_nodes(&project, &snapshot, request, cancel)?;
+            let result = inspect_calculated_nodes(&project, &snapshot, request, cancel)?;
             store::require_revision(&store.read()?, &snapshot.revision)?;
             return Ok(result);
         }
@@ -1051,7 +1059,7 @@ pub fn read_store_nodes_with_images(
         && !request.expand_instances
         && request.instance_path.is_empty()
     {
-        let mut result = read_nodes(
+        let mut result = inspect_nodes(
             &document,
             request.node_id.as_deref(),
             request.name.as_deref(),
@@ -1083,7 +1091,7 @@ pub fn read_store_nodes_with_images(
         if acquire_images {
             project.acquire_remote_images()?;
         }
-        let mut result = read_project_nodes(&project, request)?;
+        let mut result = inspect_project_nodes(&project, request)?;
         asset_status(&mut result, &project);
         result
     };
@@ -1093,7 +1101,7 @@ pub fn read_store_nodes_with_images(
 
 /// Read one immutable project snapshot, including inherited and library nodes.
 /// Expanded properties retain variable references; layout supplies computed values.
-pub fn read_project_nodes(project: &Project, request: &ReadNodesRequest) -> Result<Value> {
+pub fn inspect_project_nodes(project: &Project, request: &InspectNodesRequest) -> Result<Value> {
     if request.calculated || request.snapshot_id.is_some() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
@@ -1172,7 +1180,7 @@ pub fn read_project_nodes(project: &Project, request: &ReadNodesRequest) -> Resu
         let next = (offset + page.len() < total).then(|| (offset + page.len()).to_string());
         json!({"nodes":page,"next_cursor":next,"total_matches":total,"view":"expanded"})
     } else {
-        read_nodes(
+        inspect_nodes(
             project.library_document(request.library_alias.as_deref())?,
             request.node_id.as_deref(),
             request.name.as_deref(),
@@ -1390,7 +1398,7 @@ mod query_contract_tests {
             .to_string(),
         )
         .unwrap();
-        let result = read_nodes(
+        let result = inspect_nodes(
             &document,
             None,
             Some("fÖö 日"),

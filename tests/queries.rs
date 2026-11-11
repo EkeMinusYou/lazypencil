@@ -57,11 +57,11 @@ fn core_build_reports_calculated_reads_as_unavailable_and_preserves_stored_reads
     let (_temp, store) = fixture();
     assert_eq!(
         service::document_metadata(&store).unwrap()["capabilities"]["node_reads"],
-        json!({"calculated":false,"generated":false,"snapshot_reuse":false})
+        json!({"requires_node_id":true,"default_depth":0,"calculated":false,"generated":false,"snapshot_reuse":false})
     );
     for query in [
-        json!({"calculated":true}),
-        json!({"snapshot_id":"retained"}),
+        json!({"calculated":true,"node_id":"container"}),
+        json!({"snapshot_id":"retained","node_id":"container"}),
     ] {
         let request = serde_json::from_value(query).unwrap();
         let error = service::read_store_nodes(&store, &[], &request).unwrap_err();

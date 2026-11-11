@@ -2,14 +2,14 @@
 
 use lazypencil::{
     operations::EditRequest,
-    service::{self, ReadNodesRequest},
+    service::{self, InspectNodesRequest},
     store::Store,
 };
 use serde_json::{Value, json};
 use std::{fs, process::Command};
 use tempfile::TempDir;
 
-fn request(value: Value) -> ReadNodesRequest {
+fn request(value: Value) -> InspectNodesRequest {
     serde_json::from_value(value).unwrap()
 }
 
@@ -47,11 +47,11 @@ fn calculated_reads_return_generated_properties_provenance_and_matching_geometry
     let (_temp, store) = fixture(CODE);
     let before = fs::read(store.path()).unwrap();
     let stored =
-        service::read_store_nodes(&store, &[], &request(json!({"node_id":"script"}))).unwrap();
+        service::inspect_store_nodes(&store, &[], &request(json!({"node_id":"script"}))).unwrap();
     assert_eq!(stored["view"], "stored");
     assert!(stored["nodes"][0].get("children").is_none());
     let (project, snapshot) = snapshot(&store);
-    let result = service::read_calculated_nodes(
+    let result = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"node_id":"script","depth":3})),
@@ -76,7 +76,7 @@ fn calculated_reads_return_generated_properties_provenance_and_matching_geometry
         label["layout"],
         serde_json::to_value(&record.record).unwrap()
     );
-    let exact = service::read_calculated_nodes(
+    let exact = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"snapshot_id":snapshot.id,"node_id":label["id"],"depth":0})),
@@ -103,7 +103,7 @@ fn calculated_reads_return_generated_properties_provenance_and_matching_geometry
 fn calculated_pagination_binds_the_snapshot_and_semantic_query_not_page_size_or_entry_flag() {
     let (_temp, store) = fixture(CODE);
     let (project, snapshot) = snapshot(&store);
-    let first = service::read_calculated_nodes(
+    let first = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"depth":0,"limit":1})),
@@ -111,7 +111,7 @@ fn calculated_pagination_binds_the_snapshot_and_semantic_query_not_page_size_or_
     )
     .unwrap();
     assert_eq!(first["total_matches"], 4);
-    let next = service::read_calculated_nodes(
+    let next = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(
@@ -122,7 +122,7 @@ fn calculated_pagination_binds_the_snapshot_and_semantic_query_not_page_size_or_
     .unwrap();
     assert_eq!(next["nodes"].as_array().unwrap().len(), 3);
     assert!(next["next_cursor"].is_null());
-    let filtered = service::read_calculated_nodes(
+    let filtered = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"name":"GENERATED LABEL","type":"text","depth":0})),
@@ -134,7 +134,7 @@ fn calculated_pagination_binds_the_snapshot_and_semantic_query_not_page_size_or_
         filtered["nodes"][0]["properties"]["content"],
         "生成された文字"
     );
-    let changed = service::read_calculated_nodes(
+    let changed = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"depth":1,"cursor":first["next_cursor"]})),
@@ -142,7 +142,7 @@ fn calculated_pagination_binds_the_snapshot_and_semantic_query_not_page_size_or_
     )
     .unwrap_err();
     assert_eq!(changed.code, "REVISION_CONFLICT");
-    let unknown = service::read_calculated_nodes(
+    let unknown = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"snapshot_id":"unknown"})),
@@ -165,7 +165,7 @@ fn runtime_asset_changes_invalidate_calculated_reads() {
     .unwrap();
     let (project, snapshot) = snapshot(&store);
     assert!(!snapshot.runtime_dependencies.is_empty());
-    service::read_calculated_nodes(
+    service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true})),
@@ -173,7 +173,7 @@ fn runtime_asset_changes_invalidate_calculated_reads() {
     )
     .unwrap();
     fs::write(&path, b"changed after calculation").unwrap();
-    let error = service::read_calculated_nodes(
+    let error = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true})),
@@ -204,7 +204,7 @@ fn inherited_scripts_keep_library_themes_addresses_and_nested_generation_origins
     let (project, snapshot) = snapshot(&store);
     let query =
         request(json!({"calculated":true,"node_id":"use","instance_path":["chart"],"depth":2}));
-    let result = service::read_calculated_nodes(&project, &snapshot, &query, None).unwrap();
+    let result = service::inspect_calculated_nodes(&project, &snapshot, &query, None).unwrap();
     let owner = &result["nodes"][0];
     assert_eq!(
         owner["address"],
@@ -222,7 +222,7 @@ fn inherited_scripts_keep_library_themes_addresses_and_nested_generation_origins
         tile["property_sources"]["fill"],
         definition.to_str().unwrap()
     );
-    let selected = service::read_calculated_nodes(
+    let selected = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"snapshot_id":snapshot.id,"node_id":tile["id"],"depth":0})),
@@ -233,12 +233,12 @@ fn inherited_scripts_keep_library_themes_addresses_and_nested_generation_origins
     let cancel = tokio_util::sync::CancellationToken::new();
     cancel.cancel();
     assert_eq!(
-        service::read_calculated_nodes(&project, &snapshot, &query, Some(&cancel))
+        service::inspect_calculated_nodes(&project, &snapshot, &query, Some(&cancel))
             .unwrap_err()
             .code,
         "CANCELLED"
     );
-    service::read_calculated_nodes(&project, &snapshot, &query, None).unwrap();
+    service::inspect_calculated_nodes(&project, &snapshot, &query, None).unwrap();
     fs::write(
         &definition,
         fs::read_to_string(&definition)
@@ -247,7 +247,7 @@ fn inherited_scripts_keep_library_themes_addresses_and_nested_generation_origins
     )
     .unwrap();
     assert_eq!(
-        service::read_calculated_nodes(&project, &snapshot, &query, None)
+        service::inspect_calculated_nodes(&project, &snapshot, &query, None)
             .unwrap_err()
             .code,
         "REVISION_CONFLICT"
@@ -263,12 +263,12 @@ fn invalid_calculated_queries_and_cancellation_do_not_open_missing_code() {
         json!({"calculated":true,"library_alias":"unread"}),
         json!({"calculated":true,"instance_path":["child"]}),
     ] {
-        let error = service::read_store_nodes(&store, &[], &request(value)).unwrap_err();
+        let error = service::inspect_store_nodes(&store, &[], &request(value)).unwrap_err();
         assert_eq!(error.code, "INVALID_ARGUMENT");
     }
     let cancel = tokio_util::sync::CancellationToken::new();
     cancel.cancel();
-    let error = service::read_store_nodes_with_cancellation(
+    let error = service::inspect_store_nodes_with_cancellation(
         &store,
         &[],
         &request(json!({"calculated":true})),
@@ -276,7 +276,7 @@ fn invalid_calculated_queries_and_cancellation_do_not_open_missing_code() {
     )
     .unwrap_err();
     assert_eq!(error.code, "CANCELLED");
-    let unavailable = service::read_store_nodes(
+    let unavailable = service::inspect_store_nodes(
         &store,
         &[],
         &request(json!({"snapshot_id":"another-process"})),
@@ -292,7 +292,7 @@ fn large_overlapping_subtrees_hit_the_response_budget_and_a_smaller_read_recover
     fs::write(&file,json!({"version":"2.21","children":[{"id":"root","type":"frame","width":1,"height":1,"children":[{"id":"leaf","type":"rectangle","width":1,"height":1,"name":"x".repeat(2*1024*1024)}]}]}).to_string()).unwrap();
     let store = Store::open(file, Some(temp.path().join("data"))).unwrap();
     let (project, snapshot) = snapshot(&store);
-    let error = service::read_calculated_nodes(
+    let error = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"depth":2})),
@@ -301,7 +301,7 @@ fn large_overlapping_subtrees_hit_the_response_budget_and_a_smaller_read_recover
     .unwrap_err();
     assert_eq!(error.code, "INVALID_ARGUMENT");
     assert!(error.message.contains("4 MiB"));
-    let reduced = service::read_calculated_nodes(
+    let reduced = service::inspect_calculated_nodes(
         &project,
         &snapshot,
         &request(json!({"calculated":true,"node_id":"root","depth":0})),
@@ -341,7 +341,7 @@ fn actual_cli_calculated_inspection_executes_scripts_and_keeps_stored_reads_sepa
     )
     .unwrap();
     let stored =
-        service::read_store_nodes(&store, &[], &request(json!({"node_id":"script"}))).unwrap();
+        service::inspect_store_nodes(&store, &[], &request(json!({"node_id":"script"}))).unwrap();
     assert_eq!(stored["view"], "stored");
     assert!(stored["nodes"][0].get("children").is_none());
 }

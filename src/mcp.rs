@@ -619,6 +619,8 @@ impl DocumentWorker {
                             "instance_overrides",
                             "managed_assets",
                             "attachments",
+                            "node_reads",
+                            "node_search",
                         ],
                     );
                 }
@@ -626,6 +628,41 @@ impl DocumentWorker {
                     value["attachments"] = attachments.metadata(&self.store)?;
                 }
                 metadata::prepare(value, &args, cancel)?
+            }
+            ToolKind::SearchNodes => {
+                let args: service::SearchNodesRequest = parse(arguments)?;
+                args.validate()?;
+                if args.calculated || args.snapshot_id.is_some() {
+                    #[cfg(not(feature = "rendering"))]
+                    return Err(Error::new(
+                        "UNSUPPORTED_FEATURE",
+                        "Calculated searches require rendering",
+                    ));
+                    #[cfg(feature = "rendering")]
+                    {
+                        let index = self.snapshot_with_preconditions(
+                            None,
+                            None,
+                            args.snapshot_id.as_deref(),
+                            false,
+                            cancel,
+                        )?;
+                        let cached = &self.snapshots[index];
+                        service::search_calculated_nodes(
+                            &cached.project,
+                            &cached.layout,
+                            &args,
+                            Some(cancel),
+                        )?
+                    }
+                } else {
+                    service::search_store_nodes_with_cancellation(
+                        &self.store,
+                        &self.fonts,
+                        &args,
+                        Some(cancel),
+                    )?
+                }
             }
             ToolKind::ReadNodes => {
                 let args: service::ReadNodesRequest = parse(arguments)?;
@@ -637,7 +674,7 @@ impl DocumentWorker {
                     ));
                     #[cfg(feature = "rendering")]
                     {
-                        service::validate_calculated_nodes_request(&args)?;
+                        args.validate()?;
                         let index = self.snapshot_with_preconditions(
                             None,
                             None,

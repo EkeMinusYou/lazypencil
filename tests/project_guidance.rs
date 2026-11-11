@@ -353,9 +353,13 @@ fn malformed_or_unavailable_design_resources_leave_document_data_readable_withou
             .unwrap()
             .contains("SECRET_SHOULD_NOT_APPEAR")
     );
-    let stored =
-        service::read_store_nodes(&store, &[], &serde_json::from_value(json!({})).unwrap())
-            .unwrap();
+    let stored = service::search_store_nodes_with_cancellation(
+        &store,
+        &[],
+        &serde_json::from_value(json!({})).unwrap(),
+        None,
+    )
+    .unwrap();
     assert_eq!(stored["view"], "stored");
 }
 

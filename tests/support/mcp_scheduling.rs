@@ -74,7 +74,7 @@ fn pending_inputs_are_bounded_without_blocking_other_documents_or_close() {
         for _ in 0..requests {
             abandoned.insert(client.start_request(
             "tools/call",
-            json!({"name":"read_nodes","arguments":{"name":"x".repeat(payload_bytes),"limit":1}}),
+            json!({"name":"search_nodes","arguments":{"name":"x".repeat(payload_bytes),"limit":1}}),
         ));
         }
         let rejected = client

@@ -29,7 +29,7 @@ Every document-specific tool requires `document_id`, including project guidance,
 styles, font inventory, assets, history, validation and rendering. For example:
 
 ```json
-{"document_id":"ID_FROM_OPEN_DOCUMENT","depth":1}
+{"document_id":"ID_FROM_OPEN_DOCUMENT","node_id":"KNOWN_NODE_ID","depth":1}
 ```
 
 Use this input with `read_nodes`. The examples later in this guide abbreviate the
@@ -131,7 +131,8 @@ When the CLI/TUI conversation host owns the server, it also binds design-resourc
 | `get_guidance` | Built-in English guides, trusted project guides, automatic project rules, versions, hashes, and an index |
 | `list_icons` | Pinned vector icon names, aliases, tags, versions, hashes, licenses, and pack availability |
 | `list_styles`, `get_style` | Built-in and trusted project styles, tokens, guide references, font requirements, and editable `.pen` examples |
-| `read_nodes` | Stored, expanded, or explicitly calculated nodes, generated properties and provenance, inherited addresses, declared libraries, and bounded pages |
+| `search_nodes` | Shallow, byte-bounded candidate search with exact totals, addresses and optional calculated visual bounds |
+| `read_nodes` | One exact stored, expanded or calculated target, with properties, provenance and explicitly requested descendants |
 | `list_components` | Reusable definitions in the document and declared libraries |
 | `get_variables` | Paged variable definitions, resolved values, source documents, node/property context, and hypothetical themes |
 | `apply_operations` | The shared atomic editing API with expected revisions and request-ID deduplication |
@@ -155,7 +156,7 @@ A server launched by a live TUI additionally advertises `get_preview_state` and 
 
 `get_preview_state` takes `{}` and returns the selected node and `preview` state. Keyboard focus, dialogs and agent activity are not part of this response. `preview.requested_view` includes the requested center, zoom, time and document-space region. `preview.displayed` describes the last complete document frame, including its view, revision, dependency revision, `preview_snapshot_id` and document bounds; it is null before a complete frame or while showing an attachment. The preview ID identifies the TUI's displayed calculation; it is not a reusable MCP `snapshot_id`. This replaces the previously ambiguous `preview.displayed.snapshot_id` field. Obtain reusable IDs through a calculation on the current MCP connection. The state also includes viewport cells/pixels, pending camera changes, playback and preview errors. A displayed revision may lag behind an edit: it identifies the actual completed frame. The query does not expose the prompt draft or change selection, playback or the camera.
 
-For named or described targets, first use the existing `read_nodes` search with `calculated: true`, `depth: 0`, and optional `name`/`type` filters. Inspect the matching IDs, addresses and layout. Resolve ambiguity instead of guessing an ID or silently selecting one match. Use `get_preview_state` when interpreting relative requests or references to the current selection/view. Then call `set_preview`, for example:
+For named or described targets, first use `search_nodes` with `calculated: true` and optional `name`/`type` filters. Inspect the matching IDs, `read_target` addresses and document-space visual bounds. Resolve ambiguity instead of guessing an ID or silently selecting one match. Use `get_preview_state` when interpreting relative requests or references to the current selection/view. Then call `set_preview`, for example:
 
 ```json
 {"target":{"kind":"nodes","node_ids":["login","register"]}}
@@ -263,7 +264,7 @@ CLI validation uses the same service and optional `--font`, expected revision, l
 
 ## Components and inherited nodes
 
-To read an inherited label, use `read_nodes` with `{"node_id":"instance","instance_path":["nested-instance","label"],"depth":0}`. The result has `view: "expanded"`; each node includes its `address`, `properties`, property origins, and source node. Variable references remain references in this view. `expand_instances: true` expands a selected root or searches expanded nodes. A `library_alias` selects a declared library; nested aliases follow the declared import chain, separated by `:`. These API addresses do not introduce a new serialized `.pen` reference syntax. Stored-node reads remain available when a dependency is missing and report asset diagnostics or a dependency error.
+To read an inherited label, use `read_nodes` with `{"node_id":"instance","instance_path":["nested-instance","label"],"depth":0}`. The result has `view: "expanded"`; each node includes its `address`, `properties`, property origins, and source node. Variable references remain references in this view. `expand_instances: true` expands the selected target; use `search_nodes` to discover expanded candidates. A `library_alias` selects a declared library; nested aliases follow the declared import chain, separated by `:`. These API addresses do not introduce a new serialized `.pen` reference syntax. Stored-node reads remain available when a dependency is missing and report asset diagnostics or a dependency error.
 
 ### Calculated and generated nodes
 
@@ -273,7 +274,21 @@ The result has `view: "calculated"`, `variables_resolved: true`, calculation met
 
 An inherited node can still be selected by `node_id` plus `instance_path`. A generated node can be selected by its opaque top-level `id`, as returned by this read or a layout record. Do not construct an ID from `properties.id` or save generated IDs as document edits. Generated nodes remain derived and read-only; follow `generated_by` to edit their owning script's inputs or source. A calculation covers the selected document's effective tree, including used library instances; `library_alias` is rejected. Use a stored/expanded query to inspect unused library definitions. `expand_instances` adds nothing to an already calculated tree.
 
-Name/type filters and depth 0..16 apply to calculated reads. Limits are 1..500, default 100; matches are visited in layout order, and children included by depth can overlap other matches. Reuse both `snapshot_id` and `next_cursor` for later pages, keeping the other query fields unchanged. A different page size is allowed. Response construction is bounded to 4 MiB; reduce depth, page size, or selection after an oversized response. Cancellation reaches script execution and serialization; cancelling a read does not invalidate an otherwise current retained calculation.
+`read_nodes` requires `node_id`; `instance_path` selects an inherited target. Depth is 0..16 and defaults to 0. It returns one target in `nodes`, without `total_matches` or `next_cursor`. Name/type filters, `limit`, `cursor`, and target-less full reads are no longer accepted. This is an intentional MCP compatibility change. CLI `inspect` retains its existing arguments, defaults and detailed paginated output.
+
+### Lightweight node search
+
+`search_nodes` accepts a case-insensitive name substring, exact `type`, and optional `root: {node_id, instance_path}`. Filters combine with AND. Without name/type it lists the selected scope. The root itself and all descendants are included; a nonexistent root is an error, distinct from zero matches. Stored/expanded trees use tree traversal order; calculated trees use layout order. `total_matches` is exact for that view and scope. Disabled nodes present in the selected tree remain searchable.
+
+Searches default to stored nodes and never implicitly execute scripts. Use `expand_instances:true` to search inherited nodes without resolving variable references. A root with a nonempty `instance_path` also selects expanded mode. `library_alias` selects declared definitions, including unused ones. Use `calculated:true` to explicitly calculate script/layout output, or `snapshot_id` to reuse a retained calculation without re-execution. A supplied snapshot wins over `calculated:true`. Calculated searches/reads reject `library_alias` and `expand_instances:true`.
+
+Candidates contain `id`, `read_target`, `name`, `name_truncated`, `type`, `parent`, `children_count`, `bounds`, `enabled`, `origin`, and `generated_by`. `read_target` contains the exact `node_id` and `instance_path` to pass to `read_nodes`; do not parse the display/preview ID. `origin` distinguishes stored, inherited and generated nodes; a non-null response `library_alias` indicates library definitions. These fields describe provenance, not a promise that every edit operation is supported. Generated candidates point to their owning script through `generated_by`. Calculated `bounds` are document-space visual bounds, not parent-relative layout coordinates; uncalculated bounds/enabled are null.
+
+Pass a candidate's `read_target` plus `document_id` to `read_nodes`. Preserve response context: pass `snapshot_id` for calculated candidates, `expand_instances:true` for expanded candidates, and `library_alias` for library definitions. Detail reads include full properties/provenance and optionally children. Search has no property/provenance/layout payloads or nested children. Its compact `status` reports asset completeness, diagnostic count and dependency/resolution error codes; inspect `get_document` for details, including unavailable dependencies during stored repairs. When dependencies cannot be captured, stored search reports a null dependency revision; repair dependencies before continuing its cursor.
+
+Search pages default to 20 candidates, accept 1..100, and bound the serialized logical JSON result to 64 KiB (transport may carry both text and structured copies). Names show at most 256 Unicode characters with `name_truncated:true`; filtering uses the complete name. IDs are never shortened. The byte budget can return fewer candidates than `limit`; follow `next_cursor` until null. Every nonterminal successful page contains at least one candidate and advances; a single candidate that cannot fit fails explicitly. Exact counts and page-size checks do not construct full detail JSON or retain all matching payloads.
+
+Cursors bind the connection/document, view, scope, query and captured revisions; changing page size is allowed. Repeat the query and reuse both `snapshot_id` and `next_cursor` for calculated pages. Changed inputs return `REVISION_CONFLICT`; expired/missing calculations return `SNAPSHOT_UNAVAILABLE`. Recover with one fresh search without snapshot/cursor, then share its returned snapshot for details and rendering. Cancellation covers traversal and serialization. Search reduces response/context volume; calculated searches still use the ordinary layout pipeline and connection retention budget.
 
 ```sh
 lazypencil inspect design.pen --calculated --node chart --depth 2

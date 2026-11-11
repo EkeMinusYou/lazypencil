@@ -55,6 +55,7 @@ catalogue! {
     ListStyles => ("list_styles", Optional, Read),
     GetStyle => ("get_style", Optional, Read),
     GetDocument => ("get_document", Required, Read),
+    SearchNodes => ("search_nodes", Required, Read),
     ReadNodes => ("read_nodes", Required, Read),
     ListComponents => ("list_components", Required, Read),
     GetVariables => ("get_variables", Required, Read),
@@ -100,6 +101,7 @@ impl ToolKind {
             ))
             .open_world(match self {
                 Self::GetDocument
+                | Self::SearchNodes
                 | Self::ReadNodes
                 | Self::ValidateDocument
                 | Self::ApplyOperations => true,
@@ -151,9 +153,13 @@ fn tools() -> Vec<Tool> {
             ToolKind::GetDocument,
             "Read current revisions and a bounded overview before editing. collections reports exact totals and truncated roots, dependencies, diagnostics and attachment/font lists. Read their complete entries with collection, limit and next_cursor; pass collection again with cursor. Omitted oversized overview fields appear in omitted_fields. Set include_configuration:true for full settings/origins or include_capabilities:true for the feature catalogue. HTTP image bytes are deferred; acquire_images:true explicitly fetches them under the network policy, including external/local services. Layout/rendering also acquire images.",
         ),
+        tool::<service::SearchNodesRequest>(
+            ToolKind::SearchNodes,
+            "Find nodes by case-insensitive name substring and exact type. Returns shallow candidates with read_target, parent, child count and calculated visual bounds, never full properties. root includes itself and descendants. Defaults to 20 results, max 100, within 64 KiB; follow next_cursor for all matches. Names may be shortened for display; matching uses full names. Reuse returned snapshot_id for subsequent pages and read_nodes. calculated:true explicitly executes scripts; omit it for stored inspection. expand_instances preserves references; library_alias inspects declared definitions. Pass each read_target and the response view context to read_nodes without parsing IDs. Generated candidates identify their owning script.",
+        ),
         tool::<service::ReadNodesRequest>(
             ToolKind::ReadNodes,
-            "Read stored nodes by ID, name or type with bounded depth and pagination. instance_path selects an inherited descendant; expand_instances preserves variable references. library_alias selects declared definitions read-only. calculated:true explicitly executes scripts and returns resolved properties, generated children and matching geometry. Pass snapshot_id from get_layout/render to read that exact calculation without rerunning scripts. Generated IDs are read-only: edit their owning script's inputs or source. Omit calculated and snapshot_id to inspect or repair stored code without executing it.",
+            "Read one exact node by required node_id and optional instance_path. Use search_nodes first when the target is unknown. Defaults to depth:0; request descendants explicitly (max 16). No name/type search or pagination. Preserve search view context: snapshot_id for calculated results, expand_instances:true for expanded results, and library_alias for library definitions. calculated:true explicitly executes scripts; stored reads do not. Generated IDs are read-only: edit the owning script. Details include properties and provenance and are bounded to 4 MiB.",
         ),
         tool::<Page>(
             ToolKind::ListComponents,
@@ -212,7 +218,7 @@ fn build(preview: bool) -> Vec<Tool> {
             "Read the connected TUI preview's requested camera, displayed frame identity and document bounds, viewport dimensions, loading/error and playback state, and selected node for contextual references. Use before relative or contextual preview requests. preview_snapshot_id identifies the displayed frame; it is not a retained MCP snapshot_id. Obtain a reusable calculation from get_layout, validate_document scope layout, render or a calculated read on this connection. Does not read prompt text or modify the document, selection or camera."));
         let set = tool::<crate::preview_control::SetPreviewRequest>(
             ToolKind::SetPreview,
-            "Operate the connected TUI camera without editing the document or selection. Search named/described targets first with read_nodes (calculated:true, depth:0, name/type filters) and use its exact IDs. target can fit the document, one/multiple nodes or a region, or center a point. fit:false preserves current scale; zoom overrides fitting; zoom_factor multiplies the fitted/current scale; pan moves the camera in document units, positive right/down. Inspect get_preview_state for relative requests. Returns only after a complete frame; a newer manual view cancels the request. Do not rearrange nodes to satisfy display requests.",
+            "Operate the connected TUI camera without editing the document or selection. Search named/described targets first with search_nodes (calculated:true, name/type filters) and use its exact IDs. target can fit the document, one/multiple nodes or a region, or center a point. fit:false preserves current scale; zoom overrides fitting; zoom_factor multiplies the fitted/current scale; pan moves the camera in document units, positive right/down. Inspect get_preview_state for relative requests. Returns only after a complete frame; a newer manual view cancels the request. Do not rearrange nodes to satisfy display requests.",
         );
         tools.push(set);
     }

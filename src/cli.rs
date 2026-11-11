@@ -726,10 +726,10 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 || options.library_alias.is_some()
                 || options.expand_instances
             {
-                crate::service::read_store_nodes_with_images(
+                crate::service::inspect_store_nodes_with_images(
                     &store,
                     &options.fonts,
-                    &crate::service::ReadNodesRequest {
+                    &crate::service::InspectNodesRequest {
                         calculated: options.calculated,
                         snapshot_id: None,
                         node_id: options.node.clone(),

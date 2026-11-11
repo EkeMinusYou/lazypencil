@@ -174,6 +174,20 @@ impl Project {
             .collect()
     }
 
+    /// Count compact search diagnostics without constructing their payloads.
+    pub(crate) fn asset_diagnostic_count(&self) -> usize {
+        self.missing_assets.len()
+            + self.captured_image_failures.len()
+            + self
+                .remote_references
+                .keys()
+                .filter(|path| {
+                    !self.assets.contains_key(*path)
+                        && !self.captured_image_failures.contains_key(*path)
+                })
+                .count()
+    }
+
     pub fn assets_complete(&self) -> bool {
         self.missing_assets.is_empty()
             && self.captured_image_failures.is_empty()

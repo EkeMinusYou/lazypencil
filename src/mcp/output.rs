@@ -48,6 +48,37 @@ struct MetadataCollection {
     truncated: bool,
 }
 
+#[allow(dead_code)]
+#[derive(Deserialize, JsonSchema)]
+struct SearchTarget {
+    node_id: String,
+    instance_path: Vec<String>,
+}
+#[allow(dead_code)]
+#[derive(Deserialize, JsonSchema)]
+struct SearchBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+#[allow(dead_code)]
+#[derive(Deserialize, JsonSchema)]
+struct SearchCandidate {
+    id: String,
+    read_target: SearchTarget,
+    name: Option<String>,
+    name_truncated: bool,
+    #[serde(rename = "type")]
+    kind: String,
+    parent: Option<SearchTarget>,
+    children_count: usize,
+    bounds: Option<SearchBounds>,
+    enabled: Option<bool>,
+    origin: String,
+    generated_by: Option<SearchTarget>,
+}
+
 outputs! {
     Handle => ["open_document", "create_document"] {
         document_id: String,
@@ -128,13 +159,23 @@ outputs! {
         tokens: Object,
         example: Object,
     }
+    SearchNodes => ["search_nodes"] {
+        document_id: String,
+        revision: String,
+        dependency_revision: Option<String>,
+        library_alias: Option<String>,
+        nodes: Vec<SearchCandidate>,
+        total_matches: usize,
+        next_cursor: Option<String>,
+        snapshot_id: Option<String>,
+        view: String,
+        status: Object,
+    }
     Nodes => ["read_nodes"] {
         document_id: String,
         revision: String,
         dependency_revision: Option<String>,
         nodes: Vec<Object>,
-        total_matches: usize,
-        next_cursor: Option<String>,
         snapshot_id: Option<String>,
         view: String,
     }

@@ -1,5 +1,5 @@
 //! Read the same expanded, script-generated tree used by layout and PNG output.
-use super::{NodeFilter, ReadNodesRequest};
+use super::{InspectNodesRequest, NodeFilter};
 use crate::{Error, Result, layout::LayoutSnapshot, project::Project};
 use serde::{
     Serialize, Serializer,
@@ -8,7 +8,7 @@ use serde::{
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-pub fn validate_calculated_nodes_request(request: &ReadNodesRequest) -> Result<()> {
+pub fn validate_calculated_inspect_request(request: &InspectNodesRequest) -> Result<()> {
     request.validate_page()?;
     if request.library_alias.is_some() {
         return Err(Error::new(
@@ -20,13 +20,13 @@ pub fn validate_calculated_nodes_request(request: &ReadNodesRequest) -> Result<(
     Ok(())
 }
 
-pub fn read_calculated_nodes(
+pub fn inspect_calculated_nodes(
     project: &Project,
     snapshot: &LayoutSnapshot,
-    request: &ReadNodesRequest,
+    request: &InspectNodesRequest,
     cancel: Option<&CancellationToken>,
 ) -> Result<Value> {
-    validate_calculated_nodes_request(request)?;
+    validate_calculated_inspect_request(request)?;
     crate::cancel::check(cancel)?;
     if snapshot.revision != project.root_document().revision()
         || snapshot.dependency_revision != project.dependency_revision()
