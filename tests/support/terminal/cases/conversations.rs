@@ -113,6 +113,7 @@ pub fn completion(h: &mut Harness) -> Result {
     h.visible("Conversation commands")?;
     assert!(!h.screen.text().contains("Preview: pan"));
     h.key(b"\x1b")?;
+    h.hidden("Conversation commands")?;
     h.resize(50, 16)?;
     h.paste("/")?;
     for _ in 0..11 {

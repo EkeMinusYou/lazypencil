@@ -10,23 +10,6 @@ mod terminal;
 
 #[test]
 fn real_pty_automatically_resumes_history_and_handles_busy_and_explicit_new_conversations() {
-    fn notice(h: &mut terminal::Harness, expected: &str) -> terminal::Result {
-        let expected: String = expected
-            .chars()
-            .filter(|character| !character.is_whitespace())
-            .collect();
-        h.wait("conversation startup notice", 15.0, |h| {
-            let text: String = h
-                .screen
-                .text()
-                .lines()
-                .filter_map(|line| line.rsplit('│').nth(1))
-                .flat_map(str::chars)
-                .filter(|character| !character.is_whitespace())
-                .collect();
-            text.contains(&expected)
-        })
-    }
     fn run() -> terminal::Result {
         let temp = TempDir::new()?;
         let root = temp.path();
@@ -90,7 +73,7 @@ fn real_pty_automatically_resumes_history_and_handles_busy_and_explicit_new_conv
         )?;
         restored.visible("Unsent restored draft")?;
         restored.visible("Original request")?;
-        notice(&mut restored, "Resumed previous conversation")?;
+        restored.footer_notice("Resumed previous conversation")?;
         assert!(
             restored
                 .screen
@@ -115,7 +98,7 @@ fn real_pty_automatically_resumes_history_and_handles_busy_and_explicit_new_conv
             "session-resume",
             None,
         )?;
-        notice(&mut busy, "in use by another TUI")?;
+        busy.footer_notice("in use by another TUI")?;
         assert!(
             !busy
                 .screen
@@ -194,7 +177,7 @@ fn real_pty_automatically_resumes_history_and_handles_busy_and_explicit_new_conv
             "session-resume",
             None,
         )?;
-        notice(&mut next, "Resumed previous conversation")?;
+        next.footer_notice("Resumed previous conversation")?;
         assert!(
             next.screen
                 .text()

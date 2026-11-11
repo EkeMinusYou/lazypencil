@@ -2166,9 +2166,7 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.wait("restored document", 15.0, |h| {
         read_json(&h.document).is_some_and(|d| d["children"][0]["fill"] == "#22C55E")
     })?;
-    h.wait("visible restoration", 15.0, |h| {
-        h.screen.contains_words("Checkpoint", "restored")
-    })?;
+    h.footer_notice("Restored checkpoint")?;
     assert_eq!(state(h)["draft"], "復元しても保持する下書き");
     let entries = h.cli(&["history".as_ref(), h.document.as_os_str()])?["entries"]
         .as_array()

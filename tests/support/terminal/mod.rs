@@ -485,6 +485,26 @@ impl Harness {
     pub fn hidden(&mut self, text: &str) -> Result {
         self.wait(text, 15.0, |h| !h.screen.text().contains(text))
     }
+    pub fn footer_notice(&mut self, text: &str) -> Result {
+        self.wait("footer notice", 15.0, |h| {
+            h.screen
+                .text()
+                .lines()
+                .rev()
+                .nth(1)
+                .is_some_and(|line| line.contains(text))
+        })?;
+        let screen = self.screen.text();
+        let rows = screen.lines().count();
+        assert!(
+            !screen
+                .lines()
+                .take(rows.saturating_sub(2))
+                .any(|line| line.contains(text)),
+            "Footer notices must stay outside the workspace"
+        );
+        Ok(())
+    }
     pub fn draft(&mut self, text: &str) -> Result {
         self.wait("saved draft", 15.0, |h| {
             h.session().is_some_and(|s| s["draft"] == text)
