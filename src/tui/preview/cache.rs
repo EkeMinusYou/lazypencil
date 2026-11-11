@@ -2,7 +2,7 @@
 use super::*;
 
 // Two raw HiDPI viewports must fit alongside prepared compressed neighbors.
-const MAX_BYTES: usize = 128 * 1024 * 1024;
+const MAX_BYTES: usize = 256 * 1024 * 1024;
 const MAX_ENTRIES: usize = 64;
 const MAX_RECENT: usize = 2;
 

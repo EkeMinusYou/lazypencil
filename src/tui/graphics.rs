@@ -30,7 +30,9 @@ pub enum Encoded {
 impl Encoded {
     pub(super) fn native_bytes(&self) -> Option<usize> {
         match self {
-            Self::Native(image) => Some(image.upload.len()),
+            Self::Native(image) => {
+                Some(image.upload.len() + image.raw_upload.as_ref().map_or(0, |raw| raw.len()))
+            }
             Self::Protocol(_) => None,
         }
     }
@@ -57,6 +59,8 @@ pub struct NativeImage {
     size: Size,
     pixels: [u32; 2],
     upload: Arc<str>,
+    raw_upload: Option<Arc<Vec<u8>>>,
+    inline_compression: bool,
     local: Option<Arc<LocalImage>>,
     transmitted: std::sync::atomic::AtomicBool,
 }
@@ -68,6 +72,8 @@ impl Clone for NativeImage {
             size: self.size,
             pixels: self.pixels,
             upload: self.upload.clone(),
+            raw_upload: self.raw_upload.clone(),
+            inline_compression: self.inline_compression,
             local: self.local.clone(),
             // A retained frame must upload again into the inactive terminal slot.
             transmitted: false.into(),
@@ -91,6 +97,24 @@ impl NativeImage {
         use std::fmt::Write as _;
         let pixels = [image.width(), image.height()];
         let rgba = image.into_rgba8();
+        if let Some(transfer) = local
+            && let Some(local) = transfer.store_raw(rgba.as_raw())
+        {
+            return Ok(Self {
+                id,
+                size,
+                pixels,
+                upload: format!(
+                    "\x1b_Ga=t,f=32,i={id},s={},v={},q=2,m=0;",
+                    pixels[0], pixels[1]
+                )
+                .into(),
+                raw_upload: Some(Arc::new(rgba.into_raw())),
+                inline_compression: compressed,
+                local: Some(local),
+                transmitted: false.into(),
+            });
+        }
         // Inline opaque uploads omit alpha losslessly. Local file transfers
         // keep RGBA directly, avoiding a second window-sized conversion buffer.
         let rgb = (local.is_none()
@@ -181,6 +205,8 @@ impl NativeImage {
             size,
             pixels,
             upload: upload.into(),
+            raw_upload: None,
+            inline_compression: compressed,
             local,
             transmitted: false.into(),
         })
@@ -208,6 +234,48 @@ impl NativeImage {
                 return format!("{control},t=t;{}\x1b\\", STANDARD.encode(path_text));
             }
             let _ = std::fs::remove_file(path);
+        }
+        if let Some(raw) = &self.raw_upload {
+            // Local-file failure must retain the negotiated compact inline
+            // transport. Build it only on this exceptional path.
+            let bitmap =
+                image::RgbaImage::from_raw(self.pixels[0], self.pixels[1], (**raw).clone())
+                    .unwrap();
+            if let Ok(mut fallback) = Self::new(
+                bitmap.into(),
+                self.size,
+                self.id,
+                self.inline_compression,
+                None,
+            ) {
+                if self.upload.contains("q=0") {
+                    fallback.upload = fallback.upload.replace("q=2", "q=0").into();
+                }
+                return fallback.upload(target);
+            }
+            use std::fmt::Write as _;
+            let control = self
+                .upload
+                .split_once(';')
+                .expect("Raw Kitty upload control")
+                .0
+                .replacen(&format!("i={},", self.id), &format!("i={target},"), 1);
+            let mut upload = String::new();
+            let chunks = raw.chunks(3072);
+            let count = chunks.len();
+            for (index, chunk) in chunks.enumerate() {
+                if index == 0 {
+                    upload.push_str(
+                        &control.replace("m=0", &format!("m={}", usize::from(count > 1))),
+                    );
+                    upload.push(';');
+                } else {
+                    let _ = write!(upload, "\x1b_Gq=2,m={};", usize::from(index + 1 < count));
+                }
+                STANDARD.encode_string(chunk, &mut upload);
+                upload.push_str("\x1b\\");
+            }
+            return upload;
         }
         self.upload
             .replacen(&format!("i={},", self.id), &format!("i={target},"), 1)

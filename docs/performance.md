@@ -28,7 +28,7 @@ Direct Kitty previews of retained static scenes prepare exact native-resolution
 frames for one zoom step in each direction and four immediate pan neighbors before
 publishing the first document frame. Startup never prepares the full zoom ladder;
 more distant views are prepared only in response to repeated gestures.
-Completed uploads and losslessly compressed source pixels share a 128 MiB cache.
+Completed upload sources and prepared camera frames share a 256 MiB cache.
 The cache grows on demand rather than reserving that capacity at startup; retained
 entries remain available until eviction, document dependency invalidation, or exit.
 At most two recent sources stay raw within that same budget, avoiding PNG
@@ -59,15 +59,15 @@ payload; inline transfers remain the fallback for remote terminals, multiplexers
 unsupported terminals, or filesystem errors. This avoids sending the same large
 base64 payload through the PTY on every cached camera move.
 
-A separate worker prepares uncompressed RGBA files from completed ZLIB transfers,
-avoiding full-viewport decompression on the terminal's input thread during reuse.
-New views retain their ready compressed transfer while that preparation runs. An
-independent 256 MiB least-recently used file cache bounds the exact RGBA files; it
-allocates on demand with no upfront memory reservation. Each upload creates a
-separate terminal-owned link, so eviction cannot invalidate an in-flight read.
-Evicted or unprepared files use their ready compressed local transfer; filesystem
-errors retain the lossless inline fallback. The 128 MiB preview-source cache keeps
-its existing budget.
+When local transfers are available, new frames write their exact RGBA pixels
+directly to a temporary file without first compressing and decompressing them.
+An independent 256 MiB least-recently used file cache bounds these files and grows
+on demand. Encoded frames retain immutable RGBA pixels for fallback, charged to
+the 256 MiB preview-source cache. Each upload creates a separate terminal-owned
+link, so cache eviction cannot invalidate an in-flight read. If the link is no
+longer available, the negotiated lossless PNG or ZLIB inline transfer is generated
+on demand. If the raw file cannot be written, the existing ready compressed
+transfer and background RGBA preparation remain available.
 
 On macOS, native rasters of at least 4 MiB use application-owned pixel buffers.
 Immutable native images retain that ownership until their last reader releases it;

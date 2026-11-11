@@ -707,7 +707,7 @@ fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
 }
 
 #[test]
-fn evicted_local_transfer_files_fall_back_to_prepared_lossless_inline_pixels() {
+fn evicted_local_transfer_files_fall_back_to_lossless_inline_pixels() {
     for compressed in [false, true] {
         let local = Arc::new(LocalTransfer::new().unwrap());
         let backend = Backend {
@@ -717,9 +717,9 @@ fn evicted_local_transfer_files_fall_back_to_prepared_lossless_inline_pixels() {
             local_transfer: Some(local.clone()),
             ..Backend::halfblocks()
         };
-        let pixels = image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 127]));
+        let pixels = image::RgbaImage::from_pixel(80, 64, image::Rgba([12, 34, 56, 127]));
         let Encoded::Native(encoded) = backend
-            .encode_preview(pixels.clone().into(), Size::new(3, 2), 42)
+            .encode_preview(pixels.clone().into(), Size::new(80, 64), 42)
             .unwrap()
         else {
             panic!("Expected a native image")
@@ -769,6 +769,30 @@ fn native_image_placements_preserve_the_canvas_background_without_terminal_image
             .iter()
             .all(|cell| !cell.symbol().contains("old"))
     );
+}
+
+#[test]
+fn local_file_creation_failure_preserves_the_negotiated_inline_pixels() {
+    for compressed in [false, true] {
+        let local = Arc::new(LocalTransfer::new().unwrap());
+        std::fs::remove_dir_all(local.directory.path()).unwrap();
+        let pixels = image::RgbaImage::from_pixel(80, 64, image::Rgba([12, 34, 56, 127]));
+        let encoded = NativeImage::new(
+            pixels.clone().into(),
+            Size::new(80, 64),
+            42,
+            compressed,
+            Some(&local),
+        )
+        .unwrap();
+        assert!(encoded.raw_upload.is_none());
+        let wire = encoded.upload(43);
+        assert!(!wire.contains(",t=t;"));
+        assert_eq!(wire.contains("o=z"), compressed);
+        let mut decoder = observer::KittyFrames::default();
+        decoder.feed(wire.as_bytes()).unwrap();
+        assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
+    }
 }
 
 #[test]

@@ -15,6 +15,7 @@ const CAPACITY_BYTES: usize = 256 * 1024 * 1024;
 
 pub(super) struct LocalTransfer {
     sequence: AtomicU64,
+    capacity: usize,
     files: Arc<Mutex<Files>>,
     sender: Option<mpsc::SyncSender<Command>>,
     thread: Option<JoinHandle<()>>,
@@ -49,7 +50,7 @@ enum Command {
 
 pub(super) struct LocalImage {
     key: u64,
-    file: tempfile::NamedTempFile,
+    file: Option<tempfile::NamedTempFile>,
     transfer: Arc<LocalTransfer>,
     live: Option<Arc<()>>,
 }
@@ -95,6 +96,7 @@ impl LocalTransfer {
             })?;
         Ok(Self {
             sequence: AtomicU64::new(0),
+            capacity,
             files,
             sender: Some(sender),
             thread: Some(thread),
@@ -126,9 +128,42 @@ impl LocalTransfer {
         }
         Some(Arc::new(LocalImage {
             key,
-            file,
+            file: Some(file),
             transfer: self.clone(),
             live: Some(live),
+        }))
+    }
+
+    pub(super) fn store_raw(self: &Arc<Self>, pixels: &[u8]) -> Option<Arc<LocalImage>> {
+        if pixels.is_empty() || pixels.len() > self.capacity {
+            return None;
+        }
+        let mut file = tempfile::NamedTempFile::new_in(self.directory.path()).ok()?;
+        file.write_all(pixels).ok()?;
+        let key = self.sequence.fetch_add(1, Ordering::Relaxed);
+        let mut files = self.files.lock().unwrap();
+        let mut evicted = Vec::new();
+        while files.bytes + pixels.len() > self.capacity {
+            let entry = files
+                .entries
+                .pop_front()
+                .expect("Accounted raw transfer file");
+            files.bytes -= entry.bytes;
+            evicted.push(entry);
+        }
+        files.bytes += pixels.len();
+        files.entries.push_back(Entry {
+            key,
+            file,
+            bytes: pixels.len(),
+        });
+        drop(files);
+        drop(evicted);
+        Some(Arc::new(LocalImage {
+            key,
+            file: None,
+            transfer: self.clone(),
+            live: None,
         }))
     }
 
@@ -201,7 +236,7 @@ impl LocalImage {
             }
         }
         drop(files);
-        std::fs::hard_link(self.file.path(), &path).ok()?;
+        std::fs::hard_link(self.file.as_ref()?.path(), &path).ok()?;
         Some(Link { path, raw: false })
     }
 }
@@ -239,6 +274,23 @@ mod tests {
         transfer
             .store(&encoder.finish().unwrap(), Some(length))
             .unwrap()
+    }
+
+    #[test]
+    fn raw_transfer_files_obey_the_byte_budget_and_keep_outstanding_links() {
+        let transfer = Arc::new(LocalTransfer::with_capacity(8).unwrap());
+        let first = transfer.store_raw(&[1; 4]).unwrap();
+        let second = transfer.store_raw(&[2; 4]).unwrap();
+        let ticket = first.link().unwrap();
+        let second_ticket = second.link().unwrap();
+        let third = transfer.store_raw(&[3; 4]).unwrap();
+        assert!(first.link().is_none());
+        assert!(second.link().unwrap().raw);
+        assert!(third.link().unwrap().raw);
+        assert_eq!(transfer.files.lock().unwrap().bytes, 8);
+        assert_eq!(std::fs::read(&ticket.path).unwrap(), [1; 4]);
+        assert_eq!(std::fs::read(&second_ticket.path).unwrap(), [2; 4]);
+        assert!(transfer.store_raw(&[0; 9]).is_none());
     }
 
     #[test]
