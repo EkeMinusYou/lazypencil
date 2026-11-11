@@ -417,14 +417,33 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
     let mut support = String::new();
     if let Some(policy) = &release {
         support.push_str(&format!(
-            "\nSupported release target: {}\nMinimum macOS: {}\nKnown compatibility limitations:\n",
-            policy.target, policy.minimum_os
+            "\nRequires macOS {} or later on Apple Silicon.\n\nFeature limitations:\n",
+            policy.minimum_os
         ));
         for limitation in &policy.limitations {
             support.push_str(&format!("- {}\n", limitation.description));
         }
     }
-    files.insert("README.txt".into(), (format!("lazypencil {kind}\nTarget: {target}\nSource: {revision}\n\nExtract this directory and run bin/lazypencil --help. Place bin/lazypencil on PATH to install. Chromium is obtained separately with lazypencil runtime setup chromium.\n\nFor shell Tab completion, load the output of lazypencil completions bash, zsh, or fish from that shell's startup file. The matching source archive contains docs/completions.md with setup instructions. Regenerate hooks on shell startup after upgrades.\n\nBuild review status is retained in build-evidence/build.json. Verify GitHub build provenance separately; this package manifest does not assert Apple code signing or notarization. The matching project source archive and all original collected third-party notices are included.\n{support}").into_bytes(), 0o644));
+    let readme = format!(
+        "lazypencil {kind}\n\n\
+         Try the sample design\n\n\
+         From this extracted directory, run:\n\n\
+         \x20 bin/lazypencil demo demo.pen\n\
+         \x20 bin/lazypencil demo.pen\n\n\
+         To export it as a PNG:\n\n\
+         \x20 bin/lazypencil render demo.pen --output demo.png\n\n\
+         For installation, AI setup and terminal previews, see:\n\
+         https://github.com/EkeMinusYou/lazypencil#readme\n\n\
+         To run lazypencil from any directory, place bin/lazypencil on PATH.\n\
+         Run bin/lazypencil --help to see the available commands.\n\
+         {support}\n\
+         Package contents\n\n\
+         The source archive includes the user and developer documentation.\n\
+         Licenses and build information are in build-evidence/.\n\
+         Target: {target}\n\
+         Source revision: {revision}\n"
+    );
+    files.insert("README.txt".into(), (readme.into_bytes(), 0o644));
     ensure!(
         files.len() < MAX_FILES
             && files
