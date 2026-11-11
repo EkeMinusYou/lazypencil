@@ -493,8 +493,10 @@ Retained calculations, failed-source captures, discovery listings and dynamic ca
 payloads share a 256 MiB accounting budget across the connection. Accounting includes
 captured input buffers, parsed JSON and indexes, expanded node/record payloads, glyph
 arrays and conservative native paragraph/path allowances. Shared buffers are charged
-per retained owner. This is a payload accounting limit, not an exact process RSS limit;
-native allocators, browser heaps and in-flight computations have separate limits.
+per retained owner. Document source text and expanded node properties are each charged
+once per owned copy; node properties use owned capacities rather than a multiple of
+their serialized JSON size. This is a payload accounting limit, not an exact process
+RSS limit; native allocators, browser heaps and in-flight computations have separate limits.
 There may be at most four document owners with persistent JavaScript/page/shader
 runtimes. Idle cleanup releases their owner capacity; existing worker timeout and heap
 settings still apply.

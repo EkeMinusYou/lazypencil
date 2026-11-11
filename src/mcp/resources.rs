@@ -405,6 +405,78 @@ mod tests {
 
     #[cfg(feature = "rendering")]
     #[test]
+    fn retained_node_payload_fits_render_budget_and_reused_snapshot_keeps_one_charge() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let store = Store::init(
+            temp.path().join("scene.pen"),
+            Some(temp.path().join("data")),
+        )
+        .unwrap();
+        let payload = "a".repeat(8 * 1024);
+        std::fs::write(
+            store.path(),
+            json!({
+                "version":"2.21", "children":[{
+                    "id":"box", "type":"rectangle", "width":10, "height":10,
+                    "fill":"#336699", "metadata":{"type":"test", "payload":payload}
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let revision = store.read().unwrap().revision();
+        let resources = Arc::new(Resources {
+            retained: Budget::new(48 * 1024),
+            ..Default::default()
+        });
+        let mut worker = DocumentWorker {
+            resources: resources.clone(),
+            runtime_lease: None,
+            runtime_bytes: None,
+            store,
+            attachments: None,
+            usage: None,
+            preview_control: None,
+            fonts: vec![],
+            snapshots: VecDeque::new(),
+            failed_code: VecDeque::new(),
+            scripts: None,
+            dynamic: None,
+        };
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let index = worker.snapshot(&revision, None, None, &cancel).unwrap();
+        let retained = *resources.retained.used.lock().unwrap();
+        assert!(retained >= payload.len() * 3);
+        assert!(retained < 48 * 1024);
+        let cached = &worker.snapshots[index];
+        let id = cached.layout.id.clone();
+        assert_eq!(
+            cached.layout.items[0].node.properties["metadata"]["payload"],
+            payload
+        );
+        let rendered = worker
+            .render(
+                serde_json::from_value(json!({
+                    "expected_revision":revision, "snapshot_id":id, "node_id":"box"
+                }))
+                .unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        assert_ne!(rendered.is_error, Some(true), "{rendered:?}");
+        assert!(
+            rendered
+                .content
+                .iter()
+                .any(|block| block.as_image().is_some())
+        );
+        assert_eq!(*resources.retained.used.lock().unwrap(), retained);
+        drop(worker);
+        assert_eq!(*resources.retained.used.lock().unwrap(), 0);
+    }
+
+    #[cfg(feature = "rendering")]
+    #[test]
     fn independent_native_owners_share_retention_capacity_and_close_releases_it() {
         use super::super::actor::{Actor, Seed};
         fn request(actor: &mut Actor, name: &str, arguments: Value, close: bool) -> CallToolResult {

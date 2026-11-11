@@ -69,16 +69,7 @@ impl LayoutSnapshot {
             .iter()
             .map(|item| {
                 std::mem::size_of::<LayoutItem>()
-                    + crate::query::serialized_size(&item.node) * 4
-                    + item.node.retained_context_bytes()
-                    + item
-                        .node
-                        .properties
-                        .iter()
-                        .map(|(key, value)| {
-                            key.capacity() + 96 + crate::retained::json_bytes(value)
-                        })
-                        .sum::<usize>()
+                    + item.node.retained_payload_bytes()
                     + crate::query::serialized_size(&item.record) * 4
                     + item.children.capacity() * std::mem::size_of::<usize>()
             })

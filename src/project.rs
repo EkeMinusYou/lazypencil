@@ -45,6 +45,8 @@ use properties::literal_property;
 pub(crate) use properties::literal_variable_property;
 mod override_context;
 mod remote_images;
+#[cfg(feature = "rendering")]
+mod retained;
 pub(crate) use override_context::preserve_metadata as preserve_execution_metadata;
 mod sampler_images;
 mod script_context;
@@ -1105,13 +1107,19 @@ impl Project {
     #[cfg(feature = "rendering")]
     pub(crate) fn retained_bytes(&self) -> usize {
         // Captured byte buffers include fonts, assets and browser resources.
-        // Add parsed document/index payloads; shared buffers are charged per owner.
+        // byte_count already includes each document's source length. Add its
+        // parsed/index payloads and spare string capacity without charging the
+        // same source twice. Shared buffers are still charged per owner.
         self.byte_count
             .saturating_add(self.icons.retained_bytes())
             .saturating_add(
                 self.documents
                     .values()
-                    .map(Document::retained_bytes)
+                    .map(|document| {
+                        document
+                            .retained_bytes()
+                            .saturating_sub(document.text().len())
+                    })
                     .sum::<usize>(),
             )
     }
