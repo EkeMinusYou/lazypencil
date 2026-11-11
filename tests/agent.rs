@@ -1023,6 +1023,58 @@ fn cli_output(directory: &TempDir, mode: &str, extra: &[&str], json: bool) -> Ou
 }
 
 #[test]
+fn herdr_cli_reports_only_inside_herdr_and_ignores_notification_failures() {
+    for environment in [None, Some("0"), Some("1")] {
+        for pane in [None, Some("w1:p1")] {
+            let directory = TempDir::new().unwrap();
+            let binary = directory
+                .path()
+                .join(format!("herdr{}", std::env::consts::EXE_SUFFIX));
+            let marker = directory.path().join("herdr-called");
+            fixture_support::process(
+                &binary,
+                json!({
+                    "marker_file":marker, "status":1,
+                    "stdout":"HERDR_PRIVATE_NOISE", "stderr":"HERDR_PRIVATE_NOISE",
+                }),
+            );
+            let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+            command
+                .env_remove("HERDR_ENV")
+                .env_remove("HERDR_PANE_ID")
+                .env("HERDR_BIN_PATH", &binary);
+            if let Some(environment) = environment {
+                command.env("HERDR_ENV", environment);
+            }
+            if let Some(pane) = pane {
+                command.env("HERDR_PANE_ID", pane);
+            }
+            command
+                .arg("--data-dir")
+                .arg(directory.path().join("data"))
+                .args(["--json", "prompt"])
+                .arg(directory.path().join("design.pen"))
+                .args(["--create", "--non-interactive", "--adapter"])
+                .arg(helper())
+                .args([
+                    "--adapter-arg=acp",
+                    "--adapter-arg=echo",
+                    "Test Herdr integration",
+                ]);
+            let output = fixture_support::output(&mut command, Duration::from_secs(15));
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(events(&output).last().unwrap()["type"], "complete");
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("HERDR_PRIVATE_NOISE"));
+            assert_eq!(marker.exists(), environment == Some("1") && pane.is_some());
+        }
+    }
+}
+
+#[test]
 fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_error_codes() {
     let cases: [(&str, &[&str], &str); 8] = [
         ("protocol-error-initialize", &[], "initialize"),

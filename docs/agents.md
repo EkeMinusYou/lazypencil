@@ -98,6 +98,28 @@ When an adapter advertises its `authStatus` capability, the host waits up to fiv
 
 `--fast` enables Codex Fast mode and `--fast=false` disables it for the connection. Omission leaves the adapter's effective speed setting untouched; actual inheritance of Codex defaults and saved native settings depends on the adapter. `[agents.codex] fast` supplies the same preference in user or trusted project settings; explicit CLI values take precedence. The host applies the advertised `fast-mode` selector after changing the model and requires confirmation before prompting. Missing, ambiguous or unsupported selectors fail explicitly. Codex ACP currently has an upstream [Fast/priority inheritance bug](https://github.com/agentclientprotocol/codex-acp/issues/285); use an explicit `fast = true` or `--fast` until it is fixed. The host does not advertise ACP boolean config controls, so Codex ACP exposes its `on`/`off` select form. These controls do not edit Codex's global configuration. Fast mode availability and increased usage follow [OpenAI's speed settings](https://learn.chatgpt.com/docs/agent-configuration/speed).
 
+## Herdr conversation status
+
+When launched inside a Herdr pane, `lazypencil tui` and `lazypencil prompt`
+automatically report conversation activity as `working`, permission decisions
+as `blocked`, and readiness for another prompt as `idle`. The TUI uses the same
+state as its activity indicator, including cancellation and failed turns. Reports
+use `lazypencil` as both the agent label and integration source. Exiting releases
+the pane's lifecycle authority; switching conversations or documents in the TUI
+keeps the integration active.
+
+The integration requires `HERDR_ENV=1`, a nonempty `HERDR_PANE_ID`, and an absolute
+`HERDR_BIN_PATH`, supplied by Herdr. Outside that environment it starts no worker
+and executes no Herdr command; Herdr is not a required dependency. Reports run on
+a background thread, retain only the latest queued state, discard command output,
+and stop each command after 300 ms. Notification failures never fail a conversation.
+Shutdown waits only for an in-flight report and the release command to finish or
+reach their deadlines. This integration reports activity only; it does not register
+a session resume command or copy conversation contents to Herdr.
+
+See [Herdr's agent integration reference](https://herdr.dev/tui/docs/add-herdr-support/)
+for sidebar state, completion notifications and permission notifications.
+
 ## Images and assets
 
 Repeat `--image` for static PNG, JPEG, or WebP files. The default limits are eight images, 20 MiB per source and normalized image, 50 MiB total before and after normalization, and 32 megapixels per image. Files are decoded one at a time, orientation is applied, and immutable PNG copies are retained with the conversation. No image is silently resized or omitted; explicit `--image-max-size` can select a send size. User [attachment budgets](configuration.md#image-attachment-budgets) can change the count and aggregate limits.

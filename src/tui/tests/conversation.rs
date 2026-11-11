@@ -36,8 +36,10 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             .unwrap();
             app.insert_text("許可を確認する");
             assert_eq!(app.agent_activity().content, "○ Idle");
+            assert_eq!(app.agent_state(), crate::herdr::State::Idle);
             app.submit().await.unwrap();
             assert_eq!(app.agent_activity().content, "● Working");
+            assert_eq!(app.agent_state(), crate::herdr::State::Working);
             loop {
                 let event =
                     tokio::time::timeout(Duration::from_secs(5), app.conversation.next_event())
@@ -71,6 +73,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
                 "Prompt shortcuts cannot answer a permission"
             );
             assert_eq!(app.agent_activity().content, "! Blocked");
+            assert_eq!(app.agent_state(), crate::herdr::State::Blocked);
             let buffer = crate::tui::test_artifacts::snapshot(&mut app, "permission");
             assert!(buffer.content.iter().any(|cell| {
                 cell.symbol() == "›" && cell.fg == theme::colors().running && cell.bg == theme::colors().selected_background
@@ -117,8 +120,10 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             .unwrap();
             }
             assert_eq!(app.agent_activity().content, "● Working");
+            assert_eq!(app.agent_state(), crate::herdr::State::Working);
             let events = complete(&mut app).await;
             assert_eq!(app.agent_activity().content, "○ Idle");
+            assert_eq!(app.agent_state(), crate::herdr::State::Idle);
             assert_eq!(
                 events.last().unwrap()["type"],
                 if cancel { "failed" } else { "complete" },

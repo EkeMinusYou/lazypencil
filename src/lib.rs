@@ -22,6 +22,7 @@ pub mod error;
 pub mod font_lock;
 pub mod geometry;
 pub mod guidance;
+mod herdr;
 pub mod icons;
 #[cfg(feature = "rendering")]
 pub mod image_geometry;

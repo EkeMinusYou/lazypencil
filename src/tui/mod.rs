@@ -456,6 +456,7 @@ impl App {
         let mut timer = tokio::time::interval(Duration::from_secs(1));
         timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut termination = Box::pin(termination());
+        let mut herdr = crate::herdr::Reporter::new(self.agent_state());
         loop {
             let _pool = crate::native_memory::AutoreleasePool::new();
             self.sync_turn(worker);
@@ -504,6 +505,7 @@ impl App {
                     return Ok(());
                 }
             }
+            herdr.update(self.agent_state());
             let navigating = self.focus == Focus::Preview && !self.has_modal();
             screen.preview_keys(navigating)?;
             if self.dirty {
@@ -1572,13 +1574,20 @@ impl App {
         self.set_status(format!("Opened {}", path.display()));
         Ok(())
     }
-    fn agent_activity(&self) -> Span<'static> {
-        let (label, color) = if !self.permissions.is_empty() {
-            ("! Blocked", theme::colors().running)
+    fn agent_state(&self) -> crate::herdr::State {
+        if !self.permissions.is_empty() {
+            crate::herdr::State::Blocked
         } else if self.conversation.active() {
-            ("● Working", theme::colors().working)
+            crate::herdr::State::Working
         } else {
-            ("○ Idle", theme::colors().secondary)
+            crate::herdr::State::Idle
+        }
+    }
+    fn agent_activity(&self) -> Span<'static> {
+        let (label, color) = match self.agent_state() {
+            crate::herdr::State::Blocked => ("! Blocked", theme::colors().running),
+            crate::herdr::State::Working => ("● Working", theme::colors().working),
+            crate::herdr::State::Idle => ("○ Idle", theme::colors().secondary),
         };
         Span::styled(label, Style::default().fg(color))
     }

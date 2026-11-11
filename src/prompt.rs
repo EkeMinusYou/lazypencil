@@ -132,6 +132,7 @@ pub fn run_cli(args: &PromptArgs, data_dir: Option<PathBuf>, json_output: bool) 
         .enable_all()
         .build()
         .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
+    let mut herdr = crate::herdr::Reporter::new(crate::herdr::State::Working);
     let result = runtime.block_on(async {
         let sent = conversation.send(None).await;
         if let Err(error) = sent {
@@ -157,6 +158,7 @@ pub fn run_cli(args: &PromptArgs, data_dir: Option<PathBuf>, json_output: bool) 
                 ConversationEvent::Message(value) => {
                     output(&value, json_output)?;
                     if matches!(value["type"].as_str(), Some("complete" | "failed")) {
+                        herdr.update(crate::herdr::State::Idle);
                         let result = conversation.result().cloned().unwrap_or(Ok(()));
                         let closed = conversation.close().await;
                         return if interrupted {
@@ -178,11 +180,13 @@ pub fn run_cli(args: &PromptArgs, data_dir: Option<PathBuf>, json_output: bool) 
                         && std::io::stdin().is_terminal()
                         && std::io::stderr().is_terminal();
                     let selection = if interactive {
+                        herdr.update(crate::herdr::State::Blocked);
                         read_permission(&request).await?
                     } else {
                         crate::conversation::reject_once(&request)
                     };
                     conversation.respond(&id, selection, interactive)?;
+                    herdr.update(crate::herdr::State::Working);
                 }
             }
         }
