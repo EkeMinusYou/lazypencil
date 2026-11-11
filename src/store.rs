@@ -132,6 +132,14 @@ impl Store {
     }
 
     pub fn init(path: impl AsRef<Path>, data_dir: Option<PathBuf>) -> Result<Self> {
+        Self::init_with_document(path, data_dir, &Document::empty())
+    }
+
+    pub(crate) fn init_with_document(
+        path: impl AsRef<Path>,
+        data_dir: Option<PathBuf>,
+        document: &Document,
+    ) -> Result<Self> {
         let supplied = path.as_ref();
         let filename = supplied
             .file_name()
@@ -143,10 +151,9 @@ impl Store {
         let canonical_parent = crate::paths::canonical(parent)?;
         let store = Self::at_canonical_path(canonical_parent.join(filename), data_dir)?;
         let _lock = store.lock()?;
-        let doc = Document::empty();
         let mut temp = NamedTempFile::new_in(&canonical_parent)
             .map_err(|e| Error::io(&canonical_parent, e))?;
-        temp.write_all(doc.text().as_bytes())
+        temp.write_all(document.text().as_bytes())
             .map_err(|e| Error::io(&store.path, e))?;
         temp.as_file()
             .sync_all()
@@ -155,7 +162,7 @@ impl Store {
             if e.error.kind() == std::io::ErrorKind::AlreadyExists {
                 Error::new(
                     "INVALID_ARGUMENT",
-                    "The destination already exists; init never overwrites files",
+                    "The destination already exists; document creation never overwrites files",
                 )
             } else {
                 Error::io(&store.path, e.error)

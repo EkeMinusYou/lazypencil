@@ -1,0 +1,49 @@
+name: Installation and setup / 導入トラブル
+description: Get help installing, displaying previews, or connecting an AI client.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Japanese reports are welcome.
+        Start with the [quick start](https://github.com/EkeMinusYou/lazypencil#quick-start) or [日本語の導入ガイド](https://github.com/EkeMinusYou/lazypencil/blob/main/docs/getting-started.ja.md).
+        PNG export and MCP do not require an ACP adapter. The `demo` command is new in the current source; releases such as 0.2.5 can use the download described in the guide.
+        Do not include credentials, account details, or private designs and conversations.
+  - type: input
+    id: version
+    attributes:
+      label: Version and installation method
+      description: Output of lazypencil --version, or say if installation failed. Include Homebrew, manual archive, or source build.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, CPU, terminal name/version, and any tmux or SSH use.
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: What are you trying to use?
+      options:
+        - Installation or update
+        - Local PNG export without AI
+        - MCP from an existing AI client
+        - TUI with Codex
+        - TUI with Claude
+        - Another workflow
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Where did you get stuck?
+      description: Include the command, error, expected result, and what you already tried. For MCP or ACP, name the client and adapter versions if known.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant doctor results (optional)
+      description: Run lazypencil doctor, optionally with --agent codex or --agent claude for TUI setup. Include relevant checks after removing private paths or details. Missing ACP adapters are expected for MCP-only or PNG-only use. Doctor does not test model access or quota.

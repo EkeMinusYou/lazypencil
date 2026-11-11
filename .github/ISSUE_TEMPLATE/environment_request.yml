@@ -1,0 +1,40 @@
+name: Supported environment request / 対応環境の要望
+description: Tell us which OS, terminal, or workflow would let you use lazypencil.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Japanese requests are welcome. Releases currently target macOS Tahoe 26 or later on Apple Silicon.
+        This form collects use cases for prioritization; submitting it does not promise support or a delivery date.
+  - type: input
+    id: environment
+    attributes:
+      label: Requested environment
+      description: Name the OS/version, CPU, terminal/version, or client integration you need.
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Which workflow do you need?
+      multiple: true
+      options:
+        - CLI inspection and editing
+        - PNG rendering
+        - MCP integration
+        - TUI preview and chat
+        - Another workflow (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: What would you use it for?
+      description: Describe the task and how the current environment requirements prevent it.
+    validations:
+      required: true
+  - type: textarea
+    id: testing
+    attributes:
+      label: Existing results or willingness to test (optional)
+      description: If you tried a build, include its version and relevant results. No need to build from source to submit this request.

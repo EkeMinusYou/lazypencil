@@ -1,0 +1,42 @@
+name: Bug report / 不具合
+description: Report unexpected behavior after setup.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English and Japanese reports are welcome. For installation or connection problems, use the setup form.
+        Share a minimal example you can make public. Remove credentials, account details and private design or conversation content.
+  - type: input
+    id: version
+    attributes:
+      label: lazypencil version
+      description: Output of lazypencil --version; add the commit if built from source.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, CPU, terminal name/version, and AI client or adapter version when relevant. Mention tmux or SSH if used.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the command or TUI actions and a minimal .pen file with any required assets, if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error text or a screenshot, if available.
+    validations:
+      required: true

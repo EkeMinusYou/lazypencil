@@ -212,6 +212,14 @@ fn main() -> ExitCode {
     {
         lazypencil::doctor::format_report(&value)
     } else if !arguments.json
+        && matches!(arguments.command, lazypencil::cli::Command::Demo { .. })
+        && code == 0
+    {
+        format!(
+            "Created {:?}\n\nRun 'lazypencil demo --help' for PNG export and editing options.",
+            value["path"].as_str().unwrap_or_default()
+        )
+    } else if !arguments.json
         && matches!(
             arguments.command,
             lazypencil::cli::Command::Completions { .. }

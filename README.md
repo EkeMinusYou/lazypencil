@@ -2,6 +2,14 @@
 
 **Design interfaces with AI, from your terminal.**
 
+Create and compare UI ideas before asking your agent to implement them. Keep the
+editable design alongside your code, use your existing AI client through MCP, or
+work in the terminal workspace.
+
+[日本語ではじめる](docs/getting-started.ja.md) ·
+[Example gallery](examples/README.md) · [Install](#install) ·
+[Choose your workflow](#quick-start)
+
 ## Demo
 
 [![Recorded light-mode TUI session showing node selection and fitting, preview panning and zooming, and a successful agent edit reflected in the preview.](docs/images/lazypencil-demo.gif)](docs/media/lazypencil-demo.mp4)
@@ -122,7 +130,46 @@ See the [doctor reference](docs/doctor.md) for check coverage and preview limita
 
 ## Quick start
 
-### 1. Connect an agent
+Choose the route that matches your setup. All routes use the same local `.pen`
+files; AI usage and authentication belong to your chosen provider/client.
+
+| What you want to try | Start here | What you need |
+| --- | --- | --- |
+| See a finished design and export a PNG | [Try without AI](#try-without-ai) | lazypencil; no AI login or terminal image support |
+| Design with an AI client you already use | [Connect through MCP](#use-lazypencil-from-your-ai-client) | An AI client with MCP support; no ACP adapter |
+| Chat and review the design in one terminal | [Use the TUI](#use-the-terminal-workspace) | A supported terminal and a Codex or Claude ACP adapter |
+
+### Try without AI
+
+First get an editable dashboard as `demo.pen` in a new working directory:
+
+- **If your build lists `demo` in `lazypencil --help`:** run `lazypencil demo`.
+  This command is new in the current source.
+- **For releases without `demo` (including 0.2.5):** download the
+  [raw dashboard example](https://raw.githubusercontent.com/EkeMinusYou/lazypencil/main/examples/project-dashboard.pen)
+  and save it as `demo.pen`.
+
+`demo` creates `demo.pen` in the current directory and refuses to overwrite an
+existing file. It needs no repository checkout, AI connection, or downloads at run
+time. Use `lazypencil demo another-name.pen` to choose another destination in an
+existing directory. PNG export uses the local renderer and bundled fonts.
+
+Then render the file and open the image:
+
+```sh
+lazypencil render demo.pen --output demo.png
+open demo.png
+```
+
+To explore it in a supported terminal, run `lazypencil tui demo.pen`. To edit it
+with your existing AI client, [connect MCP](#use-lazypencil-from-your-ai-client)
+and ask it to open the file's absolute path. The
+[example gallery](examples/README.md) includes screenshots, editable files and
+prompts for a dashboard, Japanese settings screen and content page.
+
+### Use the terminal workspace
+
+#### 1. Connect an agent
 
 Install one of the separate [Codex or Claude ACP adapters](docs/agents.md#install-and-authenticate-an-adapter):
 
@@ -139,7 +186,7 @@ The adapter bridges lazypencil and your AI runtime: Codex uses `codex-acp`, and
 Claude uses `claude-agent-acp`. Put the selected executable on `PATH` before
 starting. Authentication stays with the external runtime.
 
-### 2. Create your first design
+#### 2. Create your first design
 
 ```sh
 lazypencil tui new.pen --create --agent codex
@@ -156,7 +203,7 @@ changes such as “Make the sidebar narrower and increase the spacing.” Tab mo
 between panels; F1 shows the available controls. `--create` creates a new document
 and refuses to overwrite an existing file.
 
-### 3. Continue an existing design
+#### 3. Continue an existing design
 
 ```sh
 lazypencil tui new.pen --agent codex
@@ -222,9 +269,9 @@ explore components, graphics, icons, scripts, and shaders.
 ## Format support
 
 lazypencil reads and edits `.pen` versions **2.19, 2.21, and 2.22**, preserving comments
-and unrelated content. New documents use **2.22**; existing documents and imported
-user libraries keep their versions. It implements its own renderer and does not
-claim complete Pencil compatibility. See [document semantics](docs/pen-semantics.md),
+and unrelated content. New empty documents use **2.22**; existing documents,
+copied examples and imported user libraries keep their versions. It implements its
+own renderer and does not claim complete Pencil compatibility. See [document semantics](docs/pen-semantics.md),
 [graphics support](docs/graphics.md), and [dynamic-content limitations](docs/dynamic-content.md#initial-compatibility-limitations).
 
 Basic editing and native rendering need no Chromium. Browser nodes and GLSL
@@ -240,6 +287,8 @@ See [runtime setup](docs/runtimes.md) before using these features.
 
 | What you want to do | Where to start |
 | --- | --- |
+| Get started in Japanese | [日本語の導入ガイド](docs/getting-started.ja.md) |
+| Explore and reuse finished screens | [Example gallery](examples/README.md) |
 | Use the terminal workspace | [TUI](docs/tui.md), [image attachments](docs/image-attachments.md) |
 | Configure agents and preferences | [Agent setup](docs/agents.md), [configuration](docs/configuration.md), [shell completion](docs/completions.md) |
 | Automate document editing | [MCP and editing reference](docs/mcp.md) |
@@ -251,7 +300,8 @@ See [runtime setup](docs/runtimes.md) before using these features.
 
 Bug reports and contributions are welcome. Include your version, macOS and terminal
 details, reproduction steps, and a minimal `.pen` file when possible in
-[an issue](https://github.com/EkeMinusYou/lazypencil/issues). Read the development
+[an issue](https://github.com/EkeMinusYou/lazypencil/issues/new/choose). Setup-help
+and environment-request forms are available there too. Read the development
 guide before opening a pull request.
 
 ## License

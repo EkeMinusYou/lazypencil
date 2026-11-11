@@ -48,6 +48,14 @@ pub enum Command {
     },
     /// Create an empty document without overwriting an existing file.
     Init { file: PathBuf },
+    /// Copy an editable dashboard example without an AI connection or downloads.
+    #[command(
+        after_help = "Try the example:\n  lazypencil demo\n  lazypencil render demo.pen --output demo.png\n  lazypencil tui demo.pen\n\nUse PNG export to try it without configuring an agent or terminal images.\nTo edit with AI, connect an MCP client or configure a TUI agent first.\nThe destination's parent directory must exist; existing files are never overwritten."
+    )]
+    Demo {
+        #[arg(default_value = "demo.pen", value_hint = clap::ValueHint::FilePath)]
+        file: PathBuf,
+    },
     /// Inspect document metadata or a bounded selection of nodes.
     Inspect(Inspect),
     /// Validate structure and references, optionally including calculated layout.
@@ -714,6 +722,15 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         Command::Init { file } => {
             let store = Store::init(file, arguments.data_dir.clone())?;
             document_metadata(&store)
+        }
+        Command::Demo { file } => {
+            let document = crate::document::Document::parse(
+                include_str!("../examples/project-dashboard.pen").to_owned(),
+            )?;
+            let store = Store::init_with_document(file, arguments.data_dir.clone(), &document)?;
+            Ok(
+                json!({"path":store.path(),"revision":document.revision(),"example":"project-dashboard"}),
+            )
         }
         Command::Inspect(options) => {
             let store = open(&options.file)?;

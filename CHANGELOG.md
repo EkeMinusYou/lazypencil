@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `lazypencil demo [FILE]` to create an editable dashboard without an AI connection or runtime downloads, preserving existing destination files.
+- Add workflow-based quick-start routes, a Japanese getting-started guide, an illustrated example gallery, and issue forms for bugs, setup help and environment requests.
+
 ## 0.2.5
 
 - Keep conversation selection, resume, session context and checkpoint restoration notices in the footer instead of the conversation body.
