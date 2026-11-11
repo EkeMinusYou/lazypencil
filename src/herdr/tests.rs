@@ -1,9 +1,7 @@
 use super::*;
+use crate::fixture_support;
 use std::sync::mpsc;
 use tempfile::TempDir;
-
-#[path = "../../tests/support/fixture.rs"]
-mod fixture_support;
 
 #[test]
 fn herdr_requires_explicit_environment_and_complete_absolute_target() {

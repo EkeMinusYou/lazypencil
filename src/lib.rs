@@ -61,3 +61,7 @@ pub mod text;
 pub mod tui;
 
 pub use error::{Error, Result};
+
+#[cfg(test)]
+#[path = "../tests/support/fixture.rs"]
+mod fixture_support;

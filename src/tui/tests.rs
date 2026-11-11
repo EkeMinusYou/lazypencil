@@ -1,5 +1,6 @@
 use super::graphics::Backend;
 use super::*;
+use crate::fixture_support;
 use base64::Engine;
 use clap::Parser;
 use serde_json::json;
@@ -10,9 +11,6 @@ mod reference_tests;
 
 #[path = "footer_tests.rs"]
 mod footer_tests;
-
-#[path = "../../tests/support/fixture.rs"]
-mod fixture_support;
 
 #[cfg(unix)]
 #[path = "../../tests/support/page_wait_reference.rs"]
