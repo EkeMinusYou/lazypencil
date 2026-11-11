@@ -25,6 +25,7 @@ use tokio_util::{
 const MAX_LINE: usize = 96 * 1024 * 1024;
 
 pub mod auth;
+mod diagnostics;
 pub mod permissions;
 mod preparation;
 mod process;
@@ -62,6 +63,8 @@ pub struct AgentOptions {
     pub setup_timeout: Duration,
     pub turn_timeout: Duration,
     pub cancel_grace: Duration,
+    /// Existing private directory for detailed ACP error files. None disables logging.
+    pub diagnostic_directory: Option<PathBuf>,
 }
 
 impl AgentOptions {
@@ -85,6 +88,7 @@ impl AgentOptions {
             setup_timeout: Duration::from_secs(60),
             turn_timeout: Duration::from_secs(600),
             cancel_grace: Duration::from_secs(5),
+            diagnostic_directory: None,
         }
     }
 }
@@ -449,6 +453,8 @@ async fn run(
         _ = shutdown.cancelled() => return Ok(()),
     };
     let mut options = options;
+    let diagnostic_directory = Arc::new(Mutex::new(options.diagnostic_directory.clone()));
+    let connection_diagnostics = diagnostic_directory.clone();
     options.setup_timeout = options
         .setup_timeout
         .saturating_sub(setup_started.elapsed());
@@ -542,6 +548,7 @@ async fn run(
                         options = deferred => match options { Ok(options) => options, Err(_) => return Ok(()) },
                     }
                 } else { options };
+                *connection_diagnostics.lock().expect("diagnostic directory lock") = options.diagnostic_directory.clone();
                 conversation(&connection, &options, ConversationChannels {
                     commands,
                     events: &events,
@@ -569,7 +576,16 @@ async fn run(
             .lock()
             .expect("host error lock")
             .take()
-            .unwrap_or_else(|| protocol_error("connection", error));
+            .unwrap_or_else(|| {
+                protocol_error(
+                    "connection",
+                    error,
+                    diagnostic_directory
+                        .lock()
+                        .expect("diagnostic directory lock")
+                        .as_deref(),
+                )
+            });
         let mut details = error.details.take().unwrap_or_else(|| json!({}));
         if !details.is_object() {
             details = json!({"cause":details});
@@ -618,7 +634,9 @@ async fn conversation(
             )
             .block_task()
             .await
-            .map_err(|error| protocol_error("initialize", error))?;
+            .map_err(|error| {
+                protocol_error("initialize", error, options.diagnostic_directory.as_deref())
+            })?;
         if initialized.protocol_version != ProtocolVersion::V1 {
             return Err(agent_error("The adapter did not negotiate ACP v1"));
         }
@@ -679,7 +697,13 @@ async fn conversation(
                 .send_request(AuthenticateRequest::new(method.clone()))
                 .block_task()
                 .await
-                .map_err(|error| protocol_error("authenticate", error))?;
+                .map_err(|error| {
+                    protocol_error(
+                        "authenticate",
+                        error,
+                        options.diagnostic_directory.as_deref(),
+                    )
+                })?;
         }
         let restart = options.session_id.is_some()
             && (options.restart_session
@@ -699,7 +723,13 @@ async fn conversation(
                 )
                 .block_task()
                 .await
-                .map_err(|error| protocol_error("session/load", error))?;
+                .map_err(|error| {
+                    protocol_error(
+                        "session/load",
+                        error,
+                        options.diagnostic_directory.as_deref(),
+                    )
+                })?;
             (SessionId::new(id.clone()), serde_json::to_value(response))
         } else {
             let response = connection
@@ -709,7 +739,13 @@ async fn conversation(
                 )
                 .block_task()
                 .await
-                .map_err(|error| protocol_error("session/new", error))?;
+                .map_err(|error| {
+                    protocol_error(
+                        "session/new",
+                        error,
+                        options.diagnostic_directory.as_deref(),
+                    )
+                })?;
             (response.session_id.clone(), serde_json::to_value(response))
         };
         let mut response = response.map_err(|e| agent_error(e.to_string()))?;
@@ -720,6 +756,7 @@ async fn conversation(
             options.session_mode.as_deref(),
             options.model.as_deref(),
             options.fast,
+            options.diagnostic_directory.as_deref(),
         )
         .await
         {
@@ -770,7 +807,7 @@ async fn conversation(
                 let result = tokio::select! {
                     _ = shutdown.cancelled() => return Ok(()),
                     result = tokio::time::timeout(options.setup_timeout,
-                        settings::apply(connection, &session, &mut configuration, Some(&mode), None, None)) => result,
+                        settings::apply(connection, &session, &mut configuration, Some(&mode), None, None, options.diagnostic_directory.as_deref())) => result,
                 };
                 match result {
                     Ok(Ok(())) => {
@@ -855,7 +892,13 @@ async fn conversation(
         let result = result?;
         let result = match result {
             Ok(result) => result
-                .map_err(|error| protocol_error("session/prompt", error))
+                .map_err(|error| {
+                    protocol_error(
+                        "session/prompt",
+                        error,
+                        options.diagnostic_directory.as_deref(),
+                    )
+                })
                 .and_then(|response| {
                     if response.stop_reason == StopReason::Cancelled {
                         Err(Error::new("CANCELLED", "The agent cancelled this turn"))
@@ -868,10 +911,20 @@ async fn conversation(
                 let cancellation = async {
                     connection
                         .send_notification(CancelNotification::new(session.clone()))
-                        .map_err(|error| protocol_error("session/cancel", error))?;
-                    (&mut request)
-                        .await
-                        .map_err(|error| protocol_error("session/prompt", error))
+                        .map_err(|error| {
+                            protocol_error(
+                                "session/cancel",
+                                error,
+                                options.diagnostic_directory.as_deref(),
+                            )
+                        })?;
+                    (&mut request).await.map_err(|error| {
+                        protocol_error(
+                            "session/prompt",
+                            error,
+                            options.diagnostic_directory.as_deref(),
+                        )
+                    })
                 };
                 if tokio::time::timeout(options.cancel_grace, cancellation)
                     .await
@@ -931,17 +984,34 @@ async fn emit(events: &mpsc::Sender<AgentEvent>, value: Value) -> Result<()> {
 fn agent_error(message: impl Into<String>) -> Error {
     Error::new("AGENT_ERROR", message)
 }
-fn protocol_error(phase: &'static str, error: acp::Error) -> Error {
+fn protocol_error(
+    phase: &'static str,
+    error: acp::Error,
+    directory: Option<&std::path::Path>,
+) -> Error {
     let code = serde_json::to_value(&error)
         .ok()
         .and_then(|value| value["code"].as_i64());
-    let message = match code {
+    let mut message = match code {
         Some(code) => format!("ACP {phase} failed (code {code})"),
         None => format!("ACP {phase} failed"),
     };
-    // Free-form messages/data may contain credentials, provider request bodies
-    // or private document excerpts. Keep only protocol-defined numeric codes.
-    agent_error(message).details(json!({"phase":phase,"acp_error_code":code}))
+    // Detailed payloads stay in private files, never in frontend events or transcripts.
+    let mut details = json!({"phase":phase,"acp_error_code":code});
+    if let Some(directory) = directory {
+        match diagnostics::write(directory, phase, &error) {
+            Ok(path) => {
+                message.push_str(&format!("; diagnostic: {}", path.display()));
+                details["adapter_diagnostic_path"] = json!(path);
+            }
+            Err(error) => {
+                let kind = error.kind().to_string();
+                message.push_str(&format!("; diagnostic log write failed: {kind}"));
+                details["adapter_diagnostic_write_error"] = json!(kind);
+            }
+        }
+    }
+    agent_error(message).details(details)
 }
 
 fn validate_frame(line: &str) -> std::io::Result<()> {

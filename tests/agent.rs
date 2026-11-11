@@ -1150,8 +1150,31 @@ fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_er
                 assert!(!text.contains("fixture-private-credential"), "{mode}");
                 assert!(!text.contains("private document excerpt"), "{mode}");
             }
+            let mut diagnostics = Vec::new();
+            collect_adapter_diagnostics(directory.path(), &mut diagnostics);
+            assert_eq!(diagnostics.len(), 1, "{mode}, json={json}: {diagnostics:?}");
+            let diagnostic: Value =
+                serde_json::from_slice(&std::fs::read(&diagnostics[0]).unwrap()).unwrap();
+            if mode != "protocol-error-frame" {
+                assert_eq!(diagnostic["phase"], phase, "{mode}");
+                assert_eq!(diagnostic["error"]["code"], -32603, "{mode}");
+                assert_eq!(
+                    diagnostic["error"]["message"],
+                    "MUST_NOT_ECHO_RPC_MESSAGE Bearer fixture-private-credential",
+                    "{mode}"
+                );
+                assert_eq!(
+                    diagnostic["error"]["data"]["details"]["document"], "private document excerpt",
+                    "{mode}"
+                );
+                assert_eq!(diagnostic["error"]["data"]["code"], "CANCELLED", "{mode}");
+            }
             if !json {
                 assert!(stderr.contains("AGENT_ERROR"), "{mode}: {stderr}");
+                assert!(
+                    stderr.contains(diagnostics[0].to_str().unwrap()),
+                    "{mode}: {stderr}"
+                );
                 continue;
             }
             let values = events(&output);
@@ -1161,6 +1184,14 @@ fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_er
                 .unwrap();
             let error = &failed["error"];
             assert_eq!(error["code"], "AGENT_ERROR", "{mode}");
+            assert_eq!(
+                Path::new(
+                    error["details"]["adapter_diagnostic_path"]
+                        .as_str()
+                        .unwrap()
+                ),
+                diagnostics[0]
+            );
             if mode != "protocol-error-frame" {
                 assert_eq!(error["details"]["phase"], phase, "{mode}: {error}");
                 assert_eq!(
@@ -1183,6 +1214,117 @@ fn adapter_errors_keep_numeric_codes_without_echoing_private_payloads_or_host_er
             }
         }
     }
+}
+
+fn collect_adapter_diagnostics(directory: &Path, output: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_dir() {
+            collect_adapter_diagnostics(&entry.path(), output);
+        } else if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("adapter-error-")
+        {
+            output.push(entry.path());
+        }
+    }
+}
+
+#[test]
+fn adapter_errors_during_startup_load_are_saved_without_submitting_a_turn() {
+    use clap::Parser;
+    use lazypencil::conversation::{Conversation, ConversationEvent};
+
+    let directory = TempDir::new().unwrap();
+    let file = directory.path().join("design.pen");
+    std::fs::write(&file, br#"{"version":"2.21","children":[]}"#).unwrap();
+    let first = cli(&directory, "protocol-error-load", &[]);
+    assert!(first.status.success());
+    let session = events(&first)
+        .into_iter()
+        .find(|event| event["type"] == "complete")
+        .unwrap()["session"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let parsed = lazypencil::cli::Arguments::try_parse_from([
+        "lazypencil".into(),
+        "prompt".into(),
+        file.into_os_string(),
+        "--adapter".into(),
+        helper().into_os_string(),
+        "--adapter-arg=acp".into(),
+        "--adapter-arg=protocol-error-load".into(),
+        "--session".into(),
+        session.into(),
+        "Unsent draft".into(),
+    ])
+    .unwrap();
+    let lazypencil::cli::Command::Prompt(args) = parsed.command else {
+        unreachable!()
+    };
+    let mut conversation = Conversation::open_with_executable(
+        args,
+        Some(directory.path().join("data")),
+        env!("CARGO_BIN_EXE_lazypencil").into(),
+    )
+    .unwrap();
+    let conversation_directory = conversation.directory().to_owned();
+    let transcript_count = || {
+        std::fs::read_dir(&conversation_directory)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "jsonl")
+            })
+            .count()
+    };
+    let before = transcript_count();
+    std::fs::remove_file(directory.path().join("sent-turn.txt")).unwrap();
+    runtime().block_on(async {
+        // The document picker warms a transport without knowing its logging directory.
+        let prepared = AgentHost::prepare(options(
+            "protocol-error-load",
+            &directory.path().canonicalize().unwrap(),
+        ))
+        .unwrap();
+        conversation.set_prepared_agent(prepared);
+        conversation.connect().unwrap();
+        let error = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let ConversationEvent::Message(event) = conversation.next_event().await.unwrap()
+                    && event["type"] == "connection_error"
+                {
+                    break event["error"].clone();
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(error["details"]["phase"], "session/load");
+        let path = Path::new(
+            error["details"]["adapter_diagnostic_path"]
+                .as_str()
+                .unwrap(),
+        );
+        assert_eq!(path.parent().unwrap(), conversation_directory);
+        let record: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(
+            record["error"]["data"]["details"]["document"],
+            "private document excerpt"
+        );
+        assert!(!error.to_string().contains("private document excerpt"));
+        assert!(!conversation.active());
+        assert_eq!(conversation.draft(), "Unsent draft");
+        assert!(!directory.path().join("sent-turn.txt").exists());
+        assert_eq!(transcript_count(), before);
+        let _ = conversation.close().await;
+    });
 }
 fn events(output: &Output) -> Vec<Value> {
     String::from_utf8_lossy(&output.stdout)

@@ -48,6 +48,7 @@ async fn send(
     connection: &acp::ConnectionTo<acp::Agent>,
     session: &SessionId,
     input: Request,
+    diagnostic_directory: Option<&std::path::Path>,
 ) -> (String, Result<Value>) {
     let params = json!({"sessionId":session,"prompt":input.content,
         "_meta":{"steering":{"idleBehavior":"promptRequired"}}});
@@ -60,7 +61,8 @@ async fn send(
         )))
         .block_task()
         .await;
-    let result = response.map_err(|error| protocol_error("_session/steering", error));
+    let result =
+        response.map_err(|error| protocol_error("_session/steering", error, diagnostic_directory));
     (input.id, result)
 }
 
@@ -117,7 +119,7 @@ where
                         emit(events, json!({"type":"steering_result","id":input.id,"outcome":"promptRequired"})).await?;
                     } else {
                         pending_id = Some(input.id.clone());
-                        pending.push(send(connection, session, input));
+                        pending.push(send(connection, session, input, options.diagnostic_directory.as_deref()));
                     }
                 }
             },

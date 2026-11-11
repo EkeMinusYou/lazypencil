@@ -739,6 +739,7 @@ impl Conversation {
         options.subscription = self.args.auth == AuthMode::Subscription;
         options.require_auth_status = self.args.require_auth_status;
         options.turn_timeout = Duration::from_secs(self.args.timeout);
+        options.diagnostic_directory = Some(self.directory().to_owned());
         Ok(options)
     }
 

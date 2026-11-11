@@ -69,6 +69,7 @@ pub(super) async fn apply(
     mode: Option<&str>,
     model: Option<&str>,
     fast: Option<bool>,
+    diagnostic_directory: Option<&std::path::Path>,
 ) -> Result<()> {
     if let Some(model) = model {
         let configs = response["configOptions"].as_array().ok_or_else(|| {
@@ -107,7 +108,9 @@ pub(super) async fn apply(
             ))
             .block_task()
             .await
-            .map_err(|error| protocol_error("session/set_config_option", error))?;
+            .map_err(|error| {
+                protocol_error("session/set_config_option", error, diagnostic_directory)
+            })?;
         let configs = serde_json::to_value(changed.config_options)
             .map_err(|error| agent_error(error.to_string()))?;
         if !configs.as_array().is_some_and(|options| {
@@ -147,7 +150,9 @@ pub(super) async fn apply(
             ))
             .block_task()
             .await
-            .map_err(|error| protocol_error("session/set_config_option", error))?;
+            .map_err(|error| {
+                protocol_error("session/set_config_option", error, diagnostic_directory)
+            })?;
         let configs = serde_json::to_value(changed.config_options)
             .map_err(|error| agent_error(error.to_string()))?;
         let confirmed: Vec<_> = configs
@@ -185,7 +190,9 @@ pub(super) async fn apply(
                 ))
                 .block_task()
                 .await
-                .map_err(|error| protocol_error("session/set_config_option", error))?;
+                .map_err(|error| {
+                    protocol_error("session/set_config_option", error, diagnostic_directory)
+                })?;
             let configs = serde_json::to_value(changed.config_options)
                 .map_err(|error| agent_error(error.to_string()))?;
             response["configOptions"] = configs.clone();
@@ -210,7 +217,7 @@ pub(super) async fn apply(
                 .send_request(SetSessionModeRequest::new(session.clone(), mode.to_owned()))
                 .block_task()
                 .await
-                .map_err(|error| protocol_error("session/set_mode", error))?;
+                .map_err(|error| protocol_error("session/set_mode", error, diagnostic_directory))?;
         }
         response["modes"]["currentModeId"] = json!(mode);
     }
