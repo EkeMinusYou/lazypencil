@@ -1,8 +1,7 @@
 //! Bounded full-resolution static-scene rasters; cropping never interpolates pixels.
 use super::*;
-use std::io::{Read, Write};
 
-const CAPACITY_BYTES: u64 = 64 * 1024 * 1024;
+const CAPACITY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_ENTRIES: usize = 8;
 pub(super) const MAX_ATLAS_PIXELS: u64 = 8 * 1024 * 1024;
 
@@ -16,80 +15,11 @@ struct Key {
 
 #[derive(Clone)]
 struct Entry {
-    image: StoredImage,
+    image: Image,
     left: i32,
     top: i32,
     bytes: u64,
     used: u64,
-}
-
-// Device pixels are compressed without color conversion. Vector atlases keep
-// their native image so their frequent integer crops need no decompression.
-#[derive(Clone)]
-enum StoredImage {
-    Native(Image),
-    Deflated {
-        width: i32,
-        height: i32,
-        bytes: Vec<u8>,
-    },
-}
-
-impl StoredImage {
-    fn compact(image: Image) -> Self {
-        let (width, height) = (image.width(), image.height());
-        let info = skia_safe::ImageInfo::new_n32_premul((width, height), None);
-        let mut pixels = vec![0; width as usize * height as usize * 4];
-        if image.read_pixels(
-            &info,
-            &mut pixels,
-            width as usize * 4,
-            (0, 0),
-            skia_safe::image::CachingHint::Disallow,
-        ) {
-            let mut encoder =
-                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
-            if encoder.write_all(&pixels).is_ok()
-                && let Ok(bytes) = encoder.finish()
-                && bytes.len() < pixels.len()
-            {
-                return Self::Deflated {
-                    width,
-                    height,
-                    bytes,
-                };
-            }
-        }
-        Self::Native(image)
-    }
-
-    fn image(&self) -> Option<Image> {
-        match self {
-            Self::Native(image) => Some(image.clone()),
-            Self::Deflated {
-                width,
-                height,
-                bytes,
-            } => {
-                let mut pixels = vec![0; *width as usize * *height as usize * 4];
-                flate2::read::ZlibDecoder::new(bytes.as_slice())
-                    .read_exact(&mut pixels)
-                    .ok()?;
-                skia_safe::images::raster_from_data(
-                    &skia_safe::ImageInfo::new_n32_premul((*width, *height), None),
-                    Data::new_copy(&pixels),
-                    *width as usize * 4,
-                )
-            }
-        }
-    }
-
-    fn bytes(&self) -> u64 {
-        match self {
-            Self::Native(image) => image.width() as u64 * image.height() as u64 * 4,
-            Self::Deflated { bytes, .. } => bytes.len() as u64,
-        }
-    }
 }
 
 #[derive(Clone, Default)]
@@ -126,7 +56,7 @@ impl AtlasCache {
             ]),
         };
         let entry = self.entries.get_mut(&key)?;
-        let image = entry.image.image()?;
+        let image = &entry.image;
         let (x, y) = (
             viewport.left - entry.left - ix,
             viewport.top - entry.top - iy,
@@ -145,7 +75,7 @@ impl AtlasCache {
             paint.set_blend_mode(BlendMode::Src);
             surface
                 .canvas()
-                .draw_image(&image, (-x as f32, -y as f32), Some(&paint));
+                .draw_image(image, (-x as f32, -y as f32), Some(&paint));
             self.clock = self.clock.saturating_add(1);
             entry.used = self.clock;
             return Some(surface.image_snapshot());
@@ -183,7 +113,7 @@ impl AtlasCache {
             .entries
             .get_mut(&Self::viewport_key(picture, background))?;
         entry.used = self.clock;
-        entry.image.image()
+        Some(entry.image.clone())
     }
 
     pub(super) fn retain_viewport(
@@ -200,14 +130,9 @@ impl AtlasCache {
         {
             return;
         }
-        // Ordinary viewports fit within the existing eight-entry budget as
-        // native pixels. Avoid decompressing the same frame on every revisit.
-        let image = if width as u64 * height as u64 * 4 <= CAPACITY_BYTES / MAX_ENTRIES as u64 {
-            StoredImage::Native(image)
-        } else {
-            StoredImage::compact(image)
-        };
-        let bytes = image.bytes();
+        // Keep exact native pixels even at HiDPI sizes. Evict older entries
+        // within the same byte budget instead of compressing on the render path.
+        let bytes = width as u64 * height as u64 * 4;
         while self.entries.len() >= MAX_ENTRIES
             || self.entries.values().map(|entry| entry.bytes).sum::<u64>() + bytes > CAPACITY_BYTES
         {
@@ -353,7 +278,7 @@ impl AtlasCache {
             self.entries.insert(
                 key,
                 Entry {
-                    image: StoredImage::Native(image),
+                    image,
                     left: left - ix - border,
                     top: top - iy - border,
                     bytes,
@@ -371,11 +296,8 @@ impl AtlasCache {
         paint.set_blend_mode(BlendMode::Src);
         // Exact phase keys plus integer destination coordinates preserve the native
         // pixels. Zoom changes select a different recorded picture and raster.
-        let Some(image) = entry.image.image() else {
-            return Ok(false);
-        };
         canvas.draw_image(
-            &image,
+            &entry.image,
             ((entry.left + ix) as f32, (entry.top + iy) as f32),
             Some(&paint),
         );
@@ -388,7 +310,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compact_rasters_restore_exact_premultiplied_device_pixels() {
+    fn retained_viewports_preserve_exact_premultiplied_device_pixels() {
         let info = skia_safe::ImageInfo::new_n32_premul((64, 64), None);
         let pixels: Vec<u8> = (0..4096)
             .flat_map(|index| {
@@ -401,9 +323,10 @@ mod tests {
             .collect();
         let original =
             skia_safe::images::raster_from_data(&info, Data::new_copy(&pixels), 256).unwrap();
-        let stored = StoredImage::compact(original);
-        assert!(stored.bytes() < pixels.len() as u64 / 8);
-        let restored = stored.image().unwrap();
+        let mut cache = AtlasCache::default();
+        let picture = checkerboard(false);
+        cache.retain_viewport(&picture, Color::WHITE, original);
+        let restored = cache.viewport(&picture, Color::WHITE).unwrap();
         let mut actual = vec![0; pixels.len()];
         assert!(restored.read_pixels(
             &info,
@@ -413,6 +336,38 @@ mod tests {
             skia_safe::image::CachingHint::Disallow
         ));
         assert_eq!(actual, pixels);
+    }
+
+    #[test]
+    fn hidpi_viewports_evict_the_least_recently_used_entry_within_the_byte_budget() {
+        let mut cache = AtlasCache::default();
+        let mut surface = skia_safe::surfaces::raster_n32_premul((2304, 2048)).unwrap();
+        surface.canvas().clear(Color::RED);
+        let image = surface.image_snapshot();
+        let bytes = 2304 * 2048 * 4;
+        let count = (CAPACITY_BYTES / bytes) as usize;
+        assert!(count < MAX_ENTRIES);
+        let pictures: Vec<_> = (0..=count).map(|_| checkerboard(false)).collect();
+        for picture in &pictures[..count] {
+            cache.retain_viewport(picture, Color::WHITE, image.clone());
+        }
+        assert_eq!(cache.entries.len(), count);
+        assert!(cache.viewport(&pictures[0], Color::WHITE).is_some());
+        cache.retain_viewport(&pictures[count], Color::WHITE, image);
+        assert!(cache.viewport(&pictures[1], Color::WHITE).is_none());
+        for index in std::iter::once(0).chain(2..=count) {
+            let retained = cache.viewport(&pictures[index], Color::WHITE).unwrap();
+            assert_eq!(
+                retained.peek_pixels().unwrap().get_color((2303, 2047)),
+                Color::RED
+            );
+        }
+        assert_eq!(cache.entries.len(), count);
+        assert_eq!(
+            cache.entries.values().map(|entry| entry.bytes).sum::<u64>(),
+            count as u64 * bytes
+        );
+        assert!(cache.entries.values().map(|entry| entry.bytes).sum::<u64>() <= CAPACITY_BYTES);
     }
 
     fn checkerboard(invert: bool) -> skia_safe::Picture {

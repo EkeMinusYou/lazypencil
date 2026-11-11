@@ -42,6 +42,11 @@ completed frame rather than interrupting and repeating the same render. Differen
 views, backgrounds, sizes, refreshes and presentation work still preempt prediction.
 All reuse preserves native pixels; it does not interpolate an old preview at a new zoom.
 
+The renderer separately retains native premultiplied rasters in an on-demand
+128 MiB cache with at most eight entries. Larger viewports evict older rasters
+within that budget instead of compressing and decompressing them on the rendering
+path. Retained rasters preserve exact device pixels, including alpha.
+
 TUI rendering allocates the explicit integer viewport, including prepared and
 predicted camera frames. At fractional zoom, converting the integer viewport to a
 world-space region and back can add one pixel when the result is rounded outward. Matching the viewport during
