@@ -1,42 +1,25 @@
-//! Grouped command navigation and contextual details for the command palette.
+//! Searchable launcher rows and contextual details for the command palette.
 use super::*;
-use ratatui::{layout::Margin, style::Stylize};
+use ratatui::style::Stylize;
 
 pub(in crate::tui) fn area(workspace: Rect) -> Rect {
     modal::area(workspace)
 }
 
-/// Return command indices and their label rows; category headings are not selectable.
-pub(in crate::tui) fn rows(first: usize, height: u16) -> Vec<(usize, u16)> {
-    let mut rows = Vec::new();
-    let mut y = 0;
-    let mut category = "";
-    for (index, command) in COMMANDS.iter().enumerate().skip(first) {
-        let heading = command.category != category;
-        let gap = if heading && height > 1 {
-            if rows.is_empty() { 1 } else { 2 }
-        } else {
-            0
-        };
-        if y + gap >= height {
-            break;
-        }
-        y += gap;
-        rows.push((index, y));
-        y += 1;
-        category = command.category;
-    }
-    rows
-}
-
-pub(in crate::tui) fn maximum_start(height: u16) -> usize {
-    (0..COMMANDS.len())
-        .find(|first| {
-            rows(*first, height)
-                .last()
-                .is_some_and(|row| row.0 + 1 == COMMANDS.len())
+pub(in crate::tui) fn matching(query: &str) -> Vec<usize> {
+    let terms: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
+    COMMANDS
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| {
+            let haystack = format!("{} {} {} {}", c.label, c.category, c.description, c.usage())
+                .to_lowercase();
+            terms
+                .iter()
+                .all(|term| haystack.contains(term))
+                .then_some(i)
         })
-        .unwrap_or(COMMANDS.len() - 1)
+        .collect()
 }
 
 fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<'static> {
@@ -118,57 +101,42 @@ fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<
 }
 
 impl App {
+    pub(in crate::tui) fn paste_command_filter(&mut self, text: &str) {
+        for c in text.chars().filter(|c| !c.is_control()) {
+            if self.command_filter.len() + c.len_utf8() > 4096 {
+                break;
+            }
+            self.command_filter.push(c);
+        }
+        if let Some(checkpoints::Modal::Commands { selected }) = &mut self.modal
+            && let Some(index) = matching(&self.command_filter).first()
+        {
+            *selected = *index;
+        }
+        self.pointer.reattach(mouse::ListTarget::Commands);
+    }
+
     pub(in crate::tui) fn draw_command_palette(&mut self, frame: &mut Frame) {
         let Some(checkpoints::Modal::Commands { selected }) = self.modal.as_ref() else {
             return;
         };
         let selected = *selected;
+        let matches = matching(&self.command_filter);
         let command = &COMMANDS[selected];
         let unavailable = self.command_unavailable(command);
         let colors = theme::colors();
         self.pointer.overlay();
         let popup = area(frame.area());
-        let shell = modal::Shell::draw(frame, popup, "Commands", 1);
+        let shell = modal::Shell::draw(frame, popup, "Commands", "Search commands…", 1);
         shell.close(frame, &mut self.pointer);
-        let header = shell.header;
-        let categories = COMMANDS
-            .iter()
-            .enumerate()
-            .filter(|(i, c)| *i == 0 || COMMANDS[*i - 1].category != c.category)
-            .count();
-        if header.width >= 65 {
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "{} commands · {categories} categories",
-                    COMMANDS.len()
-                ))
-                .style(Style::default().fg(colors.secondary)),
-                Rect::new(header.x + 18, header.y, header.width - 30, 1),
-            );
-        }
+        shell.query(frame, "Commands", &self.command_filter, "Search commands…");
         let body = shell.body;
-        let wide = body.width >= 96 && body.height >= 20;
+        let wide = body.width >= 96 && body.height >= 16;
         let (list, detail) = if wide {
-            let columns = Layout::horizontal([
-                Constraint::Fill(3),
-                Constraint::Length(3),
-                Constraint::Fill(2),
-            ])
-            .split(body);
-            let separator = Rect::new(columns[1].x + 1, body.y, 1, body.height);
-            frame.render_widget(
-                Paragraph::new("│\n".repeat(usize::from(separator.height)))
-                    .style(Style::default().fg(colors.frame)),
-                separator,
-            );
-            frame.render_widget(Block::default().bg(colors.prompt_background), columns[2]);
-            (
-                columns[0],
-                columns[2].inner(Margin {
-                    horizontal: 2,
-                    vertical: 1,
-                }),
-            )
+            let columns =
+                Layout::horizontal([Constraint::Percentage(64), Constraint::Percentage(36)])
+                    .split(body);
+            (columns[0], modal::detail_surface(frame, columns[1]))
         } else {
             let height = Paragraph::new(details(command, unavailable, true))
                 .wrap(Wrap { trim: false })
@@ -178,18 +146,9 @@ impl App {
                 Layout::vertical([Constraint::Min(3), Constraint::Length(height)]).split(body);
             (rows[0], rows[1])
         };
-        let visible = self.pointer.grouped_command_rows(list, selected);
-        let mut category = "";
+        let visible = self.pointer.command_rows(list, selected, &matches);
         for &(index, y) in &visible {
             let item = &COMMANDS[index];
-            if item.category != category && y > list.y {
-                frame.render_widget(
-                    Paragraph::new(item.category.to_uppercase())
-                        .style(Style::default().fg(colors.secondary).bold()),
-                    Rect::new(list.x + 1, y - 1, list.width.saturating_sub(1), 1),
-                );
-            }
-            category = item.category;
             let chosen = index == selected;
             let disabled = self.command_unavailable(item).is_some();
             let background = if chosen {
@@ -197,38 +156,70 @@ impl App {
             } else {
                 colors.canvas
             };
-            let foreground = if disabled {
-                colors.secondary
-            } else if chosen {
-                colors.preview
-            } else {
-                colors.text
-            };
+            let style = Style::default()
+                .fg(if chosen {
+                    colors.preview
+                } else if disabled {
+                    colors.secondary
+                } else {
+                    colors.text
+                })
+                .bg(background);
             let row = Rect::new(list.x, y, list.width, 1);
             frame.render_widget(Block::default().bg(background), row);
-            let style = Style::default().fg(foreground).bg(background);
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "{} {}",
-                    if chosen { "▏›" } else { "  " },
-                    item.label
-                ))
-                .style(if chosen { style.bold() } else { style }),
+            let metadata = if disabled {
+                "Unavailable"
+            } else {
+                item.category
+            };
+            let content = modal::result(item.label, metadata, row.width, chosen).style(style);
+            let mut state = ratatui::widgets::ListState::default();
+            state.select(chosen.then_some(0));
+            frame.render_stateful_widget(
+                ratatui::widgets::List::new([content])
+                    .style(style)
+                    .highlight_style(Style::default())
+                    .highlight_spacing(ratatui::widgets::HighlightSpacing::Always)
+                    .highlight_symbol("› "),
                 row,
+                &mut state,
             );
-            if chosen && disabled && list.width >= 55 {
-                frame.render_widget(
-                    Paragraph::new("Unavailable")
-                        .style(Style::default().fg(colors.running).bg(background)),
-                    Rect::new(row.right() - 12, row.y, 11, 1),
-                );
-            }
         }
-        frame.render_widget(
-            Paragraph::new(details(command, unavailable, !wide)).wrap(Wrap { trim: false }),
-            detail,
+        if matches.is_empty() {
+            frame.render_widget(
+                Paragraph::new("No matching commands").style(Style::default().fg(colors.secondary)),
+                list,
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(details(command, unavailable, !wide)).wrap(Wrap { trim: false }),
+                detail,
+            );
+        }
+        let position = |index| {
+            matches
+                .iter()
+                .position(|i| *i == index)
+                .map_or(0, |i| i + 1)
+        };
+        let range = format!(
+            "{}–{} of {}",
+            visible.first().map_or(0, |r| position(r.0)),
+            visible.last().map_or(0, |r| position(r.0)),
+            matches.len()
         );
-        let action = if unavailable.is_some() {
+        shell.context(
+            frame,
+            if self.command_filter.is_empty() {
+                "All commands"
+            } else {
+                "Matching commands"
+            },
+            &range,
+        );
+        let action = if matches.is_empty() {
+            "[No matches]"
+        } else if unavailable.is_some() {
             "[Unavailable]"
         } else if command.arguments.is_empty() {
             "[Enter Run]"
@@ -236,35 +227,15 @@ impl App {
             "[Enter Continue]"
         };
         let action_width = Line::raw(action).width() as u16;
-        let range = if wide {
-            format!(
-                "{}–{} of {}",
-                visible.first().map_or(selected + 1, |r| r.0 + 1),
-                visible.last().map_or(selected + 1, |r| r.0 + 1),
-                COMMANDS.len()
-            )
-        } else {
-            format!("{}/{}", selected + 1, COMMANDS.len())
-        };
         let footer = shell.footer;
-        let parts = Layout::horizontal([
-            Constraint::Min(18),
-            Constraint::Length(Line::raw(&range).width() as u16 + 2),
-            Constraint::Length(action_width),
-        ])
-        .split(footer);
+        let parts = Layout::horizontal([Constraint::Min(0), Constraint::Length(action_width)])
+            .split(footer);
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("↑ ↓", Style::default().fg(colors.key).bold()),
-                Span::styled(" Navigate  ", Style::default().fg(colors.secondary)),
-                Span::styled("Esc", Style::default().fg(colors.key).bold()),
-                Span::styled(" Close", Style::default().fg(colors.secondary)),
+            Paragraph::new(modal::hints(&[
+                ("↑ ↓", "Navigate"),
+                ("Esc", "Clear / close"),
             ])),
             parts[0],
-        );
-        frame.render_widget(
-            Paragraph::new(format!(" {range} ")).style(Style::default().fg(colors.secondary)),
-            parts[1],
         );
         frame.render_widget(
             Paragraph::new(action).style(
@@ -276,11 +247,11 @@ impl App {
                     })
                     .bold(),
             ),
-            parts[2],
+            parts[1],
         );
-        if unavailable.is_none() && self.pointer.controls {
+        if !matches.is_empty() && unavailable.is_none() && self.pointer.controls {
             self.pointer
-                .add(parts[2], mouse::Target::Button(mouse::Action::Accept));
+                .add(parts[1], mouse::Target::Button(mouse::Action::Accept));
         }
     }
 }

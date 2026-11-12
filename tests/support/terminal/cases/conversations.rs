@@ -195,7 +195,7 @@ fn highlight(h: &mut Harness, target: &str, first: &str, second: &str) -> Result
         .iter()
         .position(|id| {
             text.lines()
-                .any(|line| line.contains("▏›") && line.contains(*id))
+                .any(|line| line.contains('›') && line.contains(*id))
         })
         .expect("Actual selected conversation in the modal list");
     let target_index = order.iter().position(|id| *id == target).unwrap();
@@ -238,7 +238,7 @@ pub fn selection(h: &mut Harness) -> Result<Value> {
     ] {
         command(h, "Saved conversations")?;
         h.wait("both saved conversations listed", 15.0, |h| {
-            h.screen.text().contains("Saved conversations")
+            h.screen.text().contains("Conversations")
                 && h.screen.text().contains(&first_id)
                 && h.screen.text().contains(&second_id)
         })?;
@@ -247,7 +247,7 @@ pub fn selection(h: &mut Harness) -> Result<Value> {
         h.wait("draft restored by session selection", 15.0, |h| {
             selected(h, id)
                 && h.screen.text().contains(draft.lines().next().unwrap())
-                && !h.screen.text().contains("Saved conversations")
+                && !h.screen.text().contains("Conversations")
         })?;
         h.save_screen(&format!("session-selection-{name}-screen.txt"))?;
     }
@@ -288,7 +288,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     })?;
     command(h, "Saved conversations")?;
     h.wait("both conversations listed", 15.0, |h| {
-        h.screen.text().contains("Saved conversations")
+        h.screen.text().contains("Conversations")
             && h.screen.text().contains(&archived_id)
             && h.screen.text().contains(&current_id)
     })?;
@@ -331,7 +331,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     }
     h.key(b"n")?;
     h.wait("deletion cancelled", 15.0, |h| {
-        h.screen.text().contains("Saved conversations")
+        h.screen.text().contains("Conversations")
             && !h.screen.text().contains("Delete local conversation?")
     })?;
     assert!(archived_path.is_file());
@@ -346,7 +346,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     h.save_screen("session-deletion-stale-screen.txt")?;
     h.key(b"n")?;
     h.wait("return from stale review", 15.0, |h| {
-        h.screen.text().contains("Saved conversations")
+        h.screen.text().contains("Conversations")
             && !h.screen.text().contains("Delete local conversation?")
     })?;
     h.key(b"d")?;
@@ -380,7 +380,7 @@ pub fn deletion(h: &mut Harness) -> Result<Value> {
     assert!(no_trash(&h.root.join("data")));
     h.save_screen("session-deletion-complete-screen.txt")?;
     h.key(b"\x1b")?;
-    h.hidden("Saved conversations")?;
+    h.hidden("Conversations")?;
     Ok(
         json!({"source_commit":source_commit(),"case":h.case,"deleted_session":archived_id,"current_session":current_id,"selected_on_exit":current_id,"current_rejected":true,"review_cancelled":true,"stale_rejected":true,"current_draft_sha256":hash(current_draft),"document_sha256":hash(document),"agent_started":false,"cleanup_complete":true,"minimum_terminal_review":h.case == "session-deletion-small"}),
     )
@@ -454,7 +454,7 @@ pub fn history(h: &mut Harness) -> Result<Value> {
     let mut offsets = serde_json::Map::new();
     command(h, "Current conversation logs")?;
     h.wait("saved turn list", 15.0, |h| {
-        h.screen.text().contains("Saved turns") && h.screen.text().contains(turn_id)
+        h.screen.text().contains("Turns") && h.screen.text().contains(turn_id)
     })?;
     h.key(b"\r")?;
     h.wait("first saved page", 15.0, |h| {
@@ -507,14 +507,14 @@ pub fn history(h: &mut Harness) -> Result<Value> {
     h.visible("PAGE BEGAN 日本語")?;
     snapshot(h, "refreshed", &mut offsets)?;
     h.key(b"\x7f")?;
-    h.visible("Saved turns")?;
+    h.visible("Turns")?;
     h.key(b"s")?;
-    h.visible("Saved conversations")?;
+    h.visible("Conversations")?;
     h.key(b"c")?;
-    h.visible("Saved turns")?;
+    h.visible("Turns")?;
     h.key(b"q")?;
     h.wait("saved logs closed", 15.0, |h| {
-        !h.screen.text().contains("Saved turns") && !h.screen.text().contains("Saved conversations")
+        !h.screen.text().contains("Turns") && !h.screen.text().contains("Conversations")
     })?;
     assert_eq!(state(h)["draft"], draft);
     no_agent(h);

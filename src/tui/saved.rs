@@ -31,6 +31,8 @@ pub struct Page {
     pub location: Location,
     pub data: Value,
     pub selected: usize,
+    filter: String,
+    searching: bool,
     pub scroll: u16,
     pub maximum_scroll: u16,
     pub notice: Option<String>,
@@ -66,12 +68,31 @@ impl Action {
 }
 
 impl Page {
+    pub(super) fn editing_filter(&self) -> bool {
+        self.searching
+            && self.deletion_review.is_none()
+            && !matches!(self.location, Location::Text { .. })
+    }
+    pub(super) fn paste_filter(&mut self, text: &str) {
+        if !self.editing_filter() {
+            return;
+        }
+        for c in text.chars().filter(|c| !c.is_control()) {
+            if self.filter.len() + c.len_utf8() > 4096 {
+                break;
+            }
+            self.filter.push(c);
+        }
+        self.selected = 0;
+    }
+
     pub(super) fn pointer_identity(&self) -> String {
         format!(
-            "saved:{:?}:{}:{}",
+            "saved:{:?}:{}:{}:{}",
             self.location,
             self.cursor.as_deref().unwrap_or(""),
-            self.deletion_review.is_some()
+            self.deletion_review.is_some(),
+            self.filter
         )
     }
     pub fn sessions(current: String) -> Self {
@@ -95,6 +116,8 @@ impl Page {
             location,
             data: Value::Null,
             selected: 0,
+            filter: String::new(),
+            searching: false,
             scroll: 0,
             maximum_scroll: 0,
             notice: None,
@@ -224,17 +247,34 @@ impl Page {
             Ok(Output::Saved(Box::new(self)))
         })
     }
-    fn entries(&self) -> &[Value] {
+    fn entries(&self) -> Vec<&Value> {
+        let query = self.filter.to_lowercase();
         self.data["entries"]
             .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+            .into_iter()
+            .flatten()
+            .filter(|entry| {
+                let label = format!(
+                    "{} {} {} {}",
+                    entry["id"].as_str().unwrap_or(""),
+                    entry["agent"].as_str().unwrap_or(""),
+                    entry["requested_auth"].as_str().unwrap_or(""),
+                    entry["bytes"]
+                        .as_u64()
+                        .map_or_else(String::new, |bytes| bytes.to_string())
+                )
+                .to_lowercase();
+                query.split_whitespace().all(|term| label.contains(term))
+            })
+            .collect()
     }
     fn fresh(&self, cursor: Option<String>) -> Self {
         let mut page = self.clone();
         page.data = Value::Null;
         page.cursor = cursor;
         page.selected = 0;
+        page.filter.clear();
+        page.searching = false;
         page.scroll = 0;
         page.maximum_scroll = 0;
         page.notice = None;
@@ -273,7 +313,8 @@ impl Page {
         if self.deletion_review.is_some() || matches!(self.location, Location::Text { .. }) {
             return Action::Keep;
         }
-        let Some(entry) = self.entries().get(self.selected) else {
+        let entries = self.entries();
+        let Some(entry) = entries.get(self.selected) else {
             return Action::Keep;
         };
         if entry["unavailable"] == true {
@@ -362,6 +403,45 @@ impl Page {
             });
         }
         let text = matches!(self.location, Location::Text { .. });
+        if !matches!(self.location, Location::Text { .. }) && self.searching {
+            match key.code {
+                KeyCode::Esc => {
+                    self.filter.clear();
+                    self.searching = false;
+                    self.selected = 0;
+                }
+                KeyCode::Enter => {
+                    self.searching = false;
+                    return Ok(self.accept());
+                }
+                KeyCode::Tab => self.searching = false,
+                KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+                KeyCode::Down => {
+                    self.selected = (self.selected + 1).min(self.entries().len().saturating_sub(1))
+                }
+                KeyCode::Backspace => {
+                    self.filter.pop();
+                    self.selected = 0;
+                }
+                KeyCode::Char(c) if !c.is_control() => {
+                    if self.filter.len() + c.len_utf8() <= 4096 {
+                        self.filter.push(c);
+                    }
+                    self.selected = 0;
+                }
+                _ => {}
+            }
+            return Ok(Action::Keep);
+        }
+        if key.code == KeyCode::Char('/') && !matches!(self.location, Location::Text { .. }) {
+            self.searching = true;
+            return Ok(Action::Keep);
+        }
+        if key.code == KeyCode::Esc && !self.filter.is_empty() {
+            self.filter.clear();
+            self.selected = 0;
+            return Ok(Action::Keep);
+        }
         match key.code {
             KeyCode::Char('d') => {
                 let session = match &self.location {
@@ -387,7 +467,8 @@ impl Page {
             KeyCode::Char('u') => {
                 let session = match &self.location {
                     Location::Sessions => {
-                        let Some(entry) = self.entries().get(self.selected) else {
+                        let entries = self.entries();
+                        let Some(entry) = entries.get(self.selected) else {
                             return Ok(Action::Keep);
                         };
                         if entry["unavailable"] == true {
@@ -533,11 +614,18 @@ pub fn draw(
     use ratatui::{
         layout::{Constraint, Layout},
         style::Style,
-        widgets::{List, ListItem, Paragraph, Wrap},
+        widgets::{List, Paragraph, Wrap},
     };
     if let Some(review) = &page.deletion_review {
-        let shell = super::modal::Shell::draw(frame, area, "Delete local conversation?", 2);
+        let shell = super::modal::Shell::draw(
+            frame,
+            area,
+            "Conversations",
+            "Delete local conversation?",
+            2,
+        );
         shell.close(frame, pointer);
+        shell.context(frame, review["session"].as_str().unwrap_or(""), "Review");
         let inner = shell.body;
         let regions = Layout::vertical([Constraint::Length(1), Constraint::Min(1)])
             .spacing(1)
@@ -598,15 +686,54 @@ pub fn draw(
             ),
         ),
     };
-    let shell = super::modal::Shell::draw(frame, area, &title, 3);
+    let shell = super::modal::Shell::draw(frame, area, "Saved log", &title, 3);
     shell.close(frame, pointer);
+    if !matches!(page.location, Location::Text { .. }) {
+        let mode = if page.location == Location::Sessions {
+            "Conversations"
+        } else {
+            "Turns"
+        };
+        let placeholder = if page.location == Location::Sessions {
+            "Find a saved conversation…"
+        } else {
+            "Find a saved turn…"
+        };
+        if page.searching {
+            shell.query(frame, mode, &page.filter, placeholder);
+        } else {
+            shell.heading(
+                frame,
+                mode,
+                if page.filter.is_empty() {
+                    placeholder
+                } else {
+                    &page.filter
+                },
+                page.filter.is_empty(),
+            );
+        }
+    }
+
+    shell.context(
+        frame,
+        &context,
+        &if matches!(page.location, Location::Text { .. }) {
+            page.data["revision"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(12)
+                .collect::<String>()
+        } else {
+            format!("{} shown", page.entries().len())
+        },
+    );
     let inner = shell.body;
     let mut notice = if page.deletion_completed {
-        format!("{context}\nLocal deletion committed · browsing sends no requests")
-    } else if matches!(page.location, Location::Text { .. }) {
-        context
+        "Local deletion committed · browsing sends no requests".to_string()
     } else {
-        format!("{context}\nBrowsing sends no requests · saved data is unchanged")
+        "Browsing sends no requests · saved data is unchanged".to_string()
     };
     if let Some(message) = &page.notice {
         notice.push_str(&format!("\n{} · r refreshes", super::clean(message)));
@@ -656,12 +783,43 @@ pub fn draw(
         } else {
             render::conversation(&page.data)
         };
+        let mut row = 0usize;
+        let mut user_rows = Vec::new();
+        for line in &content.lines {
+            let height = Paragraph::new(line.clone())
+                .wrap(Wrap { trim: false })
+                .line_count(details.width);
+            if line.style.bg == Some(super::theme::colors().user_background) {
+                user_rows.push(row..row.saturating_add(height));
+            }
+            row = row.saturating_add(height);
+        }
         let paragraph = Paragraph::new(content).wrap(Wrap { trim: false });
         page.maximum_scroll = paragraph
             .line_count(details.width)
             .saturating_sub(details.height as usize)
             .min(u16::MAX as usize) as u16;
         page.scroll = page.scroll.min(page.maximum_scroll);
+        for rows in user_rows {
+            let start = rows
+                .start
+                .saturating_sub(usize::from(page.scroll))
+                .min(usize::from(details.height));
+            let end = rows
+                .end
+                .saturating_sub(usize::from(page.scroll))
+                .min(usize::from(details.height));
+            frame.render_widget(
+                ratatui::widgets::Block::default()
+                    .style(Style::default().bg(super::theme::colors().user_background)),
+                ratatui::layout::Rect::new(
+                    details.x,
+                    details.y + start as u16,
+                    details.width,
+                    (end - start) as u16,
+                ),
+            );
+        }
         frame.render_widget(paragraph.scroll((page.scroll, 0)), details);
         pointer.add(details, super::mouse::Target::SavedText);
         frame.render_widget(
@@ -673,39 +831,77 @@ pub fn draw(
             shell.footer,
         );
     } else {
+        let (list, details) = if regions[1].width >= 96 {
+            let columns =
+                Layout::horizontal([Constraint::Percentage(64), Constraint::Percentage(36)])
+                    .split(regions[1]);
+            (
+                columns[0],
+                Some(super::modal::detail_surface(frame, columns[1])),
+            )
+        } else {
+            (regions[1], None)
+        };
+        page.selected = page.selected.min(page.entries().len().saturating_sub(1));
         let entries = page.entries();
+        shell.context(
+            frame,
+            &context,
+            &format!(
+                "{} of {} shown",
+                entries.len().min(usize::from(list.height)),
+                entries.len()
+            ),
+        );
         let items = entries
             .iter()
-            .map(|entry| {
+            .enumerate()
+            .map(|(index, entry)| {
                 let id = entry["id"].as_str().unwrap_or("unknown");
-                let label = if entry["unavailable"] == true {
-                    format!("{id} · unavailable")
+                let metadata = if entry["unavailable"] == true {
+                    "Unavailable".to_string()
                 } else if page.location == Location::Sessions {
                     format!(
-                        "{} · {} · {id}",
+                        "{} · {}",
                         entry["agent"].as_str().unwrap_or("unknown"),
                         entry["requested_auth"].as_str().unwrap_or("unknown")
                     )
                 } else {
-                    format!("{id} · {} bytes", entry["bytes"].as_u64().unwrap_or(0))
+                    format!("{} bytes", entry["bytes"].as_u64().unwrap_or(0))
                 };
-                ListItem::new(super::clean(&label))
+                super::modal::result(
+                    &super::clean(id),
+                    &super::clean(&metadata),
+                    list.width,
+                    index == page.selected,
+                )
             })
             .collect::<Vec<_>>();
+        if let Some(details) = details
+            && let Some(entry) = entries.get(page.selected)
+        {
+            frame.render_widget(
+                Paragraph::new(render::entry(entry, page.location == Location::Sessions))
+                    .wrap(Wrap { trim: false }),
+                details,
+            );
+        }
         if items.is_empty() {
             frame.render_widget(
-                Paragraph::new("No saved entries in this page · Home refreshes")
-                    .style(Style::default().fg(super::theme::colors().secondary)),
-                regions[1],
+                Paragraph::new(if page.filter.is_empty() {
+                    "No saved entries in this page · Home refreshes"
+                } else {
+                    "No matching saved entries · Esc clears the search"
+                })
+                .style(Style::default().fg(super::theme::colors().secondary)),
+                list,
             );
         } else {
             page.selected = page.selected.min(items.len() - 1);
             pointer.modal_list(
                 frame,
-                List::new(items)
-                    .highlight_style(super::theme::modal_selected())
-                    .highlight_symbol("▏› "),
-                regions[1],
+                List::new(items).highlight_symbol("› "),
+                list,
                 page.selected,
                 super::mouse::ListTarget::Saved,
             );
@@ -717,21 +913,30 @@ pub fn draw(
         ])
         .split(shell.footer);
         frame.render_widget(
-            Paragraph::new(super::modal::hints(&[
-                ("↑ ↓", "Select"),
-                ("u", "Use"),
-                ("N", "New"),
-                ("d", "Delete…"),
-            ])),
+            Paragraph::new(if page.searching {
+                super::modal::hints(&[("↑ ↓", "Select"), ("Tab", "Actions")])
+            } else {
+                super::modal::hints(&[
+                    ("↑ ↓", "Select"),
+                    ("/", "Search"),
+                    ("u", "Use"),
+                    ("N", "New"),
+                    ("d", "Delete…"),
+                ])
+            }),
             footer_lines[0],
         );
         frame.render_widget(
-            Paragraph::new(super::modal::hints(&[
-                ("n/p", "Pages"),
-                ("r", "Refresh"),
-                ("s", "Sessions"),
-                ("c", "Current"),
-            ])),
+            Paragraph::new(if page.searching {
+                super::modal::hints(&[("Backspace", "Edit"), ("Esc", "Clear search")])
+            } else {
+                super::modal::hints(&[
+                    ("n/p", "Pages"),
+                    ("r", "Refresh"),
+                    ("s", "Sessions"),
+                    ("c", "Current"),
+                ])
+            }),
             footer_lines[1],
         );
         let back = ratatui::layout::Rect::new(
@@ -741,10 +946,21 @@ pub fn draw(
             footer_lines[2].height,
         );
         frame.render_widget(
-            Paragraph::new(super::modal::hints(&[
-                ("Backspace", "Back"),
-                ("Esc", "Close"),
-            ])),
+            Paragraph::new(if page.searching {
+                ratatui::text::Line::default()
+            } else {
+                super::modal::hints(&[
+                    ("Backspace", "Back"),
+                    (
+                        "Esc",
+                        if page.filter.is_empty() {
+                            "Close"
+                        } else {
+                            "Clear search"
+                        },
+                    ),
+                ])
+            }),
             back,
         );
         if !page.entries().is_empty() {

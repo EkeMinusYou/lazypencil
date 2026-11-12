@@ -76,7 +76,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
             assert_eq!(app.agent_state(), crate::herdr::State::Blocked);
             let buffer = crate::tui::test_artifacts::snapshot(&mut app, "permission");
             assert!(buffer.content.iter().any(|cell| {
-                cell.symbol() == "›" && cell.fg == theme::colors().running && cell.bg == theme::colors().selected_background
+                cell.symbol() == "›" && cell.fg == theme::colors().preview && cell.bg == theme::colors().selected_background
             }));
             let choice = app.pointer.area(mouse::Target::PermissionChoice(0)).unwrap();
             assert_eq!(buffer[(choice.right() - 1, choice.y)].bg, theme::colors().selected_background);

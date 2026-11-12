@@ -312,8 +312,20 @@ pub fn select(
                         path_input = None;
                     }
                     Some(Target::Button(Action::Accept)) => open_requested = true,
+                    Some(Target::Button(Action::Close)) => {
+                        path_input = None;
+                        filter.clear();
+                        filtering = false;
+                        notice.clear();
+                        selected = 0;
+                        navigated = false;
+                    }
                     Some(Target::Button(Action::DocumentPath)) => {
-                        path_input = Some(String::new());
+                        path_input = if path_input.is_some() {
+                            None
+                        } else {
+                            Some(String::new())
+                        };
                         notice.clear();
                     }
                     _ => {}
@@ -340,7 +352,11 @@ pub fn select(
             match key.code {
                 KeyCode::Char('c') => return Ok(None),
                 KeyCode::Char('l') => {
-                    path_input = Some(String::new());
+                    path_input = if path_input.is_some() {
+                        None
+                    } else {
+                        Some(String::new())
+                    };
                     notice.clear();
                 }
                 KeyCode::Char('u') => {

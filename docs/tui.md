@@ -13,7 +13,8 @@ lazypencil tui new.pen --create --agent codex
 ```
 
 Running without a file opens a document picker. Type to filter, use arrows or
-`j`/`k` to select, and press Enter to open. Ctrl+L accepts a path or search directory;
+`j`/`k` to select, and press Enter to open. Ctrl+L switches between filtering and
+entering a file or directory path;
 Esc clears the filter and Ctrl+C exits. If a large directory is only partially
 listed, narrow the search or enter the file's path directly.
 
@@ -264,7 +265,9 @@ command palette.
 
 ### Command palette and slash commands
 
-The palette groups actions by Conversation, Send queue, Images, Preview, View,
+Type in the palette to filter actions by name, category or description. Esc clears
+the search, then closes the palette. Each row shows its category: Conversation,
+Send queue, Images, Preview, View,
 Checkpoints and General. Select an action to see its syntax, description or why
 it is unavailable. Enter runs it. Actions that need arguments open an input dialog;
 Esc returns to the palette. Your current prompt and attachments remain intact.
@@ -355,8 +358,10 @@ input available. Ctrl+C remains the cancellation/exit key.
 ## Saved conversation logs
 
 Open **Conversation · Current conversation logs…** or **Saved conversations…**
-in the palette, or use `/logs` and `/conversations`. Browsing preserves the current
-draft and design. A running agent continues while you read.
+in the palette, or use `/logs` and `/conversations`. Press `/` in a saved
+conversation or turn list to search the current page; Enter opens the selected
+match, Tab returns to list shortcuts, and Esc clears the search. Browsing preserves
+the current draft and design. A running agent continues while you read.
 
 | Key | Action |
 | --- | --- |

@@ -602,3 +602,35 @@ fn saved_conversation_reader_renders_roles_markdown_and_adapter_events_without_c
         app.conversation.close().await.unwrap();
     });
 }
+
+#[test]
+fn saved_launcher_search_opens_the_matching_session_without_running_shortcuts() {
+    let mut page = saved::Page::sessions("current".into());
+    page.data = json!({"entries": [
+        {"id": "first-session", "agent": "Codex", "requested_auth": "account"},
+        {"id": "second-session-日本語", "agent": "Claude", "requested_auth": "account"}
+    ]});
+    let key = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+    assert!(matches!(page.key(key('/')).unwrap(), saved::Action::Keep));
+    for c in "second".chars() {
+        assert!(matches!(page.key(key(c)).unwrap(), saved::Action::Keep));
+    }
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(50, 16)).unwrap();
+    terminal.draw(|frame| {
+        let area = frame.area();
+        saved::draw(&mut page, frame, area, &mut mouse::Pointer::default());
+    }).unwrap();
+    let screen = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
+    assert!(screen.contains("Tab Actions") && screen.contains("Esc Clear search"));
+    assert!(screen.contains(" 1 of 1 shown"), "The context and count must stay separate: {screen}");
+    assert!(!screen.contains("d Delete"));
+    crate::tui::test_artifacts::artifact(terminal.backend().buffer(), "saved-launcher-search-compact");
+    let saved::Action::Read(next) = page.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap() else { panic!("Search must open the matching session"); };
+    assert_eq!(next.location, saved::Location::Turns("second-session-日本語".into()));
+    assert!(matches!(page.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap(), saved::Action::Keep));
+    let saved::Action::Read(next) = page.accept() else { panic!(); };
+    assert_eq!(next.location, saved::Location::Turns("first-session".into()));
+    page.key(key('/')).unwrap();
+    for c in "no-match".chars() { page.key(key(c)).unwrap(); }
+    assert!(matches!(page.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap(), saved::Action::Keep));
+}

@@ -58,14 +58,14 @@ fn zoom(h: &Harness) -> Option<u32> {
 pub fn picker(h: &mut Harness) -> Result {
     let point = h
         .screen
-        .find_text("nested/deep/selected.pen")
+        .find_text("selected.pen")
         .ok_or("Missing picker row")?;
     click(h, point)?;
     h.pump_for(0.12)?;
-    assert!(h.screen.text().contains("Open a .pen file"));
+    assert!(h.screen.text().contains("Find a .pen file…"));
     assert!(files(&h.root, |name| name == "session.json").is_empty());
     button(h, "[Enter Open]")?;
-    h.hidden("Open a .pen file")
+    h.hidden("Find a .pen file…")
 }
 
 pub fn workspace(h: &mut Harness) -> Result {
@@ -155,7 +155,7 @@ pub fn workspace(h: &mut Harness) -> Result {
     h.visible("View controls")?;
     button(h, "[Help]")?;
     h.visible("Help")?;
-    button(h, "[Close]")?;
+    button(h, "[Esc]")?;
     h.hidden("Help")?;
     h.resize(50, 16)?;
     h.visible("[...]")?;

@@ -1177,6 +1177,8 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE, &worker).await;
         assert!(app.modal.is_some());
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(app.command_filter.is_empty());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         app.focus = Focus::Nodes;
         app.nodes.select(Some(0));
         press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;

@@ -6,6 +6,58 @@ use ratatui::{
 };
 use serde_json::Value;
 
+pub(super) fn entry(data: &Value, session: bool) -> Text<'static> {
+    let colors = theme::colors();
+    let label = |text: &str| Line::styled(text.to_owned(), Style::default().fg(colors.secondary));
+    let value = |key: &str| Line::raw(clean(data[key].as_str().unwrap_or("unknown")));
+    let mut lines = vec![
+        Line::styled(
+            if session {
+                "CONVERSATION"
+            } else {
+                "SAVED TURN"
+            },
+            Style::default()
+                .fg(colors.preview)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::default(),
+    ];
+    if session {
+        lines.extend([
+            value("agent"),
+            Line::default(),
+            label("SESSION"),
+            value("id"),
+            Line::default(),
+            label("ACCOUNT"),
+            value("requested_auth"),
+        ]);
+    } else {
+        lines.extend([
+            value("id"),
+            Line::default(),
+            label("SIZE"),
+            Line::raw(format!("{} bytes", data["bytes"].as_u64().unwrap_or(0))),
+        ]);
+    }
+    lines.push(Line::default());
+    if data["unavailable"] == true {
+        lines.push(Line::styled(
+            "Unavailable",
+            Style::default().fg(colors.running),
+        ));
+        lines.push(Line::raw(clean(&data["error"].to_string())));
+    } else {
+        lines.push(label(if session {
+            "Browsing sends no requests. Saved data stays unchanged."
+        } else {
+            "Enter opens the saved log. Your draft is preserved."
+        }));
+    }
+    Text::from(lines)
+}
+
 pub(super) fn conversation(data: &Value) -> Text<'static> {
     let Some(records) = data["records"].as_array() else {
         return Text::from(markdown::render(&clean(
@@ -114,10 +166,15 @@ fn flush(lines: &mut Vec<Line<'static>>, kind: &str, body: &mut String) {
         _ => ("ASSISTANT", colors.agent),
     };
     heading(lines, label, color);
+    if kind == "user" {
+        lines.last_mut().unwrap().style = Style::default().bg(colors.user_background);
+    }
     let content = markdown::render(body.trim());
     lines.extend(content.into_iter().map(|mut line| {
         if kind == "thought" {
             line.style = line.style.fg(colors.secondary);
+        } else if kind == "user" {
+            line.style = line.style.fg(colors.user).bg(colors.user_background);
         }
         line
     }));

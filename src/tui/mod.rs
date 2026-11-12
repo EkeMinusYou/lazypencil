@@ -315,6 +315,7 @@ struct App {
     input: Option<InputJob>,
     document_task: Option<checkpoints::Task>,
     modal: Option<checkpoints::Modal>,
+    command_filter: String,
     restore_return: Option<checkpoints::Page>,
     saved_return: Option<Box<saved::Page>>,
     pending_session: Option<saved::SessionChange>,
@@ -419,6 +420,7 @@ impl App {
             input: None,
             document_task: None,
             modal: None,
+            command_filter: String::new(),
             restore_return: None,
             saved_return: None,
             pending_session: None,
@@ -725,6 +727,22 @@ impl App {
                 }
                 screen.preview_keys(self.focus == Focus::Preview && !self.has_modal())?;
                 screen.pointer_motion(self.native_input.active())?;
+            }
+            Event::Paste(text)
+                if self.permissions.is_empty()
+                    && matches!(&self.modal, Some(checkpoints::Modal::Saved(page)) if page.editing_filter()) =>
+            {
+                if let Some(checkpoints::Modal::Saved(page)) = &mut self.modal {
+                    page.paste_filter(&text);
+                }
+                self.dirty = true;
+            }
+            Event::Paste(text)
+                if self.permissions.is_empty()
+                    && matches!(self.modal, Some(checkpoints::Modal::Commands { .. })) =>
+            {
+                self.paste_command_filter(&text);
+                self.dirty = true;
             }
             Event::Paste(text)
                 if self.permissions.is_empty()
@@ -1792,8 +1810,13 @@ impl App {
         if self.help {
             self.pointer.overlay();
             let popup = modal::area(area);
-            let shell = modal::Shell::draw(frame, popup, "Help", 1);
+            let shell = modal::Shell::draw(frame, popup, "Help", "Workspace reference", 1);
             shell.close(frame, &mut self.pointer);
+            shell.context(
+                frame,
+                "Workspace keys and conversation commands",
+                "Reference",
+            );
             let colors = theme::colors();
             let content = self
                 .help_text()
@@ -1840,8 +1863,13 @@ impl App {
         if let Some(permission) = self.permissions.front() {
             self.pointer.overlay();
             let popup = modal::area(area);
-            let shell = modal::Shell::draw(frame, popup, "Permission", 2);
+            let shell = modal::Shell::draw(frame, popup, "Permissions", "Permission", 2);
             shell.close(frame, &mut self.pointer);
+            shell.context(
+                frame,
+                "Agent requests permission · choose a response",
+                "Approval",
+            );
             let inner = shell.body;
             let details = serde_json::to_value(&permission.request.tool_call).unwrap_or_default();
             let details = crate::conversation::sanitize_event(&details);
@@ -1911,7 +1939,7 @@ impl App {
             )];
             for (index, option) in permission.request.options.iter().enumerate() {
                 let style = if index == permission.selected {
-                    theme::permission_selected()
+                    theme::modal_selected()
                 } else {
                     Style::default()
                 };
@@ -1919,7 +1947,7 @@ impl App {
                     format!(
                         "{} {}",
                         if index == permission.selected {
-                            "▏›"
+                            "› "
                         } else {
                             "  "
                         },
@@ -1949,7 +1977,7 @@ impl App {
                 if index == permission.selected {
                     frame
                         .buffer_mut()
-                        .set_style(option_area, theme::permission_selected());
+                        .set_style(option_area, theme::modal_selected());
                 }
                 self.pointer
                     .add(option_area, mouse::Target::PermissionChoice(index));

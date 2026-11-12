@@ -271,30 +271,35 @@ impl Pointer {
             self.detached.push(target);
         }
     }
-    pub fn grouped_command_rows(&mut self, area: Rect, selected: usize) -> Vec<(usize, u16)> {
+    pub fn command_rows(
+        &mut self,
+        area: Rect,
+        selected: usize,
+        matches: &[usize],
+    ) -> Vec<(usize, u16)> {
         let target = ListTarget::Commands;
         if self.modal_kind != Some(target) {
             self.modal_state = ListState::default();
         }
         self.modal_kind = Some(target);
-        self.modal_count = commands::COMMANDS.len();
-        let maximum = commands::palette::maximum_start(area.height);
+        self.modal_count = matches.len();
+        let maximum = matches.len().saturating_sub(usize::from(area.height));
         let mut first = self.modal_state.offset().min(maximum);
+        let selected_position = matches.iter().position(|i| *i == selected).unwrap_or(0);
         if !self.detached.contains(&target) {
-            first = first.min(selected);
-            while first < selected
-                && commands::palette::rows(first, area.height)
-                    .last()
-                    .is_none_or(|row| row.0 < selected)
-            {
-                first += 1;
+            first = first.min(selected_position);
+            if selected_position >= first + usize::from(area.height) {
+                first = (selected_position + 1).saturating_sub(usize::from(area.height));
             }
         }
         *self.modal_state.offset_mut() = first;
-        *self.modal_state.selected_mut() = Some(selected);
-        let rows = commands::palette::rows(first, area.height)
-            .into_iter()
-            .map(|(index, y)| (index, area.y + y))
+        let rows = matches
+            .iter()
+            .copied()
+            .skip(first)
+            .take(usize::from(area.height))
+            .enumerate()
+            .map(|(y, i)| (i, area.y + y as u16))
             .collect::<Vec<_>>();
         self.add(area, Target::List(target));
         for &(index, y) in &rows {
@@ -407,7 +412,7 @@ impl App {
         }
         if let Some(modal) = &self.modal {
             return match modal {
-                checkpoints::Modal::Commands { .. } => "commands".into(),
+                checkpoints::Modal::Commands { .. } => format!("commands:{}", self.command_filter),
                 checkpoints::Modal::CommandInput(input) => {
                     format!("command-input:{:?}", input.action)
                 }
@@ -450,7 +455,7 @@ impl App {
                     .pointer
                     .area(Target::List(list))
                     .map_or(1, |area| area.height);
-                let maximum = commands::palette::maximum_start(height);
+                let maximum = self.pointer.modal_count.saturating_sub(usize::from(height));
                 let first = self.pointer.modal_state.offset();
                 *self.pointer.modal_state.offset_mut() = if backwards {
                     first.saturating_sub(usize::from(step))
@@ -1059,6 +1064,7 @@ impl App {
             Action::More => self.pointer.more = !self.pointer.more,
             Action::Commands => {
                 self.pointer.more = false;
+                self.command_filter.clear();
                 self.modal = Some(checkpoints::Modal::commands());
             }
             Action::Help => {
@@ -1073,7 +1079,11 @@ impl App {
                 }
             }
             Action::Close => {
-                self.close_pointer_modal();
+                if self.permissions.is_empty() && !self.help && self.modal.is_some() {
+                    self.modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), worker)?;
+                } else {
+                    self.close_pointer_modal();
+                }
             }
             Action::DocumentPath => {}
             Action::WheelMode => self.mouse.wheel_zoom = !self.mouse.wheel_zoom,
@@ -1154,7 +1164,7 @@ impl App {
         if self.pointer.more {
             let popup = Self::pointer_menu_area(frame.area());
             let popup = popup.intersection(frame.area());
-            let shell = super::modal::Shell::draw(frame, popup, "View controls", 1);
+            let shell = super::modal::Shell::draw(frame, popup, "View", "View controls", 1);
             let inner = shell.body;
             // A menu captures all pointer input, including empty space.
             self.pointer.hits.clear();

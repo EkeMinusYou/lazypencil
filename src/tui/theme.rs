@@ -181,13 +181,6 @@ pub(super) fn modal_selected() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub(super) fn permission_selected() -> Style {
-    Style::default()
-        .fg(colors().running)
-        .bg(colors().selected_background)
-        .add_modifier(Modifier::BOLD)
-}
-
 pub(super) fn title(
     icon: &str,
     label: impl Into<String>,

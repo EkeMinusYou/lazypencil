@@ -75,6 +75,10 @@ fn workspace_command_input_keeps_plain_navigation_bindings_as_text() {
             Some(checkpoints::Modal::Commands { .. })
         ));
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.command_filter, "x");
+        assert!(app.modal.is_some());
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         assert!(app.modal.is_none());
         assert_eq!(app.focus, Focus::Preview);
         app.conversation.close().await.unwrap();
@@ -214,7 +218,7 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(rendered.contains("Attach an image before resizing it"));
+        assert!(rendered.contains("Attach an image") && rendered.contains("resizing"));
         app.activate_modal(&worker).unwrap();
         assert!(matches!(
             app.modal,
@@ -257,7 +261,7 @@ fn workspace_command_palette_explains_unavailable_actions_and_scrolls_at_minimum
                 .iter()
                 .map(|cell| cell.symbol())
                 .collect::<String>();
-            assert!(rendered.contains("GENERAL") && rendered.contains("Quit"));
+            assert!(rendered.contains("General") && rendered.contains("Quit"));
             assert!(!rendered.contains("/quit"));
             let rows = (0..height)
                 .map(|y| {
@@ -399,7 +403,7 @@ fn workspace_command_palette_preserves_native_preview_outside_the_popup() {
 
         app.modal = Some(checkpoints::Modal::commands());
         let palette = command_palette_frame(&mut app);
-        let popup = centered(palette.area, 120, 35);
+        let popup = commands::palette::area(palette.area);
         let wire = palette[(0, 0)].symbol();
         // The palette covers the full canvas width, leaving strips above and below.
         assert!(popup.x <= canvas.x && popup.right() >= canvas.right());
@@ -452,7 +456,7 @@ fn workspace_command_palette_preserves_kitty_placeholder_image_ids() {
         let initial = command_palette_frame(&mut app);
         app.modal = Some(checkpoints::Modal::commands());
         let palette = command_palette_frame(&mut app);
-        let popup = centered(palette.area, 120, 35);
+        let popup = commands::palette::area(palette.area);
         let mut placeholders = 0;
         for position in palette.area.positions().filter(|p| !popup.contains(*p)) {
             let before = &initial[position];
@@ -557,13 +561,7 @@ fn workspace_command_palette_layouts_keep_details_and_availability_readable() {
                                 .is_some()
                         );
                     } else {
-                        assert!(
-                            text.replace('│', " ")
-                                .split_whitespace()
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                                .contains("Attach an image before resizing it")
-                        );
+                        assert!(text.contains("Attach an image") && text.contains("resizing"), "{text}");
                         assert!(text.contains("[Unavailable]"));
                         assert!(
                             app.pointer
@@ -593,7 +591,7 @@ fn workspace_command_palette_layouts_keep_details_and_availability_readable() {
 }
 
 #[test]
-fn workspace_command_palette_headers_do_not_select_and_scrolling_reaches_last_action() {
+fn workspace_command_palette_context_does_not_select_and_scrolling_reaches_last_action() {
     use crossterm::event::{MouseButton, MouseEventKind as M};
     runtime().block_on(async {
         let temp = TempDir::new().unwrap();
@@ -612,7 +610,7 @@ fn workspace_command_palette_headers_do_not_select_and_scrolling_reaches_last_ac
             mouse::ListTarget::Commands,
             command_index(commands::Action::Attach),
         )).unwrap();
-        let heading = (attach.x + 3, attach.y - 1);
+        let heading = (attach.x + 3, commands::palette::area(ratatui::layout::Rect::new(0, 0, 130, 34)).y + 3);
         for kind in [M::Down(MouseButton::Left), M::Up(MouseButton::Left)] {
             app.mouse_event(
                 mouse_input(kind, heading, KeyModifiers::NONE),
@@ -640,6 +638,50 @@ fn workspace_command_palette_headers_do_not_select_and_scrolling_reaches_last_ac
         assert!(app.pointer.area(mouse::Target::Button(mouse::Action::Accept)).is_none());
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected }) if selected == command_index(commands::Action::ResizeImage)));
+        app.conversation.close().await.unwrap();
+        worker.cancel();
+    });
+}
+
+#[test]
+fn workspace_command_palette_search_selects_the_filtered_action_and_preserves_drafts() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        app.insert_text("Keep this draft 日本語");
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 199).unwrap();
+        app.modal = Some(checkpoints::Modal::commands());
+        for c in "THEME".chars() {
+            press(&mut app, KeyCode::Char(c), KeyModifiers::NONE, &worker).await;
+        }
+        let buffer = crate::tui::test_artifacts::snapshot(&mut app, "launcher-command-search");
+        let text = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
+        assert!(text.contains("1–1 of 1"));
+        assert!(text.contains("THEME "), "The query must clear the previous placeholder: {text}");
+        assert!(app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, command_index(commands::Action::Theme))).is_some());
+        assert!(app.pointer.area(mouse::Target::Row(mouse::ListTarget::Commands, 0)).is_none());
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(matches!(&app.modal, Some(checkpoints::Modal::CommandInput(input)) if input.action == commands::Action::Theme));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.command_filter, "THEME");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(app.command_filter.is_empty() && app.modal.is_some());
+        app.paste_command_filter("存在しないコマンド\n");
+        let buffer = crate::tui::test_artifacts::snapshot(&mut app, "launcher-command-no-results");
+        assert!(buffer.content.iter().map(|cell| cell.symbol()).collect::<String>().contains("No matching commands"));
+        assert!(app.pointer.area(mouse::Target::Button(mouse::Action::Accept)).is_none());
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
+        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { .. })));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        app.paste_command_filter("Preview");
+        press(&mut app, KeyCode::End, KeyModifiers::NONE, &worker).await;
+        let expected = *commands::palette::matching("Preview").last().unwrap();
+        assert!(matches!(app.modal, Some(checkpoints::Modal::Commands { selected }) if selected == expected));
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
+        assert!(app.modal.is_none());
+        assert_eq!(app.editor.lines(), ["Keep this draft 日本語"]);
+        assert!(!temp.path().join("sent-turn.txt").exists());
         app.conversation.close().await.unwrap();
         worker.cancel();
     });

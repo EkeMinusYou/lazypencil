@@ -52,7 +52,7 @@ fn palette_selection(h: &Harness) -> Option<String> {
     h.screen
         .text()
         .lines()
-        .find(|line| line.contains("▏›"))
+        .find(|line| line.contains('›') && !line.contains("Commands"))
         .map(str::to_owned)
 }
 fn command(h: &mut Harness, label: &str) -> Result {
@@ -382,8 +382,8 @@ pub fn run(
     let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
     let mut picker_open_offset = None;
     if case.starts_with("picker-") {
-        h.visible("Open a .pen file")?;
-        h.visible("nested/deep/selected.pen")?;
+        h.visible("Find a .pen file…")?;
+        h.visible("selected.pen")?;
         for label in ["Nodes", "Preview", "Agent", "Agent prepared"] {
             h.visible(label)?;
         }
@@ -394,7 +394,7 @@ pub fn run(
                 let text = h.screen.text();
                 text.contains("Ctrl+C") && text.contains("[Enter Open]")
             })?;
-            h.visible("Open a .pen file")?;
+            h.visible("Find a .pen file…")?;
         }
         assert!(!root.join("received-account-methods.jsonl").exists());
         assert!(files(root, |name| name == "session.json").is_empty());
@@ -439,7 +439,7 @@ pub fn run(
                         && text.contains("design.pen")
                         && !text.contains("Type to filter files")
                         && !text.contains("Opening…")
-                        && !text.contains("Open a .pen file")
+                        && !text.contains("Find a .pen file…")
                 })?;
                 assert!(files(root, |name| name == "session.json").is_empty());
                 assert!(!root.join("sent-turn.txt").exists());
@@ -453,13 +453,13 @@ pub fn run(
         } else if case != "picker-mouse" {
             h.key(b"/broken")?;
             h.key(b"\r")?;
-            h.visible("Open a .pen file")?;
+            h.visible("Files")?;
             h.visible("INVALID_DOCUMENT")?;
             h.key(b"\x1b")?;
             h.key(b"\x0c")?;
             h.key(b"nested")?;
             h.key(b"\r")?;
-            h.visible("deep/selected.pen")?;
+            h.visible("selected.pen")?;
             h.key(if case == "picker-unicode" {
                 "/設定".as_bytes()
             } else {
@@ -472,7 +472,7 @@ pub fn run(
     if case.starts_with("picker-") {
         h.wait("selected document workspace", 15.0, |h| {
             let text = h.screen.text();
-            !text.contains("Open a .pen file")
+            !text.contains("Find a .pen file…")
                 && text.lines().next().unwrap_or_default().contains(".pen")
         })?;
         assert_eq!(
@@ -986,6 +986,25 @@ fn command_palette(h: &mut Harness) -> Result {
     let document = fs::read(&h.document)?;
     h.paste(draft)?;
     h.draft(draft)?;
+    h.key(b"\x1bp")?;
+    h.visible("Search commands…")?;
+    h.paste("THEME")?;
+    h.visible("1–1 of 1")?;
+    h.key(b"\r")?;
+    h.visible("[Enter Run]")?;
+    h.key(b"\x1b")?;
+    h.visible("THEME")?;
+    h.key(b"\x1b")?;
+    h.visible("Search commands…")?;
+    h.paste("存在しないコマンド")?;
+    h.visible("No matching commands")?;
+    h.key(b"\r")?;
+    h.visible("No matching commands")?;
+    h.key(b"\x1b")?;
+    h.visible("Search commands…")?;
+    h.key(b"\x1b")?;
+    h.hidden("Commands")?;
+    assert_eq!(state(h)["draft"], draft);
     command(h, "Seek shader time")?;
     h.visible("Seek shader time")?;
     h.paste("NaN")?;
@@ -1016,7 +1035,7 @@ fn command_palette(h: &mut Harness) -> Result {
         h.visible("Commands")?;
         h.hidden("[Enter Run]")?;
         h.key(b"\x1b[F")?;
-        h.visible("GENERAL")?;
+        h.visible("General")?;
         h.visible("Quit")?;
         h.key(b"\x1b")?;
         h.hidden("Commands")?;
@@ -2121,8 +2140,8 @@ fn restore(h: &mut Harness, checkpoint: &Value) -> Result {
     h.draft("復元しても保持する下書き")?;
     command(h, "Browse and restore checkpoints")?;
     h.wait("checkpoint candidates", 15.0, |h| {
-        h.screen.text().contains("first-checkpoint")
-            && h.screen.text().contains("second-checkpoint")
+        let text = h.screen.text();
+        text.contains("#1 ·") && text.contains("#2 ·") && text.contains("second-checkpoint")
     })?;
     h.key(b"\x1b[B\r")?;
     h.visible("[Enter Restore]")?;
@@ -2393,12 +2412,14 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     assert!(panned.has_color([255, 0, 0, 255]) && zoomed.has_color([255, 0, 0, 255]));
     h.key(b"\x1b[20~")?;
     h.wait("configured command palette", 15.0, |h| {
-        h.screen.text().contains("Commands") && h.screen.text().contains("CONVERSATION")
+        h.screen.text().contains("Commands") && h.screen.text().contains("Conversation")
     })?;
     h.key(b"x")?;
     h.wait("quit key remains search text", 15.0, |h| {
         h.screen.text().contains("Commands") && h.screen.text().contains('x')
     })?;
+    h.key(b"\x1b")?;
+    h.visible("Search commands…")?;
     h.key(b"\x1b")?;
     h.hidden("Commands")?;
     h.key(b"\x1b[17~")?;

@@ -255,6 +255,10 @@ impl super::App {
         };
         match modal {
             Modal::Commands { selected } => {
+                if !super::commands::palette::matching(&self.command_filter).contains(&selected) {
+                    self.modal = Some(Modal::Commands { selected });
+                    return Ok(false);
+                }
                 let command = &super::commands::COMMANDS[selected];
                 if let Some(reason) = self.command_unavailable(command) {
                     self.modal = Some(Modal::Commands { selected });
@@ -358,20 +362,44 @@ impl super::App {
                     input.error = None;
                 }
             }
-            Modal::Commands { selected } => match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => return Ok(false),
-                KeyCode::Up | KeyCode::Char('k') => *selected = selected.saturating_sub(1),
-                KeyCode::Down | KeyCode::Char('j') => {
-                    *selected = (*selected + 1).min(super::commands::COMMANDS.len() - 1)
+            Modal::Commands { selected } => {
+                let matches = super::commands::palette::matching(&self.command_filter);
+                let position = matches.iter().position(|i| i == selected).unwrap_or(0);
+                let next = match key.code {
+                    KeyCode::Esc if !self.command_filter.is_empty() => {
+                        self.command_filter.clear();
+                        Some(0)
+                    }
+                    KeyCode::Esc => return Ok(false),
+                    KeyCode::Up => Some(position.saturating_sub(1)),
+                    KeyCode::Down => Some((position + 1).min(matches.len().saturating_sub(1))),
+                    KeyCode::Home => Some(0),
+                    KeyCode::End => Some(matches.len().saturating_sub(1)),
+                    KeyCode::PageDown => Some((position + 8).min(matches.len().saturating_sub(1))),
+                    KeyCode::PageUp => Some(position.saturating_sub(8)),
+                    KeyCode::Backspace => {
+                        self.command_filter.pop();
+                        None
+                    }
+                    KeyCode::Char(c)
+                        if !key.modifiers.intersects(
+                            crossterm::event::KeyModifiers::CONTROL
+                                | crossterm::event::KeyModifiers::ALT,
+                        ) =>
+                    {
+                        if self.command_filter.len() + c.len_utf8() <= 4096 && !c.is_control() {
+                            self.command_filter.push(c);
+                        }
+                        None
+                    }
+                    _ => Some(position),
+                };
+                let matches = super::commands::palette::matching(&self.command_filter);
+                if let Some(index) = matches.get(next.unwrap_or(0)) {
+                    *selected = *index;
                 }
-                KeyCode::Home => *selected = 0,
-                KeyCode::End => *selected = super::commands::COMMANDS.len() - 1,
-                KeyCode::PageDown => {
-                    *selected = (*selected + 8).min(super::commands::COMMANDS.len() - 1)
-                }
-                KeyCode::PageUp => *selected = selected.saturating_sub(8),
-                _ => {}
-            },
+                self.pointer.reattach(super::mouse::ListTarget::Commands);
+            }
             Modal::Loading { .. } => {
                 if key.code == KeyCode::Esc {
                     self.saved_return = None;
@@ -447,7 +475,7 @@ impl super::App {
             layout::{Constraint, Layout},
             style::{Modifier, Style},
             text::Line,
-            widgets::{List, ListItem, Paragraph, Wrap},
+            widgets::{List, Paragraph, Wrap},
         };
         if matches!(self.modal, Some(Modal::Commands { .. })) {
             self.draw_command_palette(frame);
@@ -475,7 +503,7 @@ impl super::App {
             Modal::Confirm(_) => "Review restoration",
             _ => unreachable!(),
         };
-        let shell = modal::Shell::draw(frame, popup, title, 2);
+        let shell = modal::Shell::draw(frame, popup, "Checkpoints", title, 2);
         shell.close(frame, &mut self.pointer);
         let colors = theme::colors();
         match modal {
@@ -492,18 +520,22 @@ impl super::App {
                 );
             }
             Modal::History(page) => {
-                let mut lines = vec![Line::styled(
-                    format!(
-                        "Current document: {} · dependencies: {}",
+                shell.context(
+                    frame,
+                    &format!(
+                        "Document {} · dependencies {}",
                         short(&page.revision),
                         short(&page.dependency_revision)
                     ),
-                    Style::default().fg(colors.secondary),
-                )];
-                lines.push(Line::styled(
-                    format!(
-                        "Page {} · older checkpoints {}",
+                    &format!(
+                        "Page {} · {} entries",
                         page.cursors.len(),
+                        page.entries.len()
+                    ),
+                );
+                let mut lines = vec![Line::styled(
+                    format!(
+                        "Newest first · older checkpoints {}",
                         if page.next_before.is_some() {
                             "available"
                         } else {
@@ -511,7 +543,7 @@ impl super::App {
                         }
                     ),
                     Style::default().fg(colors.secondary),
-                ));
+                )];
                 if let Some(notice) = &page.notice {
                     lines.push(Line::styled(
                         notice.clone(),
@@ -537,24 +569,55 @@ impl super::App {
                         sections[2],
                     );
                 } else {
-                    let items = page.entries.iter().map(|entry| {
-                        ListItem::new(super::clean(&format!(
-                            "#{} · {} · {} · {}",
-                            entry.sequence,
-                            entry.created_at,
-                            short(&entry.revision),
-                            entry.request_id
-                        )))
+                    let (list, details) = if sections[2].width >= 96 {
+                        let columns = Layout::horizontal([
+                            Constraint::Percentage(64),
+                            Constraint::Percentage(36),
+                        ])
+                        .split(sections[2]);
+                        (columns[0], Some(modal::detail_surface(frame, columns[1])))
+                    } else {
+                        (sections[2], None)
+                    };
+                    let items = page.entries.iter().enumerate().map(|(index, entry)| {
+                        modal::result(
+                            &super::clean(&format!("#{} · {}", entry.sequence, entry.created_at)),
+                            &short(&entry.revision),
+                            list.width,
+                            index == page.selected,
+                        )
                     });
                     self.pointer.modal_list(
                         frame,
-                        List::new(items)
-                            .highlight_style(theme::modal_selected())
-                            .highlight_symbol("▏› "),
-                        sections[2],
+                        List::new(items).highlight_symbol("› "),
+                        list,
                         page.selected,
                         mouse::ListTarget::Checkpoints,
                     );
+                    if let Some(details) = details {
+                        let entry = &page.entries[page.selected];
+                        frame.render_widget(
+                            Paragraph::new(vec![
+                                Line::styled("CHECKPOINT", modal::action_style()),
+                                Line::default(),
+                                Line::raw(format!("#{}", entry.sequence)),
+                                Line::raw(entry.created_at.clone()),
+                                Line::default(),
+                                Line::styled("REVISION", Style::default().fg(colors.secondary)),
+                                Line::raw(entry.revision.clone()),
+                                Line::default(),
+                                Line::styled("REQUEST", Style::default().fg(colors.secondary)),
+                                Line::raw(super::clean(&entry.request_id)),
+                                Line::default(),
+                                Line::styled(
+                                    "Enter reviews the restoration. Your draft is preserved.",
+                                    Style::default().fg(colors.secondary),
+                                ),
+                            ])
+                            .wrap(Wrap { trim: false }),
+                            details,
+                        );
+                    }
                     modal::action(frame, shell.footer, "[Enter Review]", &mut self.pointer);
                 }
                 let hints = super::Rect::new(
@@ -573,6 +636,11 @@ impl super::App {
             }
             Modal::Confirm(page) => {
                 let entry = &page.entries[page.selected];
+                shell.context(
+                    frame,
+                    &format!("Checkpoint #{} · {}", entry.sequence, entry.created_at),
+                    "Review",
+                );
                 let body = modal::detail_surface(frame, shell.body);
                 let text = vec![
                     Line::styled(

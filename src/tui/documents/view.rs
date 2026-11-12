@@ -1,12 +1,12 @@
 //! The document modal shares the workspace's panels, palette and selection style.
-use super::super::{centered, clean, composer, modal, panel, theme, workspace};
+use super::super::{clean, composer, modal, panel, theme, workspace};
 use crate::{config::keys::PanelLayout, documents::Listing};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{List, ListState, Paragraph, Wrap},
 };
 use std::path::{Path, PathBuf};
 
@@ -44,20 +44,29 @@ impl View<'_> {
         }
         empty_workspace(frame, self.layout, self.agent);
         let area = frame.area();
-        let popup = popup(area);
-        let shell = modal::Shell::draw(frame, popup, "Open a .pen file", 2);
+        let popup = popup(area, self.paths.len(), !self.notice.is_empty());
+        let shell = modal::Shell::draw(frame, popup, "Files", "Find a .pen file…", 2);
+        shell.close(frame, pointer);
         let inner = shell.body;
-        frame.render_widget(
-            Paragraph::new(format!(
-                "{} / {} files",
-                self.paths.len(),
-                self.listing.documents.len()
-            ))
-            .style(Style::default().fg(theme::colors().secondary))
-            .right_aligned(),
-            shell.header,
+        let input = self.path.unwrap_or(self.filter);
+        let label = if self.path.is_some() { "Path" } else { "Files" };
+        let input_area = shell.heading(frame, label, "", false);
+        let input = input_tail(input, usize::from(input_area.width.saturating_sub(1)));
+        shell.heading(
+            frame,
+            label,
+            if input.is_empty() {
+                if self.path.is_some() {
+                    "Enter a file or folder path…"
+                } else {
+                    "Find a .pen file…"
+                }
+            } else {
+                &input
+            },
+            input.is_empty(),
         );
-        if inner.height < 6 || inner.width < 12 {
+        if inner.height < 2 || inner.width < 12 {
             frame.render_widget(
                 Paragraph::new("Resize the terminal to choose a document. Ctrl+C exits.")
                     .wrap(Wrap { trim: false }),
@@ -66,65 +75,24 @@ impl View<'_> {
             pointer.clear();
             return;
         }
-        let input_height = if inner.height >= 10 { 3 } else { 1 };
         let sections = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(u16::from(inner.height >= 12)),
-            Constraint::Length(input_height),
-            Constraint::Length(1),
             Constraint::Min(1),
-            Constraint::Length(if self.notice.is_empty() { 1 } else { 3 }),
+            Constraint::Length(
+                if self.notice.is_empty() { 1 } else { 3 }.min(inner.height.saturating_sub(1)),
+            ),
         ])
         .split(inner);
-        frame.render_widget(
-            Paragraph::new(fit_end(
+        shell.context(
+            frame,
+            &fit_end(
                 &clean(&self.listing.root.display().to_string()),
-                sections[0].width as usize,
-            ))
-            .style(Style::default().fg(theme::colors().secondary)),
-            sections[0],
-        );
-        let input = self.path.unwrap_or(self.filter);
-        let label = if self.path.is_some() {
-            "Path"
-        } else {
-            "Filter"
-        };
-        let colors = theme::colors();
-        let block = if input_height == 3 {
-            Block::bordered()
-                .border_set(ratatui::symbols::border::ROUNDED)
-                .border_style(Style::default().fg(colors.frame))
-                .padding(Padding::horizontal(1))
-        } else {
-            Block::default().padding(Padding::horizontal(1))
-        };
-        let input_area = block.inner(sections[2]);
-        frame.render_widget(block.style(theme::base()), sections[2]);
-        let label_width = Line::raw(label).width() + 2;
-        let available = usize::from(input_area.width).saturating_sub(label_width + 1);
-        let input = input_tail(input, available);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    format!("{label}  "),
-                    Style::default().fg(colors.key).add_modifier(Modifier::BOLD),
-                ),
-                if input.is_empty() {
-                    Span::styled(
-                        if self.path.is_some() {
-                            "Enter a file or folder path…"
-                        } else {
-                            "Type to filter files…"
-                        },
-                        Style::default().fg(colors.muted),
-                    )
-                } else {
-                    Span::raw(input.clone())
-                },
-            ]))
-            .style(theme::base()),
-            input_area,
+                usize::from(shell.context.width.saturating_sub(24)),
+            ),
+            &format!(
+                "{} shown · {} found",
+                self.paths.len().min(usize::from(sections[0].height)),
+                self.listing.documents.len()
+            ),
         );
         state.select((!self.paths.is_empty()).then_some(self.selected));
         if self.paths.is_empty() {
@@ -135,24 +103,29 @@ impl View<'_> {
             };
             frame.render_widget(
                 Paragraph::new(message).style(Style::default().fg(theme::colors().secondary)),
-                sections[4],
+                sections[0],
             );
         } else {
-            let width = usize::from(sections[4].width).saturating_sub(2);
             let items: Vec<_> = self
                 .paths
                 .iter()
-                .map(|path| {
-                    ListItem::new(Line::from(vec![
-                        Span::styled("✎ ", Style::default().fg(theme::colors().nodes)),
-                        Span::raw(fit_end(&clean(&path.to_string_lossy()), width)),
-                    ]))
+                .enumerate()
+                .map(|(index, path)| {
+                    let name = clean(&path.file_name().unwrap_or_default().to_string_lossy());
+                    let parent = path
+                        .parent()
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .map_or_else(
+                            || "./".to_string(),
+                            |p| format!("{}/", clean(&p.to_string_lossy())),
+                        );
+                    modal::result(&name, &parent, sections[0].width, index == self.selected)
                 })
                 .collect();
             pointer.list(
                 frame,
-                List::new(items).highlight_style(theme::node_selected(true)),
-                sections[4],
+                List::new(items).highlight_symbol("› "),
+                sections[0],
                 state,
                 (1, super::super::mouse::ListTarget::Documents),
             );
@@ -189,31 +162,56 @@ impl View<'_> {
         }
         frame.render_widget(
             Paragraph::new(messages).wrap(Wrap { trim: false }),
-            sections[5],
+            sections[1],
         );
         frame.render_widget(
             Paragraph::new(vec![
                 modal::hints(&[("↑/↓", "Select"), ("Esc", "Clear")]),
-                modal::hints(&[("Ctrl+L", "Path"), ("Ctrl+C", "Quit")]),
+                modal::hints(&[
+                    (
+                        "Ctrl+L",
+                        if self.path.is_some() {
+                            "Filter"
+                        } else {
+                            "Path"
+                        },
+                    ),
+                    ("Ctrl+C", "Quit"),
+                ]),
             ]),
             shell.footer,
         );
         let footer = Rect::new(shell.footer.x, shell.footer.y, shell.footer.width, 1);
-        modal::action(frame, footer, "[Enter Open]", pointer);
+        if self.path.is_some() || !self.paths.is_empty() {
+            modal::action(
+                frame,
+                footer,
+                if self.path.is_some() {
+                    "[Enter Open path]"
+                } else {
+                    "[Enter Open]"
+                },
+                pointer,
+            );
+        }
         pointer.button(
             frame,
             Rect::new(
-                shell.footer.right().saturating_sub(6),
+                shell.footer.right().saturating_sub(8),
                 shell.footer.y + 1,
-                6,
+                8,
                 1,
             ),
-            "[Path]",
+            if self.path.is_some() {
+                "[Filter]"
+            } else {
+                "[Path]"
+            },
             super::super::mouse::Action::DocumentPath,
         );
         pointer.finish();
         if input_area.width > 0 && input_area.height > 0 {
-            let x = label_width + Line::raw(input).width();
+            let x = Line::raw(input).width();
             frame.set_cursor_position((
                 input_area.x + x.min(usize::from(input_area.width - 1)) as u16,
                 input_area.y,
@@ -222,15 +220,14 @@ impl View<'_> {
     }
 }
 
-fn popup(area: Rect) -> Rect {
-    if area.height <= 20 {
-        return modal::area(area);
-    }
-    centered(
-        area,
-        area.width.saturating_sub(6).min(94),
-        area.height.saturating_sub(6).min(22),
-    )
+fn popup(area: Rect, count: usize, notice: bool) -> Rect {
+    let mut area = modal::area(area);
+    let height = (count.min(12) as u16 + 10 + if notice { 2 } else { 0 })
+        .max(12)
+        .min(area.height);
+    area.y += (area.height - height) / 2;
+    area.height = height;
+    area
 }
 
 pub(super) fn opening(frame: &mut Frame, layout: &PanelLayout, path: &Path, agent: Option<&str>) {
@@ -470,11 +467,11 @@ mod tests {
         ] {
             let _theme = theme::activate(preset, Some(background));
             let (buffer, cursor) = render(130, 34, &format!("document-picker-theme-{name}"));
-            assert!(text(&buffer).contains("Open a .pen file"));
+            assert!(text(&buffer).contains("Files"));
             assert_eq!(buffer[(cursor.x, cursor.y)].bg, theme::colors().canvas);
             assert!(buffer.content.iter().any(|cell| {
                 cell.bg == theme::colors().selected_background
-                    && cell.fg == theme::colors().node_selection
+                    && cell.fg == theme::colors().preview
                     && cell.symbol() == "s"
             }));
         }
@@ -490,8 +487,9 @@ mod tests {
             "Nodes",
             "Preview",
             "Agent",
-            "Open a .pen file",
-            "screens/settings.pen",
+            "Files",
+            "settings.pen",
+            "screens/",
             "Search complete",
         ] {
             assert!(screen.contains(label), "Missing {label}:\n{screen}");
@@ -499,7 +497,7 @@ mod tests {
         for label in ["Loading preview", "connecting", "Working", "0 nodes"] {
             assert!(!screen.contains(label));
         }
-        let popup = centered(buffer.area, 94, 22);
+        let popup = popup(buffer.area, 3, false);
         assert_eq!(buffer[(popup.x, popup.y)].symbol(), "╭");
         assert_eq!(buffer[(popup.x, popup.y)].fg, theme::colors().frame);
         let selected = buffer
@@ -507,10 +505,10 @@ mod tests {
             .iter()
             .find(|cell| cell.bg == theme::colors().selected_background && cell.symbol() == "s")
             .expect("Workspace selection palette");
-        assert_eq!(selected.fg, theme::colors().node_selection);
+        assert_eq!(selected.fg, theme::colors().preview);
         assert_eq!(
             buffer[(popup.x + 1, popup.bottom() - 2)].bg,
-            theme::colors().canvas
+            theme::colors().prompt_background
         );
         assert_eq!(buffer[(0, 0)].bg, theme::colors().canvas);
         assert!(popup.contains(cursor));
@@ -523,7 +521,7 @@ mod tests {
         for (width, height) in [(80, 24), (50, 16), (40, 12), (20, 8), (1, 1)] {
             let (buffer, _) = render(width, height, &format!("document-picker-{width}x{height}"));
             if width >= 50 {
-                assert!(text(&buffer).contains("Open a .pen file"));
+                assert!(text(&buffer).contains("Files"));
             }
         }
         let mut listing = listing();
@@ -715,12 +713,10 @@ mod tests {
                         );
                     }
                 }
-                let area = popup(buffer.area);
-                assert_ne!(buffer[(area.x, area.y)].symbol(), "╭");
             }
             assert!(
                 !screen.contains("Opening…")
-                    && !screen.contains("Open a .pen file")
+                    && !screen.contains("Files")
                     && !screen.contains("Filter ›")
             );
         }

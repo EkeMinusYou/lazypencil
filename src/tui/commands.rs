@@ -242,60 +242,37 @@ impl Input {
         pointer: &mut mouse::Pointer,
     ) {
         let command = self.action.command();
-        let shell = modal::Shell::draw(frame, area, command.label, 2);
+        let shell = modal::Shell::draw(frame, area, "Commands", command.label, 2);
         shell.close(frame, pointer);
+        shell.heading(frame, "Commands", command.label, false);
+        shell.context(frame, &command.usage(), "Arguments");
         let colors = theme::colors();
         let body = shell.body;
-        let wide = body.width >= 96 && body.height >= 16;
-        let (input, details_area) = if wide {
-            let columns = Layout::horizontal([
-                Constraint::Fill(3),
-                Constraint::Length(3),
-                Constraint::Fill(2),
-            ])
-            .split(body);
-            (columns[0], modal::detail_surface(frame, columns[2]))
-        } else {
-            let rows = Layout::vertical([
-                Constraint::Length(if body.height >= 12 { 6 } else { 3 }),
-                Constraint::Length(1),
-                Constraint::Min(2),
-            ])
-            .split(body);
-            (rows[2], rows[0])
-        };
-        let details = Paragraph::new(vec![
-            Line::styled(
-                command.category.to_uppercase(),
-                Style::default()
-                    .fg(colors.preview)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::styled(command.description, Style::default().fg(colors.secondary)),
-            Line::default(),
-            Line::styled(
-                "SLASH COMMAND",
-                Style::default()
-                    .fg(colors.secondary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Line::styled(command.usage(), Style::default().fg(colors.preview)),
+        let description = Paragraph::new(command.description)
+            .style(Style::default().fg(colors.secondary))
+            .wrap(Wrap { trim: false });
+        let description_rows = description
+            .line_count(body.width)
+            .min(usize::from(body.height.saturating_sub(4))) as u16;
+        let sections = Layout::vertical([
+            Constraint::Length(description_rows),
+            Constraint::Length(u16::from(body.height >= 8)),
+            Constraint::Min(3),
+            Constraint::Length(u16::from(body.height >= 10)),
         ])
-        .wrap(Wrap { trim: false });
-        if !wide && body.height < 12 {
-            frame.render_widget(
-                Paragraph::new(vec![
-                    Line::styled(command.usage(), Style::default().fg(colors.preview)),
-                    Line::styled(command.description, Style::default().fg(colors.secondary)),
-                ])
-                .wrap(Wrap { trim: false }),
-                details_area,
-            );
+        .split(body);
+        frame.render_widget(description, sections[0]);
+        let hint = if self.action == Action::Theme {
+            "Accepted values: auto, dark, light, monochrome.".to_string()
         } else {
-            frame.render_widget(details, details_area);
-        }
+            format!("Arguments: {}", command.arguments)
+        };
+        frame.render_widget(
+            Paragraph::new(hint).style(Style::default().fg(colors.secondary)),
+            sections[3],
+        );
+        let input = sections[2];
         let regions = Layout::vertical([
-            Constraint::Length(u16::from(input.height >= 6)),
             Constraint::Min(3),
             Constraint::Length(if self.error.is_some() {
                 2.min(input.height.saturating_sub(3))
@@ -303,16 +280,10 @@ impl Input {
                 0
             }),
         ])
-        .spacing(u16::from(input.height >= 8))
+        .spacing(u16::from(self.error.is_some() && input.height >= 8))
         .split(input);
-        frame.render_widget(
-            Paragraph::new("ARGUMENTS").style(
-                Style::default()
-                    .fg(colors.secondary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            regions[0],
-        );
+        let editor_area = regions[0];
+        let error_area = regions[1];
         self.editor.set_style(
             Style::default()
                 .fg(colors.text)
@@ -330,10 +301,10 @@ impl Input {
         } else {
             Style::default()
         });
-        frame.render_widget(&self.editor, regions[1]);
+        frame.render_widget(&self.editor, editor_area);
         let mut cursor = None;
-        for y in regions[1].y..regions[1].bottom() {
-            for x in regions[1].x..regions[1].right() {
+        for y in editor_area.y..editor_area.bottom() {
+            for x in editor_area.x..editor_area.right() {
                 let cell = &mut frame.buffer_mut()[(x, y)];
                 if cell.modifier.contains(Modifier::HIDDEN) {
                     cursor.get_or_insert((x, y));
@@ -349,7 +320,7 @@ impl Input {
                 Paragraph::new(error.as_str())
                     .style(Style::default().fg(colors.error))
                     .wrap(Wrap { trim: false }),
-                regions[2],
+                error_area,
             );
         }
         let hints = Rect::new(
@@ -538,7 +509,10 @@ impl App {
                 self.set_status(status.into());
             }
             Action::Checkpoints => self.open_history(vec![None])?,
-            Action::Commands => self.modal = Some(checkpoints::Modal::commands()),
+            Action::Commands => {
+                self.command_filter.clear();
+                self.modal = Some(checkpoints::Modal::commands());
+            }
             Action::Help => self.show_help(),
             Action::Quit => return Ok(true),
         }

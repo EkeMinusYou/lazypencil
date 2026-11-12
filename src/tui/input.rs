@@ -42,7 +42,11 @@ impl App {
         let typing = self.focus == Focus::Prompt
             || self.searching
             || self.preview_search.editing
-            || matches!(self.modal, Some(checkpoints::Modal::CommandInput(_)));
+            || matches!(
+                self.modal,
+                Some(checkpoints::Modal::CommandInput(_) | checkpoints::Modal::Commands { .. })
+            )
+            || matches!(&self.modal, Some(checkpoints::Modal::Saved(page)) if page.editing_filter());
         let global = |navigation: &crate::config::keys::NavigationKeys, action| {
             if typing {
                 navigation.matches_while_typing(action, key)
@@ -58,6 +62,7 @@ impl App {
                     task.cancel.cancel();
                 }
             } else {
+                self.command_filter.clear();
                 self.modal = Some(checkpoints::Modal::commands());
             }
             return Ok(false);

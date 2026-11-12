@@ -21,7 +21,7 @@ fn modal_review_layouts(app: &mut App, name: &str, title: &str) {
                 .map(|cell| cell.symbol())
                 .collect::<String>();
             assert!(screen.contains(title), "{name} {width}x{height}: {screen}");
-            assert!(screen.contains("[Close]"));
+            assert!(screen.contains("[Esc]"));
             crate::tui::test_artifacts::artifact(
                 buffer,
                 &format!("review-{name}-{theme:?}-{width}x{height}"),
@@ -143,7 +143,7 @@ fn modal_workflows_keep_their_content_and_controls_visible_in_each_theme_and_siz
                             if workflow == "turns" { page.location = saved::Location::Turns("session-0123456789abcdef".into()); }
                             if matches!(workflow, "log" | "raw") { page.location = saved::Location::Text { session: "session-0123456789abcdef".into(), turn: "turn-0123456789abcdef".into(), raw: workflow == "raw" }; }
                             app.modal = Some(checkpoints::Modal::Saved(Box::new(page)));
-                            match workflow { "sessions" => "Saved conversations", "turns" => "Saved turns", _ => "Saved log" }
+                            match workflow { "sessions" => "Conversations", "turns" => "Turns", _ => "Saved log" }
                         }
                         "help" => { app.show_help(); "Help" }
                         "view" => { app.pointer.more = true; "View controls" }
@@ -160,7 +160,7 @@ fn modal_workflows_keep_their_content_and_controls_visible_in_each_theme_and_siz
                     let buffer = terminal.backend().buffer();
                     let screen = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
                     assert!(screen.contains(title), "{workflow} {width}x{height}: {screen}");
-                    assert!(screen.contains("[Close]"));
+                    assert!(screen.contains("[Esc]"));
                     if matches!(workflow, "log" | "raw") { assert!(screen.contains("Saved response"), "{screen}"); }
                     if workflow == "view" { assert!(app.pointer.area(mouse::Target::Button(mouse::Action::ToggleAgent)).is_some()); }
                     crate::tui::test_artifacts::artifact(buffer, &format!("workflow-{workflow}-{theme:?}-{width}x{height}"));

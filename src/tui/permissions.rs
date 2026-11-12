@@ -363,21 +363,22 @@ impl App {
             Step::Waiting => "Permission change pending",
             Step::Error => "Permissions could not be changed",
         };
-        let shell = modal::Shell::draw(frame, popup, title, 3);
-        let inner = shell.body;
-        let parts = Layout::vertical([Constraint::Length(2), Constraint::Min(3)]).split(inner);
+        let shell = modal::Shell::draw(frame, popup, "Permissions", title, 3);
         let modes = self.conversation.modes();
         let current = modes.current.as_deref().unwrap_or("not confirmed");
-        frame.render_widget(
-            Paragraph::new(format!(
+        shell.context(
+            frame,
+            &format!(
                 "{:?} · Current: {} · Source: {}",
                 self.conversation.settings().agent,
                 clean(current),
                 self.conversation.mode_source()
-            ))
-            .style(Style::default().fg(colors.secondary))
-            .wrap(Wrap { trim: false }),
-            parts[0],
+            ),
+            match ui.step {
+                Step::Modes => "Choose mode",
+                Step::Scope => "Apply to",
+                _ => "Review",
+            },
         );
         let selected = if ui.step == Step::Modes {
             modes.available.get(ui.selected)
@@ -385,7 +386,7 @@ impl App {
             ui.chosen.as_ref()
         };
         let mode = selected.map(|m| m.id.as_str()).unwrap_or("not available");
-        let body = parts[1];
+        let body = shell.body;
         let footer_parts =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(shell.footer);
         let mut details = String::new();
@@ -451,7 +452,7 @@ impl App {
             frame.render_stateful_widget(
                 List::new(choices)
                     .highlight_style(theme::modal_selected())
-                    .highlight_symbol("▏› "),
+                    .highlight_symbol("› "),
                 list,
                 &mut ui.state,
             );
@@ -744,7 +745,11 @@ impl App {
         }
         let close = shell.close;
         frame.render_widget(
-            Paragraph::new("[Close]").style(Style::default().fg(colors.key)),
+            Paragraph::new("[Esc]").style(
+                Style::default()
+                    .fg(colors.secondary)
+                    .bg(colors.user_background),
+            ),
             close,
         );
         self.pointer
