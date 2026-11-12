@@ -208,7 +208,8 @@ impl App {
         let gap_space = inner
             .height
             .saturating_sub(context_rows + activity_rows + 4);
-        let history_gap = u16::from(!self.log.is_empty() && gap_space > 0);
+        let history_gap =
+            u16::from(!(self.log.is_empty() && self.saved_log.is_empty()) && gap_space > 0);
         let context_gap = u16::from(context_rows > 0 && gap_space > history_gap);
         let prompt_space = inner
             .height

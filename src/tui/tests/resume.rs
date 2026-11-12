@@ -54,6 +54,21 @@ fn restored_history_opens_at_the_latest_visible_message_without_scrolling() {
             );
             assert!(!text.contains("OLDEST"));
             assert_eq!(app.scroll, 0);
+            let buffer = terminal.backend().buffer();
+            let (x, y) = (0..buffer.area.height)
+                .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+                .find(|&(x, y)| {
+                    "LATEST_MESSAGE".chars().enumerate().all(|(offset, letter)| {
+                        x + (offset as u16) < buffer.area.width
+                            && buffer[(x + offset as u16, y)].symbol() == letter.to_string()
+                    })
+                })
+                .unwrap();
+            assert_eq!(
+                buffer[(x, y + 1)].symbol(),
+                " ",
+                "Restored history must keep a blank row above the prompt"
+            );
         }
         assert!(
             app.saved_history.is_some(),
