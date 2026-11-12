@@ -315,12 +315,15 @@ queue/execution duration fields.
 
 Inside a Herdr pane, conversation activity appears as `working`, waiting for a
 permission decision as `blocked`, and readiness for another request as `idle`.
-The integration is automatic when Herdr supplies its pane environment. It reports
-activity rather than conversation contents, and failures to update the sidebar
-leave the design session running.
+The integration is automatic in Herdr.app (`herdr-core`, with
+`HC_TERMINAL_ID`).
+Herdr.app receives OSC 7501 reports through the controlling terminal, including
+`done` when a turn finishes and `clear` on exit. Redirected CLI output remains
+free of status sequences. Reports contain activity rather than conversation
+contents, and failures to update the sidebar leave the design session running.
 
-See [Herdr's integration reference](https://herdr.dev/tui/docs/add-herdr-support/)
-for sidebar state and notifications.
+See [herdr-core's status reference](https://github.com/herdrdev/herdr-core/blob/master/schema/README.md#status)
+for the reporting protocol.
 
 ## Library embedding and development
 

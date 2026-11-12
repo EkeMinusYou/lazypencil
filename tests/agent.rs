@@ -1022,54 +1022,114 @@ fn cli_output(directory: &TempDir, mode: &str, extra: &[&str], json: bool) -> Ou
         .unwrap()
 }
 
+#[cfg(unix)]
 #[test]
-fn herdr_cli_reports_only_inside_herdr_and_ignores_notification_failures() {
-    for environment in [None, Some("0"), Some("1")] {
-        for pane in [None, Some("w1:p1")] {
-            let directory = TempDir::new().unwrap();
-            let binary = directory
-                .path()
-                .join(format!("herdr{}", std::env::consts::EXE_SUFFIX));
-            let marker = directory.path().join("herdr-called");
-            fixture_support::process(
-                &binary,
-                json!({
-                    "marker_file":marker, "status":1,
-                    "stdout":"HERDR_PRIVATE_NOISE", "stderr":"HERDR_PRIVATE_NOISE",
-                }),
+fn herdr_core_cli_reports_to_the_terminal_while_preserving_redirected_output() {
+    use std::{
+        fs::File,
+        io::{ErrorKind, Read},
+        os::{fd::FromRawFd, unix::process::CommandExt},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
+    for core in [None, Some(""), Some("t7")] {
+        let directory = TempDir::new().unwrap();
+        let (mut master_fd, mut slave_fd) = (-1, -1);
+        assert_eq!(
+            unsafe {
+                libc::openpty(
+                    &mut master_fd,
+                    &mut slave_fd,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let mut master = unsafe { File::from_raw_fd(master_fd) };
+        let _slave = unsafe { File::from_raw_fd(slave_fd) };
+        for fd in [master_fd, slave_fd] {
+            assert_eq!(
+                unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) },
+                0
             );
-            let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
-            command
-                .env_remove("HERDR_ENV")
-                .env_remove("HERDR_PANE_ID")
-                .env("HERDR_BIN_PATH", &binary);
-            if let Some(environment) = environment {
-                command.env("HERDR_ENV", environment);
+        }
+        let flags = unsafe { libc::fcntl(master_fd, libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_eq!(
+            unsafe { libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) },
+            0
+        );
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        command.env_remove("HC_TERMINAL_ID");
+        if let Some(core) = core {
+            command.env("HC_TERMINAL_ID", core);
+        }
+        command
+            .arg("--data-dir")
+            .arg(directory.path().join("data"))
+            .args(["--json", "prompt"])
+            .arg(directory.path().join("design.pen"))
+            .args(["--create", "--non-interactive", "--adapter"])
+            .arg(helper())
+            .args([
+                "--adapter-arg=acp",
+                "--adapter-arg=echo",
+                "Test Herdr Core integration",
+            ]);
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setsid() < 0 || libc::ioctl(slave_fd, libc::TIOCSCTTY as _, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        // A session leader can drain its terminal on exit. Read while waiting
+        // rather than leaving its reports queued until after it has exited.
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopping = stopped.clone();
+        let reader = std::thread::spawn(move || {
+            let mut reports = Vec::new();
+            let mut buffer = [0; 1024];
+            loop {
+                match master.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(count) => reports.extend_from_slice(&buffer[..count]),
+                    Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        if stopping.load(Ordering::Acquire) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("Cannot read terminal reports: {error}"),
+                }
             }
-            if let Some(pane) = pane {
-                command.env("HERDR_PANE_ID", pane);
-            }
-            command
-                .arg("--data-dir")
-                .arg(directory.path().join("data"))
-                .args(["--json", "prompt"])
-                .arg(directory.path().join("design.pen"))
-                .args(["--create", "--non-interactive", "--adapter"])
-                .arg(helper())
-                .args([
-                    "--adapter-arg=acp",
-                    "--adapter-arg=echo",
-                    "Test Herdr integration",
-                ]);
-            let output = fixture_support::output(&mut command, Duration::from_secs(15));
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
+            reports
+        });
+        let output = fixture_support::output(&mut command, Duration::from_secs(15));
+        stopped.store(true, Ordering::Release);
+        let reports = reader.join().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(events(&output).last().unwrap()["type"], "complete");
+        assert!(!output.stdout.contains(&0x1b));
+        assert!(!output.stderr.contains(&0x1b));
+        if core == Some("t7") {
+            assert_eq!(
+                reports,
+                b"\x1b]7501;state=working:app=lazypencil\x1b\\\x1b]7501;state=done:app=lazypencil\x1b\\\x1b]7501;state=clear:app=lazypencil\x1b\\"
             );
-            assert_eq!(events(&output).last().unwrap()["type"], "complete");
-            assert!(!String::from_utf8_lossy(&output.stderr).contains("HERDR_PRIVATE_NOISE"));
-            assert_eq!(marker.exists(), environment == Some("1") && pane.is_some());
+        } else {
+            assert!(reports.is_empty());
         }
     }
 }
