@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7
+
+- Keep a blank row between restored conversation history and the prompt, matching newly received messages.
+- Remove discarded icon designs and the unused icon document from the source distribution.
+
 ## 0.2.6
 
 - Add `lazypencil demo [FILE]` to create an editable dashboard without an AI connection or runtime downloads, preserving existing destination files.
