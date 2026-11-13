@@ -23,6 +23,8 @@ Use validate_document independently of a UI or attached issue summary. Read curr
 
 Warnings need interpretation: an intentional clipped input value can differ from an accidental clipped heading. UNKNOWN_PROPERTY identifies an unrecognized property, often a spelling error; its stored presence does not establish an effect. Arbitrary keys inside metadata and script inputs are not node-property warnings. The complete flag covers the requested checks, not every paint or dynamic acquisition.
 
+For RESOURCE_LIMIT from component or variable expansion, see Expansion limits in [component-import](component-import.md); the budget applies to ordinary calculations as well as imports.
+
 After a repair, rerun the applicable checks on current inputs. For layout validation, omit the pre-edit snapshot_id and cursor, then inspect the relevant diagnostic pages and images.
 
 ## Retained calculations
