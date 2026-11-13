@@ -44,12 +44,12 @@ brew install --cask ekeminusyou/lazypencil/lazypencil
 
 To update an existing installation, run `brew upgrade --cask lazypencil`.
 
-For manual installation, download `lazypencil-0.2.7-aarch64-apple-darwin.tar.gz`
+For manual installation, download `lazypencil-0.2.8-aarch64-apple-darwin.tar.gz`
 from [GitHub Releases](https://github.com/EkeMinusYou/lazypencil/releases), then:
 
 ```sh
-tar -xzf lazypencil-0.2.7-aarch64-apple-darwin.tar.gz
-export PATH="$PWD/lazypencil-0.2.7-aarch64-apple-darwin/bin:$PATH"
+tar -xzf lazypencil-0.2.8-aarch64-apple-darwin.tar.gz
+export PATH="$PWD/lazypencil-0.2.8-aarch64-apple-darwin/bin:$PATH"
 lazypencil --version
 ```
 
