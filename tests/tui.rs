@@ -440,6 +440,12 @@ fn real_pty_selects_saved_conversations_and_keeps_both_drafts_without_starting_a
 }
 
 fn run_pty_case(case: &str) {
+    // Native high-DPI rendering must not compete with another case's bounded
+    // script/runtime deadlines. Keep the harness threads for non-PTY tests.
+    static PTY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _pty = PTY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let temp = TempDir::new().unwrap();
     let binary = std::env::var_os("LAZYPENCIL_TEST_TUI_BINARY")
         .map(std::path::PathBuf::from)

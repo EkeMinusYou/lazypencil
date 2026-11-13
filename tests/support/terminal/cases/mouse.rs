@@ -236,16 +236,23 @@ pub fn canvas_selection(h: &mut Harness) -> Result {
     h.key(b"]")?;
     h.visible("1 node selected · Left canvas shape")?;
     h.wait("fit selection", 15.0, |h| zoom(h).is_some_and(|z| z > 300))?;
-    let frames = h.frames.camera_frames;
+    let frames = h.frames.images.len();
+    let camera_frames = h.frames.camera_frames;
     click(h, center)?;
     h.visible("1 node selected")?;
     if h.case == "selection-kitty" {
         h.wait("selection outline is rendered", 15.0, |h| {
-            h.frames.camera_frames > frames
+            // A completed exact frame can supersede temporary camera feedback.
+            (h.frames.images.len() > frames
                 && h.frames
-                    .last_camera
-                    .as_ref()
-                    .is_some_and(|f| f.has_color([137, 180, 250, 255]))
+                    .images
+                    .last()
+                    .is_some_and(|f| f.has_color([137, 180, 250, 255])))
+                || (h.frames.camera_frames > camera_frames
+                    && h.frames
+                        .last_camera
+                        .as_ref()
+                        .is_some_and(|f| f.has_color([137, 180, 250, 255])))
         })?;
     }
     let parent_zoom = zoom(h).ok_or("Missing parent zoom")?;

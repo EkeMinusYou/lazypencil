@@ -885,6 +885,7 @@ pub fn run(
 
 fn preview_search(h: &mut Harness) -> Result {
     let original = fs::read(&h.document)?;
+    h.visible("2 nodes · 0 diagnostics")?;
     let draft = "未送信の依頼";
     h.paste(draft)?;
     h.draft(draft)?;
