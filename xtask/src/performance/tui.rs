@@ -546,6 +546,16 @@ mod hosted {
             Ok(())
         }
 
+        fn focus_prompt(&mut self) -> Result<()> {
+            // Existing documents start in Preview. Wait for that workspace
+            // before sending Tab so the startup probe cannot consume it.
+            self.wait("initial preview focus", |t| {
+                t.screen.find_text("›").is_some() && t.screen.text().contains(" pan")
+            })?;
+            self.key(b"\t")?;
+            self.wait("focused prompt", |t| prompt_ready(&t.screen))
+        }
+
         fn key(&mut self, bytes: &[u8]) -> Result<Instant> {
             let sent = Instant::now();
             self.master.write_all(bytes)?;
@@ -677,7 +687,7 @@ mod hosted {
         let mut terminal = Terminal::start(binary, helper, &root, deadline)?;
         let sampling_start_delay_ms = terminal.started.elapsed().as_secs_f64() * 1000.0;
         terminal.activity = Some(resources::ActiveTrace::new(terminal.child.id())?);
-        terminal.wait("resource trial prompt", |t| prompt_ready(&t.screen))?;
+        terminal.focus_prompt()?;
         terminal.wait("resource trial complete preview", |t| {
             t.last_frame.is_some()
         })?;
@@ -782,6 +792,7 @@ mod hosted {
                 resources::require_script_worker(script.pid, binary)?;
                 script
             };
+            terminal.focus_prompt()?;
             terminal.key(b"Measure this owned document through MCP.\x13")?;
             terminal.wait("bound MCP render", |_| {
                 root.join("bound-render-0.json").is_file()
@@ -1182,7 +1193,7 @@ mod hosted {
             let fixture = fixtures::performance(&root, "dashboard")?;
             fs::write(root.join("lazypencil.toml"), b"version=1\n")?;
             let mut terminal = Terminal::start(&binary, &helper, &root, deadline)?;
-            terminal.wait("prompt", |t| prompt_ready(&t.screen))?;
+            terminal.focus_prompt()?;
             let marker = b"measurement-ready";
             terminal.key(marker)?;
             terminal.wait("prompt echo", |t| {
