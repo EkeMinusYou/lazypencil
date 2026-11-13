@@ -34,6 +34,6 @@ When a nested failure returns failure_capture_id, call read_asset with source_ha
 
 ## Copy scripts and track dependencies
 
-import_component with mode copy preserves executable code and inherited input/code/metadata overrides without running the script or freezing output. Follow `components` for asset manifests, name collisions, and field-context behavior; keep private binding metadata when preserving a copied context.
+import_component with mode copy preserves executable code and inherited input/code/metadata overrides without running the script or freezing output. Read [component-import](component-import.md) for asset manifests, name collisions, and field-context behavior; keep private binding metadata when preserving a copied context.
 
 get_layout returns script execution hashes and runtime_dependencies for files discovered in generated content. Ordinary dependency_revision covers document-declared dependencies. Snapshots capture the runtime dependency bytes too; a changed runtime file invalidates the snapshot. Use the returned snapshot_id to inspect that output and follow `verification` when editing from it.

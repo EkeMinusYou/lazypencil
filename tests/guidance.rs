@@ -24,6 +24,15 @@ fn guides_styles_and_editable_examples_form_a_resolvable_catalog() {
         assert!(!body["body"].as_str().unwrap().is_empty());
         assert_eq!(body["hash"].as_str().unwrap().len(), 64);
         assert_eq!(body, guidance::get_guidance(guide["id"].as_str()).unwrap());
+        for link in body["body"].as_str().unwrap().split("](").skip(1) {
+            let Some((target, _)) = link.split_once(')') else {
+                continue;
+            };
+            if let Some(id) = target.strip_suffix(".md") {
+                guidance::get_guidance(Some(id))
+                    .unwrap_or_else(|error| panic!("Broken guide link {target}: {error}"));
+            }
+        }
     }
     let catalog = guidance::list_styles(None, 100, None).unwrap();
     assert_eq!(catalog["styles"].as_array().unwrap().len(), 3);
@@ -69,8 +78,21 @@ fn style_pagination_binds_cursors_to_the_filter_and_catalog() {
 #[test]
 fn the_guide_operation_example_runs_against_the_real_editing_api() {
     let guide = guidance::get_guidance(Some("operations")).unwrap();
+    let section = guide["body"]
+        .as_str()
+        .unwrap()
+        .split_once("## A complete editing example\n")
+        .unwrap()
+        .1;
+    let (description, example) = section.split_once("```json\n").unwrap();
+    assert!(
+        !description.lines().any(|line| line.starts_with("## ")),
+        "The editing example must remain in its own section"
+    );
+    let example: Value = serde_json::from_str(example.split_once("```").unwrap().0).unwrap();
+    assert_eq!(example, guide["example_operations"]);
     let operations: Vec<lazypencil::operations::Operation> =
-        serde_json::from_value(guide["example_operations"].clone()).unwrap();
+        serde_json::from_value(example).unwrap();
     let (document, result) =
         lazypencil::operations::apply(&Document::empty(), &operations).unwrap();
     let button = result["bindings"]["button"].as_str().unwrap();
@@ -78,17 +100,15 @@ fn the_guide_operation_example_runs_against_the_real_editing_api() {
     assert_eq!(document.node(instance).unwrap()["ref"], button);
     assert_eq!(document.node(button).unwrap()["reusable"], true);
     assert_eq!(document.value()["variables"]["accent"]["value"], "#2563EB");
-    let example = include_str!("../resources/examples/button-operations.json");
-    assert!(guide["body"].as_str().unwrap().contains(example.trim()));
 }
 
 #[test]
-fn the_component_guide_import_batch_and_every_style_component_use_the_real_service() {
+fn the_import_guide_batch_and_every_style_component_use_the_real_service() {
     use lazypencil::{operations::EditRequest, service, store::Store};
     let temp = tempfile::TempDir::new().unwrap();
     std::fs::create_dir(temp.path().join(".git")).unwrap();
     let store = Store::init(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
-    let guide = guidance::get_guidance(Some("components")).unwrap();
+    let guide = guidance::get_guidance(Some("component-import")).unwrap();
     let body = guide["body"].as_str().unwrap();
     let example = body
         .split_once("```json\n")

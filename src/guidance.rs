@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.67";
+const VERSION: &str = "1.0.68";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -49,19 +49,34 @@ const GUIDES: &[Guide] = &[
         body: include_str!("../resources/guidance/components.md"),
     },
     Guide {
+        id: "component-import",
+        summary: "Import sources, name collisions, copied scripts and assets, and dependency preservation.",
+        body: include_str!("../resources/guidance/component-import.md"),
+    },
+    Guide {
         id: "scripts",
         summary: "Typed inputs, bounded synchronous JavaScript, generated nodes, and runtime dependency snapshots.",
         body: include_str!("../resources/guidance/scripts.md"),
     },
     Guide {
         id: "browser",
-        summary: "Page acquisition, emulation, refresh, runtime setup, and truthful capture metadata.",
+        summary: "Browser node properties, page acquisition, refresh, retained state, and preview playback.",
         body: include_str!("../resources/guidance/browser.md"),
+    },
+    Guide {
+        id: "browser-config",
+        summary: "Local browser resources, readiness settings, network policy, limits, and authenticated profiles.",
+        body: include_str!("../resources/guidance/browser-config.md"),
     },
     Guide {
         id: "shaders",
         summary: "GLSL fills and effects, typed uniforms, object and background textures, and explicit time.",
         body: include_str!("../resources/guidance/shaders.md"),
+    },
+    Guide {
+        id: "shader-reference",
+        summary: "Structured uniforms, image dependencies, macro preprocessing, resource limits, and capture policy.",
+        body: include_str!("../resources/guidance/shader-reference.md"),
     },
     Guide {
         id: "effects",

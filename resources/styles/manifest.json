@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "language": "en",
   "license": "MIT",
   "styles": [
     {
       "id": "standard-ui",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "name": "Standard UI",
       "description": "A restrained, readable starting point for application screens.",
       "use_cases": [
@@ -60,7 +60,7 @@
         "controlHeight": 44,
         "cardRadius": 12
       },
-      "instructions": "Use clear hierarchy, a small spacing scale, and a single prominent primary action. Respect existing document conventions when editing. The example includes reusable button, button-with-icon, breadcrumbs, sort-control, text-avatar, and form-field definitions. Labels follow their layout roles; form messages grow with their content and can appear independently. Prefer existing components; import these fallbacks only when useful and adapt their tokens. Do not copy their stored IDs into an editing batch."
+      "instructions": "Use clear hierarchy, a small spacing scale, and clear emphasis for actions the task requires. Respect existing document conventions when editing. The example includes reusable button, button-with-icon, breadcrumbs, sort-control, text-avatar, and form-field definitions. Labels follow their layout roles; form messages grow with their content and can appear independently. Prefer existing components; import these fallbacks only when useful and adapt their tokens. Use example component IDs to identify import sources. For newly created nodes, use server-allocated IDs and returned bindings instead of assigning example IDs."
     },
     {
       "id": "dense-workspace",
@@ -120,7 +120,7 @@
     },
     {
       "id": "content-page",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "name": "Content page",
       "description": "A spacious warm palette and reading hierarchy for editorial or introductory pages.",
       "use_cases": [
@@ -175,7 +175,7 @@
         "controlHeight": 48,
         "cardRadius": 12
       },
-      "instructions": "Lead with a clear message and a useful next action. Keep body copy readable, make supporting sections specific, and use imagery only when it adds meaning and has suitable usage rights. Adapt section structure to the content."
+      "instructions": "Lead with a clear message and reading order. Include a next action only when it serves the page's purpose. Keep body copy readable, make supporting sections specific, and use imagery only when it adds meaning and has suitable usage rights. Adapt section structure to the content."
     }
   ]
 }

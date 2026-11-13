@@ -603,8 +603,9 @@ selected [profile](runtimes.md#dedicated-authentication-profiles).
 GLSL supports scalar/vector/matrix inputs, arrays, image samplers and exact
 `@resolution` / `@time` directives. Effects can sample `pencil:object` and
 `pencil:background`; fills cannot sample the object. Use the
-[shader guide](../resources/guidance/shaders.md) and
-[dynamic-content reference](dynamic-content.md) for syntax, origins and limits.
+[shader guide](../resources/guidance/shaders.md) for basic syntax, and the
+[shader reference](../resources/guidance/shader-reference.md) and
+[dynamic-content reference](dynamic-content.md) for advanced inputs, origins and limits.
 
 ### Explicit HTTP image acquisition
 
