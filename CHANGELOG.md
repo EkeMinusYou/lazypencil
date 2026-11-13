@@ -1,12 +1,16 @@
 # Changelog
 
-## 0.2.8
+## 0.2.9
 
 - Unify file selection, command palettes, checkpoints, saved conversations, permissions and Help with shared launcher headings, context strips, result rows and footer controls.
 - Search command actions by name, category or description, and filter saved conversations and turns within the current page while preserving drafts and attachments.
 - Separate file names from folder metadata, show selected history details, and arrange command argument forms vertically with accepted-value hints.
 - Improve compact dialogs, Unicode input, disabled actions and saved user-message backgrounds across dark, light and monochrome themes.
 - Report conversation activity to Herdr.app through OSC 7501, including turn completion and exit, without adding status sequences to redirected CLI output.
+
+## 0.2.8
+
+Not published.
 
 ## 0.2.7
 
