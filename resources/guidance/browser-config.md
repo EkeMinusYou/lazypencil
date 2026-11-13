@@ -30,6 +30,8 @@ Use runtime.browser.network_policy for online (default) or offline web requests.
 
 Offline also restricts WebRTC to proxy routes, including its non-proxied UDP path; WebTransport uses the deny proxy. Metadata records network_policy. A project can restrict user online to offline, but cannot relax user offline to online. This policy applies to browser capture and HTTP image acquisition; other applications and AI runtimes use their own network settings.
 
+HTTP image acquisition also follows runtime.browser.image_origins. Read [shader-reference](shader-reference.md) for its allowlist, redirect checks, and project restrictions. Chromium page requests use network_policy.
+
 Captured runtime.browser settings control acquisition/launch deadlines and idle expiry; runtime.dynamic bounds the shared render duration and retained encoded-raster cache. Each acquisition reports its effective limits. Configuration changes invalidate old cached acquisitions, and a zero cache capacity disables reuse. Inspect the configuration and diagnostics when a deadline fails.
 
 ## Authenticated profiles

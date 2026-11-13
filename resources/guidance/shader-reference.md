@@ -18,6 +18,8 @@ Standalone component copying retains local relative string sampler values in ord
 
 HTTP(S) images use the captured runtime.browser network policy and timeout, capped at 30 seconds across one project's image acquisition, with 20 MiB per encoded static PNG/JPEG/WebP and at most five redirects. Each snapshot keeps its acquired bytes in memory without refetching during verification. A copied component retains those images locally, including inactive themes, so it can render after the remote server and original files are gone. HTTP image URLs cannot contain credentials, and HTTPS redirects cannot downgrade to HTTP. Browser-profile cookies are not imported. Missing HTTP images report incomplete assets and can be structurally repaired.
 
+runtime.browser.image_origins optionally restricts HTTP image requests and every redirect to exact HTTP(S) scheme/host/port origins, even when network_policy is online. Omission inherits the allowlist; the default has no origin restriction, and an empty list denies all HTTP images. Project lists intersect user lists, so a project can only narrow the user's allowlist. Inspect configuration.settings.runtime.browser with get_document include_configuration:true when diagnosing a policy rejection. This allowlist applies to image acquisition; Chromium page requests use network_policy.
+
 Captured script asset manifests accept local paths and local file URLs for images, shaders and scripts; HTTP(S) keys are image-only. Copy preserves URL spelling and source bytes, and repeated declarations of captured URLs use the program's captured code namespace without refetching. Inspect capabilities before choosing an independent copy.
 
 ## Embedded images
