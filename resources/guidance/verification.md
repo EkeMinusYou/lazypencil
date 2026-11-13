@@ -6,7 +6,7 @@ For queries about stored data and edits limited to organizational names or nonvi
 
 For layout or visual questions, and changes to visible content, geometry, appearance, or dynamic behavior, use the relevant calculated evidence:
 
-- Geometry: validate_document with scope: "layout" provides measured diagnostics and can execute scripts. Inspect affected sizes, positions, line counts, baselines, font sources, overflow, and clipping.
+- Geometry: use get_layout to inspect affected sizes, positions, line counts, baselines, and font sources. Use validate_document with scope: "layout" for measured diagnostics, including overflow and clipping. Both can execute scripts; reuse the same snapshot_id for measurements and diagnostics from the same calculation.
 - Appearance: render and inspect the target image and relevant close-ups. Check hierarchy, reading order, spacing, wrapping, repeated elements, image crops, and any required actions. Compare existing designs with their initial view. Use real content, the requested size, and the themes or variants relevant to the change.
 
 Respect the requested scope. A selected node does not narrow a document-wide inspection, and a local edit does not authorize unrelated repairs. Report the checks actually performed, remaining diagnostics, and any unavailable image or runtime. Stop refinement at the agreed limit.
