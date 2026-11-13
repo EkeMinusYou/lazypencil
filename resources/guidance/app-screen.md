@@ -2,7 +2,7 @@
 
 Identify the user's current task and its primary action. Establish navigation, page context, main content, and supporting actions. Give the main content enough space before refining decorative details. Use a consistent control height, label style, focus or selection convention, and spacing between related fields.
 
-Use existing components and tokens when editing an application. Distinguish primary, secondary, and destructive actions through both labeling and appearance. Design the state the user requested, with representative data and explicit empty, error, or loading content when those states are part of the task.
+Use existing components and tokens when editing an application. For repeated controls without a suitable definition, follow `components` to create a reusable definition first and place instances with local overrides. Distinguish primary, secondary, and destructive actions through both labeling and appearance. Design the state the user requested, with representative data and explicit empty, error, or loading content when those states are part of the task.
 
 Choose the composition from the task. An editor may give most space to a canvas with contextual tools; a list may prioritize search, rows, and selection; a detail view may group information and related actions. Reuse the application's navigation and reading order rather than treating a settings form as the default for every screen.
 

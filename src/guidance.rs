@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.65";
+const VERSION: &str = "1.0.66";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -45,7 +45,7 @@ const GUIDES: &[Guide] = &[
     },
     Guide {
         id: "components",
-        summary: "Reuse, overrides, slots, generated IDs, and atomic editing.",
+        summary: "Create shared definitions, place linked instances, and edit overrides and slots atomically.",
         body: include_str!("../resources/guidance/components.md"),
     },
     Guide {

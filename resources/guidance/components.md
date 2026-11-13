@@ -2,6 +2,20 @@
 
 Search existing reusable definitions before creating another button, field, card, or repeated row. Reuse the source component when its structure and meaning fit the task. Library definitions are read-only through a document-bound connection. Do not modify a global definition when the user requested a change to one instance.
 
+## Create shared definitions before repeated instances
+
+When repeated controls share a structure and purpose, create one reusable definition if no existing component fits, then place linked instances. Typical candidates include buttons, form fields, navigation items, cards, and list rows. Keep one-off artwork and unrelated layouts as ordinary nodes; a local edit does not require refactoring the rest of the document.
+
+1. Use list_components to inspect the document and its declared libraries, then read the candidate definitions with read_nodes. Check their children and variables before deciding to reuse, adapt, or create a component. The bundled controls below are optional starting points.
+2. Create a definition with `reusable: true` and a meaningful name. Put shared layout, appearance, and default content in the definition, and bind repeated color, spacing, and typography roles to appropriate existing or new variables. Use slots for regions whose content changes structurally between instances.
+3. Insert each use as `type: "ref"` pointing to that definition. Use client_ref and result_of within the creation batch, or the returned stored ID in later batches. Read the definition's generated child IDs before addressing descendant overrides; never guess them. The `operations` guide has an executable definition-and-instance example.
+4. Override only the text, values, state, or placement that differs for each instance. Prefer a useful shared definition with these differences over several nearly identical definitions. Keep nested controls as references to their own components when they should remain shared.
+5. Inspect the stored references and rendered instances. Confirm that shared properties remain inherited and local differences are confined to the intended instances. Follow `verification` for checks after a shared definition changes.
+
+A loop, helper function, or copied subtree can repeat construction without creating a shared component. Use those techniques to place `ref` instances when the resulting controls should stay linked. Edit the definition for a shared design change; use overrides for one occurrence. Keep definitions separate from screen content so template artwork does not appear as an extra control in the final screen.
+
+## Instance editing
+
 Distinguish the stored root instance, an inherited descendant, and a component definition. Inherited descendants are identified by the root instance ID and the nested instance path. Normal frame hierarchy does not create a new component namespace. Use only editing operations advertised by the current server; do not substitute an update to the root when a descendant operation is unavailable.
 
 Read an inherited node with read_nodes using node_id and an instance_path array. Its expanded properties include variable references and property origins; get_layout supplies calculated measurements. To change only that instance, use update or set_override with the same address. reset_override restores inheritance; replace_override replaces a descendant; set_slot_children replaces a complete frame child array. Use the returned client bindings for later operations instead of guessing generated IDs. set_theme changes selected axes without replacing every inherited axis.

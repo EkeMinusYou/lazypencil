@@ -1,8 +1,10 @@
 # A complete editing example
 
-This batch creates a color token, a reusable button, and a second instance of that button. Use it in a new document; the token name is illustrative and should not overwrite an existing project's token without checking it first.
+This batch creates a color token, a reusable button definition, and a linked instance of that button. Use it in a new document; the token name is illustrative and should not overwrite an existing project's token without checking it first.
 
 Read get_document first. For apply_operations, put this array in operations, supply a new request_id and the document's current expected_revision, and include expected_dependency_revision when required. The CLI accepts the same array in the file passed to --operations. The server allocates stored IDs and returns bindings for button and instance.
+
+For additional buttons with the same design, insert more `ref` instances pointing to the returned button definition ID. Read that definition's children before overriding a label on one instance. Change shared layout and appearance on the definition so all instances can inherit it; follow `components` for local overrides and slots. In a screen, place the instances inside the screen's layout and keep the definition outside its content.
 
 After saving, call get_layout with the returned revision and dependency revision, then render using its snapshot_id. Inspect the actual image before making further adjustments. Keep the user's language when adapting the sample label. Do not send Pencil-specific DSL commands or modify serialized IDs by hand.
 
