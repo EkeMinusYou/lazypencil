@@ -1,12 +1,34 @@
-# A complete editing example
+# Document inspection and editing
+
+## Inspect the relevant data
+
+Read get_document for current revisions and compact metadata. Request include_configuration:true for full settings and origins, or include_capabilities:true for feature support. collections reports totals and truncation; omitted_fields identifies oversized optional details. For a needed collection, pass collection and limit, then repeat collection with each next_cursor until the required data is read. Use all pages before making a document-wide claim.
+
+Use search_nodes with a specific name/type to find shallow candidates, then pass the returned read_target to read_nodes. Read known targets directly. Detail reads require node_id and default to depth:0; request only the descendant depth needed. Preserve the candidate's view:
+
+| View | Read arguments |
+| --- | --- |
+| Stored | node_id; use library_alias when inspecting an imported definition |
+| Expanded instance | node_id and instance_path; use expand_instances:true when reading an expanded root instance |
+| Calculated, including generated content | node_id and instance_path from read_target, plus snapshot_id; omit expand_instances and library_alias |
+
+Calculated reads can execute scripts when no retained snapshot is supplied. Use stored reads for code repair without execution. `verification` covers snapshot lifetime and recovery. Metadata cursors and calculated IDs are scoped to their document, connection, and captured inputs. On pending-request RESOURCE_LIMIT, let an admitted request finish or cancel it before adding more work.
+
+## Save an atomic batch
+
+Use apply_operations with operations, a new request_id, expected_revision, and expected_dependency_revision when dependencies require it. Use client_ref for a newly created element and {"result_of":"client_ref"} in later operations of that batch. Returned bindings identify stored nodes for later batches. Keep related structural changes in one batch so incomplete references are never saved.
+
+On a revision conflict, read current data and reconcile the intended edit. Retry an ambiguous saved request with the same request ID and payload; a different edit needs a new ID. Use the advertised operation schema, not an unrelated DSL. Follow `verification` for runtime dependency preconditions and checks appropriate to the change.
+
+## A complete editing example
 
 This batch creates a color token, a reusable button definition, and a linked instance of that button. Use it in a new document; the token name is illustrative and should not overwrite an existing project's token without checking it first.
 
-Read get_document first. For apply_operations, put this array in operations, supply a new request_id and the document's current expected_revision, and include expected_dependency_revision when required. The CLI accepts the same array in the file passed to --operations. The server allocates stored IDs and returns bindings for button and instance.
+Submit this array as operations using the request fields above. The CLI accepts it in the file passed to --operations. The server allocates stored IDs and returns bindings for button and instance.
 
-For additional buttons with the same design, insert more `ref` instances pointing to the returned button definition ID. Read that definition's children before overriding a label on one instance. Change shared layout and appearance on the definition so all instances can inherit it; follow `components` for local overrides and slots. In a screen, place the instances inside the screen's layout and keep the definition outside its content.
+Additional linked buttons can reference the returned button definition ID. Follow `components` for child addresses, overrides, and placement of definitions outside screen content.
 
-After saving, call get_layout with the returned revision and dependency revision, then render using its snapshot_id. Inspect the actual image before making further adjustments. Keep the user's language when adapting the sample label. Do not send Pencil-specific DSL commands or modify serialized IDs by hand.
+For this visible example, call get_layout with the returned revisions and render using its snapshot_id. Inspect the image and keep the user's language when adapting the label.
 
 ## Image assets and paint updates
 

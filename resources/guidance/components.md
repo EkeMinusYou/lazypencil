@@ -1,42 +1,58 @@
-# Components and atomic editing
+# Components and instances
 
-Search existing reusable definitions before creating another button, field, card, or repeated row. Reuse the source component when its structure and meaning fit the task. Library definitions are read-only through a document-bound connection. Do not modify a global definition when the user requested a change to one instance.
+## Decide what should stay shared
 
-## Create shared definitions before repeated instances
+Use a component when several elements should share future changes to their structure or appearance. Repetition alone does not require a linked definition: one-off artwork and elements that should evolve independently can remain ordinary nodes. Keep a local edit within its requested scope.
 
-When repeated controls share a structure and purpose, create one reusable definition if no existing component fits, then place linked instances. Typical candidates include buttons, form fields, navigation items, cards, and list rows. Keep one-off artwork and unrelated layouts as ordinary nodes; a local edit does not require refactoring the rest of the document.
+1. Search existing definitions with list_components. Follow next_cursor while looking for a suitable definition; an incomplete page is not evidence that none exists. Read candidates and their needed child depth with read_nodes, using library_alias for imported definitions. Check structure, meaning, and variables before choosing one.
+2. Reuse a suitable definition. If none fits and coordinated changes are useful, create a meaningfully named node with reusable: true. Put shared layout, appearance, and defaults there; bind shared roles to appropriate variables. Use slots for regions with instance-specific structure.
+3. Place linked uses with type: "ref". Use client_ref and result_of within one batch, or returned stored IDs in later batches. Read generated child IDs before addressing overrides. The `operations` guide has a tested creation example.
 
-1. Use list_components to inspect the document and its declared libraries, then read the candidate definitions with read_nodes. Check their children and variables before deciding to reuse, adapt, or create a component. The bundled controls below are optional starting points.
-2. Create a definition with `reusable: true` and a meaningful name. Put shared layout, appearance, and default content in the definition, and bind repeated color, spacing, and typography roles to appropriate existing or new variables. Use slots for regions whose content changes structurally between instances.
-3. Insert each use as `type: "ref"` pointing to that definition. Use client_ref and result_of within the creation batch, or the returned stored ID in later batches. Read the definition's generated child IDs before addressing descendant overrides; never guess them. The `operations` guide has an executable definition-and-instance example.
-4. Override only the text, values, state, or placement that differs for each instance. Prefer a useful shared definition with these differences over several nearly identical definitions. Keep nested controls as references to their own components when they should remain shared.
-5. Inspect the stored references and rendered instances. Confirm that shared properties remain inherited and local differences are confined to the intended instances. Follow `verification` for checks after a shared definition changes.
+Loops and helper functions can place instances, but constructing independent subtrees does not establish a component link. Keep nested controls as refs when they should remain shared. Place definitions outside screen content so they do not appear as extra controls in a screen render.
 
-A loop, helper function, or copied subtree can repeat construction without creating a shared component. Use those techniques to place `ref` instances when the resulting controls should stay linked. Edit the definition for a shared design change; use overrides for one occurrence. Keep definitions separate from screen content so template artwork does not appear as an extra control in the final screen.
+## Edit definitions and instances
 
-## Instance editing
+Edit the definition for a shared change and the instance for one occurrence. Library definitions are read-only through a consuming document; open the library itself as another document to edit its local definitions.
 
 Distinguish the stored root instance, an inherited descendant, and a component definition. Inherited descendants are identified by the root instance ID and the nested instance path. Normal frame hierarchy does not create a new component namespace. Use only editing operations advertised by the current server; do not substitute an update to the root when a descendant operation is unavailable.
 
 Read an inherited node with read_nodes using node_id and an instance_path array. Its expanded properties include variable references and property origins; get_layout supplies calculated measurements. To change only that instance, use update or set_override with the same address. reset_override restores inheritance; replace_override replaces a descendant; set_slot_children replaces a complete frame child array. Use the returned client bindings for later operations instead of guessing generated IDs. set_theme changes selected axes without replacing every inherited axis.
 
-For resolved properties and script-generated descendants of a used instance, pass a calculation's snapshot_id to read_nodes with that inherited address. This calculated view matches the layout and PNG tree and preserves source namespaces and themes. An unused library definition still uses the ordinary library_alias query; it is outside the bound document's calculation. Generated children cannot be edited as stored overrides; edit their owning script instead.
-
-Request get_document with include_capabilities:true before detaching or importing a component. Stored and inherited instance detachment keeps nested references and variables. External library references stay linked, moved asset paths keep their original targets, and library variables use their original namespace. Detachment checks the resolved result before saving. External scripts retain their linked execution context through versioned metadata; treat unsupported scope-preservation diagnostics as a failed atomic batch. Keep a reference when the user wants future changes to the component definition to propagate.
+For resolved properties and script-generated descendants of a used instance, pass a calculation's snapshot_id to read_nodes with that inherited address. This calculated view matches the layout and PNG tree and preserves source namespaces and themes. Do not combine snapshot_id with expand_instances or library_alias. An unused library definition uses the ordinary library_alias query; it is outside the bound document's calculation. Generated children cannot be edited as stored overrides; edit their owning script instead.
 
 An omitted property inherits its value. Removing an override restores inheritance; null is not a generic reset command. A descendant override with type is a full node replacement. Replacing children replaces the array, including the empty array; it does not merge old children. Slot suggestions help discovery but do not prohibit other valid content.
 
-Use client_ref for a newly created element that later operations need. For example, an insert can declare client_ref `button`, and a later insert can set ref to {"result_of":"button"}. Use the returned bindings for later requests. Keep related structural changes in one batch so missing references are never persisted midway through the operation.
+## Detach an instance
 
-External script detachment retains its execution and input documents through versioned lazypencil metadata. Keep that metadata and its declared library dependencies when editing the detached node. This does not make a standalone copy of the code or library, and Use ordinary source/input edits for a new context; do not manually fabricate binding hashes.
+Query get_document with include_capabilities:true before detachment. detach_instance converts one instance boundary to ordinary nodes, preserving nested refs, variables, and asset targets. The operation checks the resolved result before saving. Keep the reference when future definition changes should propagate.
 
-Read the current revision and dependency revision before planning an edit. On conflict, read again and reconcile the user's intent with the actual document. Retry an ambiguous saved request with the same request ID and payload; use a new ID for a different edit.
+External scripts keep their execution and input documents through versioned lazypencil metadata. Retain that metadata and its declared imports: detachment does not make independent copies of the code or library. Use ordinary source/input edits to choose a new context. Unsupported scope-preservation diagnostics fail the atomic batch.
 
-Use import_component with an explicit mode. link creates a reference to a local or library definition; a file source also registers its import alias. copy creates local reusable definitions and closes their static component, variable, theme, image, and shader dependencies. The returned id is the placed instance; component_id identifies its reusable definition. Copied definitions are stored in a disabled frame so they do not add visible template artwork. Reuse one imported definition across repeated controls instead of importing it for every instance.
+## Import a definition
+
+Query get_document with include_capabilities:true, then use import_component with an explicit mode:
+
+- link places a reference to the source definition. File sources also register an import alias and remain live dependencies.
+- copy imports local definitions and their static component, variable, theme, image, and shader dependencies. It places an instance and stores definitions in a disabled frame outside visible template content.
+
+The result's id identifies the placed instance; component_id identifies its definition. Import once and reuse that definition when more linked instances are needed.
 
 Sources can select a declared library with {"library_alias":"ui","node_id":"button"}, a project file with {"uri":"ui.lib.pen","import_alias":"ui","node_id":"button"}, or a bundled style with {"style_id":"standard-ui","node_id":"button"}. Read the style's editable example before selecting an ID. Use expected_source_revision when the source document hash is known. File sources remain within allowed project roots. copy leaves no new source import; link keeps the source live.
 
-When the document has no suitable control, get_style with id `standard-ui` provides these reusable starting points:
+For example, this batch copies a bundled button and positions its instance:
+
+```json
+[
+  {"op":"import_component","source":{"style_id":"standard-ui","node_id":"button"},"mode":"copy","options":{"variable_prefix":"kit.","component_prefix":"Kit "},"client_ref":"primary"},
+  {"op":"update","target":{"result_of":"primary"},"set":{"x":40,"y":40}}
+]
+```
+
+Inspect the imported structure and, for visible use, its layout and rendering. Imports leave the source library and asset files unchanged. A dry run checks staged bytes without creating managed files or document history; a saved request can be replayed after its original source is unavailable. Follow `operations` for request IDs, revisions, and conflicts.
+
+## Optional bundled controls
+
+get_style with id standard-ui provides these starting points when they fit the task:
 
 | Component ID | Pattern |
 | --- | --- |
@@ -47,24 +63,17 @@ When the document has no suitable control, get_style with id `standard-ui` provi
 | `text-avatar` | Fixed-size avatar with its character centered in a text box that fills it; see `typography`. |
 | `form-field` | Label, input, and independent optional supporting/error messages in a content-height group; see `forms`. |
 
-Use the existing document's components first. These examples are fallbacks, not a mandatory design system. Read their children before overriding labels or icons, adapt their tokens and spacing to the document, and reuse one definition for repeated controls. Keep the layout relationships when changing copy instead of assigning new fixed label widths or child coordinates. Long constrained labels may need a different sizing treatment; follow `layout` rather than forcing every control to hug its content.
+Adapt these examples to the document's tokens and layout. Read their children before changing labels or icons. For control alignment and text sizing, use the patterns below and `typography`.
+
+## Import name collisions and reuse
 
 Copy name collisions fail by default. variable_prefix and component_prefix can give a kit its own names. Per-source variables, components, and themes maps can explicitly rename a source name or reuse a local target. Error details identify the source_key. Reused variables require the same type; reused themes must contain all source values. Reuse must also satisfy the importer's dependency constraints; do not bypass a refusal by flattening the component.
 
 Explicit component reuse can replace a reusable definition contained in a copied parent. Its placement becomes a fresh local ref; the chosen existing definition supplies its body, appearance, metadata and code. The source's placement and dimensions stay as instance overrides, and later edits to the target remain live. id_map reports the placed ID; reused_components reports the selected definition. When descendant IDs differ, supply component_paths for that reused source key, for example {"ui:badge":{"source-label":"local-label"}}. Both paths must exist in their respective definitions. Stored children and full-node replacements keep their own authored bodies. Paths to their new children follow the effective instance boundaries, including when reuse changes a ref into an ordinary group or introduces a new ref. Stored and generated refs use the same translation. Colliding destinations fail atomically. Keep missing-path and execution-context composition errors visible; do not guess which target child the user intended.
 
-String-valued shader image samplers with local relative/absolute paths, local file URLs or HTTP(S) URLs can be copied independently. Text uses retain the exact original string; captured image origins travel with the copy. Copy captures all theme alternatives, variable aliases and required image bytes. Changing the copied variables later can select a new consumer image. Explicitly reused consumer variables retain their consumer file bindings. Ordinary relative hierarchies are preserved where possible; distinct aliases, case collisions, file/directory projection conflicts and nonrelative URLs use managed image bindings. Immutable resource bundles carry hashed inventories and use guarded publication. HTTP acquisition follows the runtime.browser network policy and the limits in the shader guide; captured copies remain local after their original network source disappears. Embedded PNG/JPEG/WebP data URLs are self-contained: copy and detach preserve their original strings and do not create separate image files. Missing assets, unapproved schemes and local paths outside allowed roots remain errors. Do not substitute an unrelated asset or a static image for requested live behavior.
+### Captured image dependencies
 
-For example, a batch can import a bundled button, then place its returned instance:
-
-```json
-[
-  {"op":"import_component","source":{"style_id":"standard-ui","node_id":"button"},"mode":"copy","options":{"variable_prefix":"kit.","component_prefix":"Kit "},"client_ref":"primary"},
-  {"op":"update","target":{"result_of":"primary"},"set":{"x":40,"y":40}}
-]
-```
-
-Inspect the imported structure, measure layout, and render the result. Source libraries and original asset files are never edited by an import. A dry run validates staged bytes without creating managed files or document history. A committed request can be replayed even after its original source is unavailable.
+Copies capture all theme alternatives, aliases, and required image bytes, including shader string samplers. Text uses retain their original strings; captured image origins travel with the copy. Reused consumer variables keep their consumer file bindings. Relative hierarchies are preserved where possible; path collisions and nonrelative URLs use managed image bindings. Copy and detach preserve embedded PNG/JPEG/WebP data URLs without creating image files. Keep managed assets with the document. Missing assets and disallowed paths or schemes remain errors. Read `shaders` for URL rules and acquisition limits.
 
 ## Interface control patterns
 
@@ -88,17 +97,19 @@ For example, this button derives its width from its icon, label, gap, and paddin
 }
 ```
 
-Adapt the colors, type, and spacing to the document. The `standard-ui` component table above lists editable, importable examples of these patterns.
+Adapt colors, type, and spacing to the document.
 
-## Script component copies
+## Copy script components
 
 For script copies, the importer closes the reachable source component, variable, and theme namespaces without executing JavaScript. Code remains executable JavaScript, stored as immutable copied bytes. Add files selected only inside the code to options.script_assets, keyed by the qualified source script node, with entries such as {"kind":"script","uri":"nested.js"} or {"kind":"image","uri":"alternate.png"}. A descendant code override uses its owning ref and override path, such as ui:inner/draw. URIs use that script's original output document. Include shader source and alternative files that later input values can select. Generated paths outside the manifest fail instead of opening a same-named consumer file.
 
-Copied scripts retain code, output, saved inputs and browser-resource ownership separately, including nested generation and another independent copy. Ordinary update/reset operations deliberately choose the caller's context for an explicitly changed code or input field, even when its JSON is unchanged. Preserve private scope, binding, input-generation and browser metadata when retaining an existing context; do not fabricate or edit its hashes or namespace keys. Missing legacy provenance requires copying again from the original source, rather than guessing a same-named consumer component or file.
+Copied scripts retain output code, saved inputs, and browser-resource ownership separately. An explicit update to inputs or scriptUri selects the caller's context for that field, even when its JSON value is unchanged. reset_override removes the selected override and restores inheritance from the definition, including the inherited field's context. A null script input instead requests the active header's default; it does not remove the stored override.
+
+Preserve private scope, binding, input-generation, and browser metadata when retaining existing contexts. Use ordinary editing operations to change fields rather than fabricating hashes or namespace keys. A copy without required provenance must be recreated from its original source.
 
 Generated refs and replacement children use their returned addresses. Explicit component reuse can translate instance boundaries, but missing or ambiguous descendant paths remain errors. Browser copies retain declared captured resources and the URL's owning namespace. Unknown active aliases, undeclared assets and unsupported ownership combinations must remain visible diagnostics. Inspect a calculated layout and rendered image after copying to verify the requested result.
 
-Inherited scripts can override inputs, code or metadata independently before copying. Unchanged fields continue to inherit from the copied definition; null inputs use the active code header's defaults. Use the ordinary editing API to change or restore these fields, then calculate and inspect the result.
+Inherited code, inputs, and user metadata can be overridden independently before copying. Unoverridden fields remain linked to the copied definition. Inspect calculated output after a visible change; edit generated content through its script owner.
 
 ## Expansion limits
 

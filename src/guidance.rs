@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.66";
+const VERSION: &str = "1.0.67";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -15,12 +15,12 @@ struct Guide {
 const GUIDES: &[Guide] = &[
     Guide {
         id: "start",
-        summary: "Requirements, document inspection, composition, editing, and visual refinement.",
+        summary: "Task scope, document inspection, optional design resources, editing, and appropriate verification.",
         body: include_str!("../resources/guidance/start.md"),
     },
     Guide {
         id: "operations",
-        summary: "A tested batch that creates a token, reusable button, and component instance.",
+        summary: "Read modes, pagination, atomic requests, and a tested token-and-component editing batch.",
         body: concat!(
             include_str!("../resources/guidance/operations.md"),
             "\n```json\n",
@@ -95,7 +95,7 @@ const GUIDES: &[Guide] = &[
     },
     Guide {
         id: "content-page",
-        summary: "Message, reading sequence, calls to action, and content-led composition.",
+        summary: "Purpose, reading sequence, reference material, and content-led composition.",
         body: include_str!("../resources/guidance/content-page.md"),
     },
 ];
