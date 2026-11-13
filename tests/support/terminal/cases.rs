@@ -2488,7 +2488,8 @@ fn permission_modes(h: &mut Harness) -> Result {
     h.visible("Trust & apply")?;
     assert!(!h.root.join("lazypencil.toml").exists());
     h.key(b"\r")?;
-    h.visible("Permissions changed to workspace-write")?;
+    // The earlier conversation-only change leaves the same mode notice visible.
+    h.visible("Permissions changed to workspace-write · Save as project default:")?;
     assert!(fs::read_to_string(h.root.join("lazypencil.toml"))?.contains("workspace-write"));
     h.draft(draft)?;
     assert_eq!(fs::read(&h.document)?, before);
