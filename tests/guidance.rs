@@ -578,3 +578,74 @@ fn layout_guide_examples_recompose_the_same_content_at_different_widths() {
         .unwrap();
     near(parent.record.rect.height, narrow_visual.bottom() + 24.0);
 }
+
+#[test]
+fn operation_guide_exposes_complete_schema_and_executable_edit_patterns() {
+    use lazypencil::operations::{Operation, apply, parse_operations};
+    let guide = guidance::get_guidance(Some("operations")).unwrap();
+    let schema = &guide["operation_schema"];
+    let variants = schema["$defs"]["Operation"]["oneOf"].as_array().unwrap();
+    assert!(variants.len() >= 18);
+    for variant in variants {
+        let properties = &variant["properties"];
+        for field in ["node", "definition"] {
+            if let Some(value) = properties.get(field) {
+                assert_eq!(value["type"], "object", "{field}: {variant}");
+            }
+        }
+        if let Some(children) = properties.get("children") {
+            assert_eq!(children["items"]["type"], "object");
+        }
+    }
+    let document = Document::parse(
+        serde_json::json!({
+            "version":"2.22", "children":[
+                {"id":"PARENT_ID","type":"frame","children":[
+                    {"id":"OLD_REGION_ID","type":"frame"},
+                    {"id":"LABEL_ID","type":"text","content":"Before"}
+                ]},
+                {"id":"COMPONENT_ID","type":"frame","reusable":true,"children":[
+                    {"id":"LABEL_ID_DEFINITION","type":"text","content":"Original"}
+                ]},
+                {"id":"INSTANCE_ID","type":"ref","ref":"COMPONENT_ID"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let body = guide["body"].as_str().unwrap();
+    let patterns = body
+        .split_once("## Choose the edit operation")
+        .unwrap()
+        .1
+        .split_once("## Image assets")
+        .unwrap()
+        .0;
+    let mut edited = document;
+    let mut result = Value::Null;
+    for snippet in patterns.split("```json\n").skip(1) {
+        let source = snippet.split_once("```").unwrap().0.replace(
+            "\"instance_path\":[\"LABEL_ID\"]",
+            "\"instance_path\":[\"LABEL_ID_DEFINITION\"]",
+        );
+        let operations: Vec<Operation> =
+            parse_operations(serde_json::from_str(&source).unwrap()).unwrap();
+        (edited, result) = apply(&edited, &operations).unwrap();
+    }
+    assert_eq!(edited.node("LABEL_ID").unwrap()["content"], "Continue");
+    assert_eq!(
+        edited.node("COMPONENT_ID").unwrap()["children"][0]["content"],
+        "Original"
+    );
+    assert_eq!(
+        edited.node("INSTANCE_ID").unwrap()["descendants"]["LABEL_ID_DEFINITION"]["content"],
+        "Continue"
+    );
+    assert!(edited.node("OLD_REGION_ID").is_err());
+    let region = result["bindings"]["region"].as_str().unwrap();
+    assert_eq!(edited.node(region).unwrap()["fill"], "#FFFFFF");
+    assert_eq!(
+        edited.node("PARENT_ID").unwrap()["children"][0]["id"],
+        region
+    );
+}

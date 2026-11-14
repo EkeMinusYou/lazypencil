@@ -2221,6 +2221,33 @@ fn real_stdio_server_lists_typed_tools_and_edits_one_bound_document() {
     let before = client.data("get_document", json!({}));
     let guide = client.data("get_guidance", json!({}));
     assert_eq!(guide, lazypencil::guidance::get_guidance(None).unwrap());
+    let operations_guide = client.data("get_guidance", json!({"id":"operations"}));
+    assert_eq!(operations_guide["operation_schema"], {
+        let mut schema = apply["inputSchema"].clone();
+        schema["properties"]
+            .as_object_mut()
+            .unwrap()
+            .remove("document_id");
+        schema["required"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|field| field != "document_id");
+        schema
+    });
+    let malformed = client.call(
+        "apply_operations",
+        json!({
+            "request_id":"bad-target", "expected_revision":before["revision"],
+            "operations":[{"op":"set_override","target":{"node_id":{"result_of":"new"}},"set":{}}]
+        }),
+    );
+    assert_eq!(malformed["isError"], true);
+    let message = malformed["structuredContent"]["error"]["message"]
+        .as_str()
+        .unwrap();
+    assert!(message.contains("operations[0]"), "{message}");
+    assert!(message.contains("node_id must be a string"), "{message}");
+
     let styles = client.data("list_styles", json!({"use_case":"dashboard"}));
     assert_eq!(styles["styles"][0]["id"], "dense-workspace");
     let style = client.data("get_style", json!({"id":"dense-workspace"}));

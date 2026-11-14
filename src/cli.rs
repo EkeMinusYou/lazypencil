@@ -1,6 +1,6 @@
 use crate::{
     Error, Result,
-    operations::{EditRequest, Operation},
+    operations::EditRequest,
     service::{apply_request_with_cancellation, document_metadata},
     store::{self, Store},
 };
@@ -829,9 +829,13 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
         }
         Command::Apply(options) => {
             let source = store::read_text(&options.operations)?;
-            let operations: Vec<Operation> = serde_json::from_str(&source).map_err(|e| {
-                Error::new("INVALID_ARGUMENT", format!("Invalid operation array: {e}"))
+            let value = serde_json::from_str(&source).map_err(|error| {
+                Error::new(
+                    "INVALID_ARGUMENT",
+                    format!("Invalid operation JSON: {error}"),
+                )
             })?;
+            let operations = crate::operations::parse_operations(value)?;
             let request = EditRequest {
                 request_id: options
                     .request_id

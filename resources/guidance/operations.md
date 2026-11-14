@@ -18,7 +18,37 @@ Calculated reads can execute scripts when no retained snapshot is supplied. Use 
 
 Use apply_operations with operations, a new request_id, expected_revision, and expected_dependency_revision when dependencies require it. Use client_ref for a newly created element and {"result_of":"client_ref"} in later operations of that batch. Returned bindings identify stored nodes for later batches. Keep related structural changes in one batch so incomplete references are never saved.
 
-On a revision conflict, read current data and reconcile the intended edit. Retry an ambiguous saved request with the same request ID and payload; a different edit needs a new ID. Use the advertised operation schema, not an unrelated DSL. Follow `verification` for runtime dependency preconditions and checks appropriate to the change.
+On a revision conflict, read current data and reconcile the intended edit. Retry an ambiguous saved request with the same request ID and payload; a different edit needs a new ID. Use the advertised operation schema, not an unrelated DSL. This guide also returns operation_schema with the complete input schema when a client abbreviates nested tool types. Node and variable definitions are JSON objects, not JSON-encoded strings. Follow `verification` for runtime dependency preconditions and checks appropriate to the change.
+
+## Choose the edit operation
+
+Use `update` with `target` for stored properties. It cannot replace `id`, `type`, `children`, or `descendants`. Use `insert`, `delete`, and `move` for stored structure. There is no general `replace` operation. For inherited instance properties use `set_override` with the stored instance ID and its `instance_path`; use `replace_override` or `set_slot_children` for inherited structure. Read `components` for slot requirements.
+
+Each example below is an operations array. Substitute IDs from current reads and submit it with the current request revisions.
+
+Change a stored label:
+
+```json
+[{"op":"update","target":"LABEL_ID","set":{"content":"Continue"}}]
+```
+
+Change a label inside an existing instance without changing the shared definition:
+
+```json
+[{"op":"set_override","target":{"node_id":"INSTANCE_ID","instance_path":["LABEL_ID"]},"set":{"content":"Continue"}}]
+```
+
+Replace a stored region atomically. Read its parent, sibling index, and references first; update references to removed nodes in the same batch where needed. This example assumes no other references to the removed region:
+
+```json
+[
+  {"op":"delete","target":"OLD_REGION_ID"},
+  {"op":"insert","parent":"PARENT_ID","index":0,"client_ref":"region","node":{"type":"frame","name":"Main workspace","width":640,"height":480,"children":[]}},
+  {"op":"update","target":{"result_of":"region"},"set":{"fill":"#FFFFFF"}}
+]
+```
+
+The inserted region receives a new ID. Use the returned `bindings.region` for subsequent reads. Recalculate layout and refocus the connected preview on the new region after inspecting it. Old descendant IDs cannot identify new children. After inserting an instance, use its returned binding in a subsequent batch for descendant overrides; `node_id` accepts a string, not a nested `result_of` object.
 
 ## Image assets and paint updates
 

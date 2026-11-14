@@ -737,3 +737,58 @@ fn real_cli_dry_run_and_failed_batch_leave_no_edit_history() {
         json!([])
     );
 }
+
+#[test]
+fn invalid_operation_inputs_identify_the_operation_and_target_shape() {
+    for (bad, expected) in [
+        (json!({"op":"update","node_id":"box","set":{}}), "target"),
+        (
+            json!({"op":"replace","target":"box","node":{}}),
+            "unknown variant",
+        ),
+        (
+            json!({"op":"set_override","target":{"node_id":{"result_of":"new"},"instance_path":["label"]},"set":{}}),
+            "node_id must be a string",
+        ),
+    ] {
+        let error = operations::parse_operations(json!([{"op":"delete","target":"unused"},bad]))
+            .unwrap_err();
+        assert!(error.message.contains("operations[1]"), "{error}");
+        assert!(error.message.contains(expected), "{error}");
+        assert_eq!(error.details.unwrap()["operation_index"], 1);
+    }
+    let request = json!({"request_id":"bad","expected_revision":"rev","operations":[{"op":"set_override","target":{"node_id":{},"instance_path":[]}}]});
+    let error = serde_json::from_value::<operations::EditRequest>(request).unwrap_err();
+    assert!(error.to_string().contains("operations[0]"));
+    assert!(error.to_string().contains("node_id must be a string"));
+}
+
+#[test]
+fn structural_update_error_has_field_and_index_without_committing_prior_edits() {
+    let document = Document::parse(
+        json!({"version":"2.22","children":[
+            {"id":"box","type":"frame","width":10}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    for set in [
+        json!({"children":[]}),
+        json!({"id":"new"}),
+        json!({"type":"rectangle"}),
+    ] {
+        let field = set.as_object().unwrap().keys().next().unwrap().clone();
+        let ops = operations(json!([
+            {"op":"insert","node":{"type":"rectangle"}},
+            {"op":"update","target":"box","set":set}
+        ]));
+        let error = operations::apply(&document, &ops).unwrap_err();
+        assert!(error.message.contains("operations[1]"), "{error}");
+        assert!(error.message.contains("insert/delete/move"), "{error}");
+        let details = error.details.unwrap();
+        assert_eq!(details["field"], field);
+        assert_eq!(details["operation_index"], 1);
+        assert_eq!(document.node_count(), 1);
+        assert_eq!(document.node("box").unwrap()["width"], 10);
+    }
+}

@@ -4,7 +4,7 @@ mod project;
 pub use project::{DesignSettings, ProjectCatalog};
 pub mod usage;
 
-const VERSION: &str = "1.0.71";
+const VERSION: &str = "1.0.72";
 struct Guide {
     id: &'static str,
     summary: &'static str,
@@ -140,6 +140,8 @@ pub fn get_guidance(id: Option<&str>) -> Result<Value> {
     let mut result = json!({"id":guide.id,"version":VERSION,"language":"en","license":"MIT", "summary":guide.summary,
         "body":guide.body,"schema_versions":crate::document::SUPPORTED_DOCUMENT_VERSIONS,"available_guides":GUIDES.iter().map(|g| json!({"id":g.id,"summary":g.summary,"version":VERSION})).collect::<Vec<_>>()});
     if guide.id == "operations" {
+        result["operation_schema"] =
+            schemars::schema_for!(crate::operations::EditRequest).to_value();
         result["example_operations"] =
             serde_json::from_str(include_str!("../resources/examples/button-operations.json"))
                 .map_err(|e| {

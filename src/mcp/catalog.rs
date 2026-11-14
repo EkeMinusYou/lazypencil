@@ -175,7 +175,7 @@ fn tools() -> Vec<Tool> {
         ),
         tool::<EditRequest>(
             ToolKind::ApplyOperations,
-            "Apply an all-or-nothing edit batch. Read revisions first; supply expected_dependency_revision when external dependencies exist. For edits based on a calculation, also supply its runtime_dependency_revision as expected_runtime_dependency_revision. Generated IDs can be referenced using client_ref and result_of. Reuse request_id only to retry the same request.",
+            "Apply an all-or-nothing edit batch. Read revisions first; supply expected_dependency_revision when external dependencies exist. For edits based on a calculation, also supply its runtime_dependency_revision as expected_runtime_dependency_revision. Generated IDs can be referenced using client_ref and result_of. Read get_guidance(id:\"operations\") for the full operation_schema and examples if the client hides nested input types. Reuse request_id only to retry the same request.",
         ),
         tool::<service::ValidateRequest>(
             ToolKind::ValidateDocument,

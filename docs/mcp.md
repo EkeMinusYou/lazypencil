@@ -95,6 +95,20 @@ Guidance/style tools can omit `document_id` only when requesting built-in resour
 `list_icons` is document-independent. Layout, image export, font inventory and
 calculated node reads require a build with rendering enabled.
 
+### Complete operation types in Codex
+
+Some clients shorten large MCP input schemas. If `apply_operations.operations` appears as `Array<unknown>`, call `get_guidance` with `id: "operations"`; its `operation_schema` contains the complete editing schema and the guide includes operation examples. Node and variable definitions are JSON objects, not strings.
+
+Codex 0.169.0 defaults to a 5,000-byte normalized input-schema threshold. Above that threshold it can remove definition references, hiding operation variants ([Codex schema compaction](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/tools/src/json_schema/compaction.rs)). For a manually registered server, add this field to its existing Codex configuration entry while preserving its command and arguments, then start a new connection:
+
+```toml
+[mcp_servers.lazypencil]
+# Keep the existing command, args, and other settings.
+tool_input_schema_max_bytes = 16000
+```
+
+This restores the operation variants for the current schema. It does not configure transient servers supplied by an ACP adapter. Use the complete schema from `get_guidance` when the client or adapter cannot retain the full declaration.
+
 ## Editing and inspecting
 
 A typical edit follows this sequence:

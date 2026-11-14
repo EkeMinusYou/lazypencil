@@ -139,6 +139,7 @@ outputs! {
         hash: String,
         available_guides: Option<Vec<Object>>,
         project_guides: Option<Vec<Object>>,
+        operation_schema: Option<Object>,
     }
     Styles => ["list_styles"] {
         document_id: Option<String>,
