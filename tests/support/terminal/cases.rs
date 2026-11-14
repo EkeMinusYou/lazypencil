@@ -1177,13 +1177,24 @@ fn diagnostics(h: &mut Harness, design: &Value) -> Result {
         |h| h.completed_turns(2),
     )?;
     let all = read_json(&h.root.join("received-turn-2.json")).unwrap();
+    let start = lazypencil::guidance::get_guidance(None).unwrap();
+    let workflow = start["body"].as_str().unwrap();
     assert!(
-        all["text"].as_array().unwrap().iter().any(|text| text
-            .as_str()
-            .is_some_and(|text| text.contains("validate_document")
-                && text.contains("next_cursor")
-                && text.contains("snapshot_id")))
+        all["text"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|text| text.as_str().is_some_and(|text| text.contains(workflow)))
     );
+    assert!(workflow.contains("verification"));
+    let verification = lazypencil::guidance::get_guidance(Some("verification")).unwrap();
+    let instructions = verification["body"].as_str().unwrap();
+    for term in ["validate_document", "next_cursor", "snapshot_id"] {
+        assert!(
+            instructions.contains(term),
+            "Missing diagnostic guidance: {term}"
+        );
+    }
     assert!(
         all["text"]
             .as_array()
