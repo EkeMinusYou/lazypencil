@@ -167,7 +167,7 @@ fn node_search_pages_by_bytes_with_exact_totals_and_rejects_nonprogressing_entri
 fn node_search_expanded_and_library_targets_round_trip_without_guessing_ids() {
     let (temp, file, data) = fixture();
     fs::write(temp.path().join("ui.pen"),json!({"version":"2.22","children":[{"id":"card","type":"frame","reusable":true,"width":100,"height":60,"children":[{"id":"label","type":"text","name":"Library label","content":"Original"}]}]}).to_string()).unwrap();
-    fs::write(&file,json!({"version":"2.22","imports":{"ui":"ui.pen"},"children":[{"id":"instance","type":"ref","ref":"ui:card","descendants":{"label":{"content":"Override"}}}]}).to_string()).unwrap();
+    fs::write(&file,json!({"version":"2.22","imports":{"ui":"ui.pen"},"children":[{"id":"instance","type":"ref","ref":"ui:card","descendants":{"label":{"content":"Override"}}},{"id":"card","type":"text","content":"Local card"}]}).to_string()).unwrap();
     let mut client = Client::start(&file, &data);
     let page = client.data(
         "search_nodes",
@@ -190,6 +190,23 @@ fn node_search_expanded_and_library_targets_round_trip_without_guessing_ids() {
     let library = client.data("search_nodes", json!({"library_alias":"ui","name":"label"}));
     let detail = client.data("read_nodes", detail_query(&library, &library["nodes"][0]));
     assert_eq!(detail["nodes"][0]["content"], "Original");
+    let expanded_library = client.data(
+        "search_nodes",
+        json!({"library_alias":"ui","expand_instances":true,"type":"frame"}),
+    );
+    assert_eq!(expanded_library["view"], "expanded");
+    assert_eq!(expanded_library["library_alias"], "ui");
+    assert_eq!(expanded_library["total_matches"], 1);
+    let detail = client.data(
+        "read_nodes",
+        detail_query(&expanded_library, &expanded_library["nodes"][0]),
+    );
+    assert_eq!(detail["nodes"][0]["properties"]["width"], 100);
+    let local = client.data(
+        "read_nodes",
+        json!({"node_id":"card","expand_instances":true}),
+    );
+    assert_eq!(local["nodes"][0]["properties"]["content"], "Local card");
     let missing = client.call(
         "search_nodes",
         json!({"expand_instances":true,"root":{"node_id":"missing"}}),

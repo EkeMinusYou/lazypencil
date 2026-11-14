@@ -41,7 +41,10 @@ pub(super) fn apply(
         let mut edits = Vec::new();
         let mut ids = HashSet::new();
         while let Some(operation) = operations.get(index) {
-            let Some((id, edit)) = batch.plain_update(operation)? else {
+            let Some((id, edit)) = batch
+                .plain_update(operation)
+                .map_err(|error| input::operation_error(error, index))?
+            else {
                 break;
             };
             if !ids.insert(id.clone()) {
@@ -54,7 +57,9 @@ pub(super) fn apply(
         if !edits.is_empty() {
             batch.edited.edit_properties(&edits)?;
         } else {
-            batch.apply_one(index, &operations[index])?;
+            batch
+                .apply_one(index, &operations[index])
+                .map_err(|error| input::operation_error(error, index))?;
             index += 1;
         }
     }
@@ -81,15 +86,7 @@ impl Batch<'_> {
         if node.pointer("/metadata/lazypencil").is_some() {
             return Ok(None);
         }
-        if set
-            .keys()
-            .chain(unset.iter())
-            .any(|key| matches!(key.as_str(), "id" | "type" | "children" | "descendants"))
-        {
-            return Err(invalid(
-                "Update cannot change identity, children, or descendant overrides; use explicit structural operations",
-            ));
-        }
+        input::check_update_fields(set, unset)?;
         Ok(Some((
             id.clone(),
             crate::document::PropertyEdit {
@@ -215,15 +212,7 @@ impl Batch<'_> {
                 }
                 let id = resolve_target(target, &self.bindings)?;
                 self.edited.known_node(&id)?;
-                if set
-                    .keys()
-                    .chain(unset.iter())
-                    .any(|k| matches!(k.as_str(), "id" | "type" | "children" | "descendants"))
-                {
-                    return Err(invalid(
-                        "Update cannot change identity, children, or descendant overrides; use explicit structural operations",
-                    ));
-                }
+                input::check_update_fields(set, unset)?;
                 let pointer = self.edited.location(&id)?.pointer.clone();
                 apply_property_changes(&mut self.edited, &pointer, set, unset, &self.bindings)?;
                 self.changed.insert(id);

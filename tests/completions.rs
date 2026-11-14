@@ -105,7 +105,18 @@ fn completion_generation_is_clean_and_queries_cover_nested_commands_values_and_c
                     "Material Symbols Sharp",
                 ],
             ),
-            (vec!["lazypencil", "guidance", "sh"], vec!["shaders"]),
+            (
+                vec!["lazypencil", "guidance", "sh"],
+                vec!["shaders", "shader-reference"],
+            ),
+            (
+                vec!["lazypencil", "guidance", "component"],
+                vec!["components", "component-import"],
+            ),
+            (
+                vec!["lazypencil", "guidance", "browser"],
+                vec!["browser", "browser-config"],
+            ),
             (
                 vec!["lazypencil", "inspect", "absent.pen", "--type", ""],
                 vec!["frame", "text", "browser", "script"],

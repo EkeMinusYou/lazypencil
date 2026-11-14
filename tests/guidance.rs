@@ -24,6 +24,15 @@ fn guides_styles_and_editable_examples_form_a_resolvable_catalog() {
         assert!(!body["body"].as_str().unwrap().is_empty());
         assert_eq!(body["hash"].as_str().unwrap().len(), 64);
         assert_eq!(body, guidance::get_guidance(guide["id"].as_str()).unwrap());
+        for link in body["body"].as_str().unwrap().split("](").skip(1) {
+            let Some((target, _)) = link.split_once(')') else {
+                continue;
+            };
+            if let Some(id) = target.strip_suffix(".md") {
+                guidance::get_guidance(Some(id))
+                    .unwrap_or_else(|error| panic!("Broken guide link {target}: {error}"));
+            }
+        }
     }
     let catalog = guidance::list_styles(None, 100, None).unwrap();
     assert_eq!(catalog["styles"].as_array().unwrap().len(), 3);
@@ -69,8 +78,21 @@ fn style_pagination_binds_cursors_to_the_filter_and_catalog() {
 #[test]
 fn the_guide_operation_example_runs_against_the_real_editing_api() {
     let guide = guidance::get_guidance(Some("operations")).unwrap();
+    let section = guide["body"]
+        .as_str()
+        .unwrap()
+        .split_once("## A complete editing example\n")
+        .unwrap()
+        .1;
+    let (description, example) = section.split_once("```json\n").unwrap();
+    assert!(
+        !description.lines().any(|line| line.starts_with("## ")),
+        "The editing example must remain in its own section"
+    );
+    let example: Value = serde_json::from_str(example.split_once("```").unwrap().0).unwrap();
+    assert_eq!(example, guide["example_operations"]);
     let operations: Vec<lazypencil::operations::Operation> =
-        serde_json::from_value(guide["example_operations"].clone()).unwrap();
+        serde_json::from_value(example).unwrap();
     let (document, result) =
         lazypencil::operations::apply(&Document::empty(), &operations).unwrap();
     let button = result["bindings"]["button"].as_str().unwrap();
@@ -78,17 +100,15 @@ fn the_guide_operation_example_runs_against_the_real_editing_api() {
     assert_eq!(document.node(instance).unwrap()["ref"], button);
     assert_eq!(document.node(button).unwrap()["reusable"], true);
     assert_eq!(document.value()["variables"]["accent"]["value"], "#2563EB");
-    let example = include_str!("../resources/examples/button-operations.json");
-    assert!(guide["body"].as_str().unwrap().contains(example.trim()));
 }
 
 #[test]
-fn the_component_guide_import_batch_and_every_style_component_use_the_real_service() {
+fn the_import_guide_batch_and_every_style_component_use_the_real_service() {
     use lazypencil::{operations::EditRequest, service, store::Store};
     let temp = tempfile::TempDir::new().unwrap();
     std::fs::create_dir(temp.path().join(".git")).unwrap();
     let store = Store::init(temp.path().join("main.pen"), Some(temp.path().join("data"))).unwrap();
-    let guide = guidance::get_guidance(Some("components")).unwrap();
+    let guide = guidance::get_guidance(Some("component-import")).unwrap();
     let body = guide["body"].as_str().unwrap();
     let example = body
         .split_once("```json\n")
@@ -557,4 +577,75 @@ fn layout_guide_examples_recompose_the_same_content_at_different_widths() {
         .find(|item| item.record.id == result["bindings"]["narrow"].as_str().unwrap())
         .unwrap();
     near(parent.record.rect.height, narrow_visual.bottom() + 24.0);
+}
+
+#[test]
+fn operation_guide_exposes_complete_schema_and_executable_edit_patterns() {
+    use lazypencil::operations::{Operation, apply, parse_operations};
+    let guide = guidance::get_guidance(Some("operations")).unwrap();
+    let schema = &guide["operation_schema"];
+    let variants = schema["$defs"]["Operation"]["oneOf"].as_array().unwrap();
+    assert!(variants.len() >= 18);
+    for variant in variants {
+        let properties = &variant["properties"];
+        for field in ["node", "definition"] {
+            if let Some(value) = properties.get(field) {
+                assert_eq!(value["type"], "object", "{field}: {variant}");
+            }
+        }
+        if let Some(children) = properties.get("children") {
+            assert_eq!(children["items"]["type"], "object");
+        }
+    }
+    let document = Document::parse(
+        serde_json::json!({
+            "version":"2.22", "children":[
+                {"id":"PARENT_ID","type":"frame","children":[
+                    {"id":"OLD_REGION_ID","type":"frame"},
+                    {"id":"LABEL_ID","type":"text","content":"Before"}
+                ]},
+                {"id":"COMPONENT_ID","type":"frame","reusable":true,"children":[
+                    {"id":"LABEL_ID_DEFINITION","type":"text","content":"Original"}
+                ]},
+                {"id":"INSTANCE_ID","type":"ref","ref":"COMPONENT_ID"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let body = guide["body"].as_str().unwrap();
+    let patterns = body
+        .split_once("## Choose the edit operation")
+        .unwrap()
+        .1
+        .split_once("## Image assets")
+        .unwrap()
+        .0;
+    let mut edited = document;
+    let mut result = Value::Null;
+    for snippet in patterns.split("```json\n").skip(1) {
+        let source = snippet.split_once("```").unwrap().0.replace(
+            "\"instance_path\":[\"LABEL_ID\"]",
+            "\"instance_path\":[\"LABEL_ID_DEFINITION\"]",
+        );
+        let operations: Vec<Operation> =
+            parse_operations(serde_json::from_str(&source).unwrap()).unwrap();
+        (edited, result) = apply(&edited, &operations).unwrap();
+    }
+    assert_eq!(edited.node("LABEL_ID").unwrap()["content"], "Continue");
+    assert_eq!(
+        edited.node("COMPONENT_ID").unwrap()["children"][0]["content"],
+        "Original"
+    );
+    assert_eq!(
+        edited.node("INSTANCE_ID").unwrap()["descendants"]["LABEL_ID_DEFINITION"]["content"],
+        "Continue"
+    );
+    assert!(edited.node("OLD_REGION_ID").is_err());
+    let region = result["bindings"]["region"].as_str().unwrap();
+    assert_eq!(edited.node(region).unwrap()["fill"], "#FFFFFF");
+    assert_eq!(
+        edited.node("PARENT_ID").unwrap()["children"][0]["id"],
+        region
+    );
 }

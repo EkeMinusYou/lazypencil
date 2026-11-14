@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 mod batch;
 mod import;
+mod input;
 use batch::apply as apply_impl;
 mod reference_cycles;
 mod variable_cycles;
@@ -58,7 +59,7 @@ struct Context<'a> {
     sources: Vec<Project>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum Target {
     Id(String),
@@ -80,6 +81,7 @@ pub enum Operation {
         parent: Option<Target>,
         #[serde(default)]
         index: Option<usize>,
+        #[schemars(with = "Map<String, Value>")]
         node: Value,
         #[serde(default)]
         client_ref: Option<String>,
@@ -112,6 +114,7 @@ pub enum Operation {
     },
     SetVariable {
         name: String,
+        #[schemars(with = "Map<String, Value>")]
         definition: Value,
     },
     RemoveVariable {
@@ -145,12 +148,14 @@ pub enum Operation {
     },
     ReplaceOverride {
         target: Target,
+        #[schemars(with = "Map<String, Value>")]
         node: Value,
         #[serde(default)]
         client_ref: Option<String>,
     },
     SetSlotChildren {
         target: Target,
+        #[schemars(with = "Vec<Map<String, Value>>")]
         children: Vec<Value>,
         #[serde(default)]
         client_refs: Vec<Option<String>>,
@@ -192,9 +197,14 @@ pub struct EditRequest {
     pub expected_dependency_revision: Option<String>,
     #[serde(default)]
     pub expected_runtime_dependency_revision: Option<String>,
+    #[serde(deserialize_with = "input::deserialize_operations")]
     pub operations: Vec<Operation>,
     #[serde(default)]
     pub dry_run: bool,
+}
+
+pub fn parse_operations(value: Value) -> Result<Vec<Operation>> {
+    input::parse_operations(value)
 }
 
 impl EditRequest {

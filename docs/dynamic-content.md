@@ -122,8 +122,9 @@ resolution cannot be arrays or overridden in the document. Resolution and
 `gl_FragCoord.xy` use local logical dimensions even at enlarged output; z/w retain
 WebGL semantics. Render time defaults to zero.
 
-See the shared [shader guide](../resources/guidance/shaders.md) for declaration,
-default, structure and array syntax.
+See the [shader guide](../resources/guidance/shaders.md) for declaration, default
+and array syntax, and the [shader reference](../resources/guidance/shader-reference.md)
+for structures, image dependencies, preprocessing and limits.
 
 Effects can sample `pencil:object` and the previously painted `pencil:background`.
 Effect order and parent/backdrop context matter. The shader process explicitly uses

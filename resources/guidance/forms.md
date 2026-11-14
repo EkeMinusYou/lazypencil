@@ -16,7 +16,7 @@ Supporting instructions and errors can appear together. Keep instructions that r
 
 ## Single-line values
 
-When no existing field component fits, get_style with id `standard-ui` provides `form-field`. Its input has a fixed height and an inner clipping frame, `field-value-viewport`, inside the horizontal padding. The value uses `textGrowth: "auto"`, preserving the full string on one line. Long values are clipped at the inner viewport boundary, leaving the border, padding, and messages clear. Choose this treatment for a single-line input; do not wrap its value inside a fixed-height surface or shrink its font to fit.
+If a bundled starting point suits the task, get_style with id `standard-ui` provides `form-field`. Its input has a fixed height and an inner clipping frame, `field-value-viewport`, inside the horizontal padding. The value uses `textGrowth: "auto"`, preserving the full string on one line. Long values are clipped at the inner viewport boundary, leaving the border, padding, and messages clear. Choose this treatment for a single-line input; do not wrap its value inside a fixed-height surface or shrink its font to fit.
 
 Intentional horizontal clipping can report `LAYOUT_OVERFLOW` for `field-value` with `clipped: true`. Check that it is horizontal overflow of that value inside its viewport. Vertical overflow and overflow of other elements still need attention. Clipping depicts the visible portion of a static input; it does not add scrolling or editing behavior. Do not silently replace the stored value with a shortened string or claim automatic ellipsis.
 
