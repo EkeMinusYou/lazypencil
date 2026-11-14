@@ -163,6 +163,7 @@ impl Harness {
             "user-navigation-config",
             "slash-completion",
             "collapsible-panels",
+            "resizable-panels",
             "oversized-preview",
             "ime-commit",
             "kitty-no-color",

@@ -137,6 +137,7 @@ impl App {
                 Nav::PreviousSection,
                 Nav::ToggleNodesPanel,
                 Nav::ToggleAgentPanel,
+                Nav::ResizePanels,
                 Nav::Help,
                 Nav::Commands,
             ]

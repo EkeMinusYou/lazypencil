@@ -203,6 +203,7 @@ include!("tests/steering_display.rs");
 include!("tests/images.rs");
 include!("tests/navigation.rs");
 include!("tests/mouse.rs");
+include!("tests/resize.rs");
 include!("tests/saved.rs");
 include!("tests/resume.rs");
 

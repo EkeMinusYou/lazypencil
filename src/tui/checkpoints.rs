@@ -143,7 +143,7 @@ impl Modal {
 
 impl super::App {
     pub(super) fn has_modal(&self) -> bool {
-        self.has_overlay() || self.preview_search.editing
+        self.has_overlay() || self.preview_search.editing || self.resize.active()
     }
     pub(super) fn has_overlay(&self) -> bool {
         self.help

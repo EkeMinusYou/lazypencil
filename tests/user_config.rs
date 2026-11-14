@@ -491,6 +491,7 @@ fn navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_confl
     assert_eq!(navigation["next_panel"], json!(["F6"]));
     assert_eq!(navigation["pan_left"], json!(["a"]));
     assert_eq!(navigation["pan_up"], json!(["Up", "k"]));
+    assert_eq!(navigation["resize_panels"], json!(["Alt+r"]));
     assert_eq!(
         f.snapshot().unwrap().summary()["user"]["settings"]["tui"]["navigation"],
         *navigation
@@ -514,6 +515,7 @@ fn navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_confl
         "[tui.navigation]\npan_left=['q']\n",
         "[tui.navigation]\nquit=['Ctrl+c']\n",
         "[tui.navigation]\nunknown_action=['F9']\n",
+        "[tui.navigation]\nresize_panels=['Alt+p']\n",
     ] {
         f.settings(invalid);
         let output = f.cli(&["config", "show", "--user"]);

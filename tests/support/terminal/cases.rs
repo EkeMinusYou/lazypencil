@@ -700,6 +700,10 @@ pub fn run(
             collapsible_panels(&mut h)?;
             Value::Null
         }
+        "resizable-panels" => {
+            resizable_panels(&mut h)?;
+            Value::Null
+        }
         "oversized-preview" => {
             oversized_preview(&mut h, &design)?;
             Value::Null
@@ -2274,6 +2278,98 @@ fn oversized_preview(h: &mut Harness, design: &Value) -> Result {
         !h.screen.text().contains("UNSUPPORTED_VERSION"),
         "Preview failure leaked into Agent history"
     );
+    no_agent(h);
+    Ok(())
+}
+
+fn resizable_panels(h: &mut Harness) -> Result {
+    fn borders(h: &Harness) -> Vec<u16> {
+        h.screen
+            .text()
+            .lines()
+            .nth(10)
+            .unwrap_or_default()
+            .chars()
+            .enumerate()
+            .filter_map(|(x, ch)| (ch == '│').then_some(x as u16))
+            .collect()
+    }
+    fn pointer(h: &mut Harness, button: u8, x: u16, release: bool) -> Result {
+        h.key(
+            format!(
+                "\x1b[<{button};{};11{}",
+                x + 1,
+                if release { 'm' } else { 'M' }
+            )
+            .as_bytes(),
+        )
+    }
+    fn complete_image(h: &mut Harness, width: usize) -> Result {
+        h.wait("complete preview at resized width", 15.0, |h| {
+            h.frames
+                .images
+                .last()
+                .is_some_and(|i| i.width == width && i.has_color([255, 0, 0, 255]))
+        })
+    }
+    h.wait("initial resize preview", 15.0, |h| {
+        h.frames
+            .images
+            .last()
+            .is_some_and(|i| i.has_color([255, 0, 0, 255]))
+    })?;
+    let initial = borders(h);
+    assert_eq!(initial.len(), 6);
+    let image_width = h.frames.images.last().unwrap().width;
+    let cell_width = image_width / usize::from(initial[3] - initial[2] - 1);
+    assert!(cell_width > 0);
+    let original = fs::read(&h.document)?;
+    let draft = "Keep this unsent resize draft";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    h.key(b"\x1br")?;
+    h.visible("RESIZE")?;
+    h.key(b"h")?;
+    h.wait("keyboard grows Agent", 15.0, |h| {
+        borders(h).get(4) == Some(&(initial[4] - 7))
+    })?;
+    complete_image(h, image_width - cell_width * 7)?;
+    h.paste("Must not enter the draft")?;
+    h.key(b"\x1b")?;
+    h.hidden("RESIZE")?;
+    h.draft(draft)?;
+    // Pointer capture survives a redraw and keeps keyboard focus in Prompt.
+    pointer(h, 0, initial[2], false)?;
+    h.visible("RESIZE")?;
+    pointer(h, 32, initial[2] + 4, false)?;
+    h.wait("first drag redraw", 15.0, |h| {
+        borders(h).get(2) == Some(&(initial[2] + 4))
+    })?;
+    pointer(h, 32, initial[2] + 8, false)?;
+    h.wait("second drag redraw", 15.0, |h| {
+        borders(h).get(2) == Some(&(initial[2] + 8))
+    })?;
+    pointer(h, 0, initial[2] + 8, true)?;
+    h.hidden("RESIZE")?;
+    complete_image(h, image_width - cell_width * 15)?;
+    h.paste(" tail")?;
+    h.draft(&format!("{draft} tail"))?;
+    // Mouse cancellation restores exactly the layout before this drag.
+    pointer(h, 0, initial[2] + 8, false)?;
+    pointer(h, 32, initial[2] + 12, false)?;
+    h.wait("cancelable drag", 15.0, |h| {
+        borders(h).get(2) == Some(&(initial[2] + 12))
+    })?;
+    h.key(b"\x1b")?;
+    h.hidden("RESIZE")?;
+    complete_image(h, image_width - cell_width * 15)?;
+    command(h, "Reset panel sizes")?;
+    h.hidden("Commands")?;
+    h.wait("reset restores all borders", 15.0, |h| {
+        borders(h) == initial
+    })?;
+    complete_image(h, image_width)?;
+    assert_eq!(fs::read(&h.document)?, original);
     no_agent(h);
     Ok(())
 }

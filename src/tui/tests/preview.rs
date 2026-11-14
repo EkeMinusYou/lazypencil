@@ -437,9 +437,9 @@ fn panel_metadata_uses_global_header_and_contextual_preview_labels() {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(32, 13)].symbol(), "%");
+        assert_eq!(terminal.backend().buffer()[(29, 13)].symbol(), "%");
         assert_eq!(
-            terminal.backend().buffer()[(32, 13)].fg,
+            terminal.backend().buffer()[(29, 13)].fg,
             theme::colors().secondary
         );
         app.preview.as_mut().unwrap().time_dependent = false;

@@ -37,6 +37,7 @@ pub(super) enum Action {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Target {
+    Resize(super::resize::Boundary),
     Focus(Focus),
     Canvas,
     List(ListTarget),
@@ -722,6 +723,9 @@ impl App {
         worker: &Worker,
     ) -> Result<bool> {
         if !self.mouse.enabled {
+            return Ok(false);
+        }
+        if self.resize_mouse(event) {
             return Ok(false);
         }
         let position = Position::new(event.column, event.row);

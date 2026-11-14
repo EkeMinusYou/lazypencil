@@ -192,7 +192,27 @@ playback. User controls belong in user configuration, not project files.
 
 ## Panel widths
 
-Set relative widths in user settings and restart:
+Drag the vertical borders between Nodes, Preview and Agent to resize adjacent
+panels. The third panel stays fixed. Release to keep the widths; Esc during a drag
+restores the widths from before that drag. Border dragging preserves keyboard focus.
+
+Press `Alt+R` or choose **View · Resize panels** in the command palette to enter
+keyboard resize mode. `h`/Left moves the focused panel's left boundary left;
+`l`/Right moves its right boundary right. If that edge has no boundary, the opposite
+edge moves in the same direction. Each press moves about 5% of the workspace width.
+Tab/Shift+Tab switches the target panel, skipping collapsed panels. Up/Down and j/k
+have no effect in this horizontal layout. Esc, Enter or Alt+R exits and keeps the
+current widths. Text and pasted input do not enter the draft while resizing.
+
+Minimum widths including borders are 12 columns for Nodes, 20 for Preview and 18
+for Agent. Resizing stops at these limits without collapsing panels. Hidden panels
+retain their preferred widths; restoring them fits the visible panels to the terminal.
+Terminal resizing preserves preferred proportions, including when a narrow terminal
+temporarily limits them. Focus loss or a dialog ends an active resize.
+
+Interactive widths last for the current workspace and do not rewrite user settings.
+**View · Reset panel sizes** restores the initial proportions. Configure those
+proportions in user settings and restart:
 
 ```toml
 [tui.layout]
@@ -218,6 +238,7 @@ command palette.
 | Diagnostics: `Enter`, `f`, `Esc` | Reveal and fit its node in Nodes; fit while staying in Diagnostics; return to Nodes |
 | `Tab` / `Shift+Tab` | Move right / left through visible Nodes, Preview, Prompt; wrap at either end and skip collapsed panels. Agent history, attachments and references enter this cycle at Prompt |
 | `F2` or `Alt+N` / `F3` or `Alt+A` | Collapse or expand Nodes / Agent, including while typing. Preview fills the freed space; expanding focuses the panel. Drafts, history and node selection are retained. Also available in the command palette |
+| `Alt+R` | Enter keyboard resize mode; h/l or Left/Right moves boundaries, Tab switches the target panel, Esc/Enter keeps the widths and exits |
 | Nodes / Diagnostics: `a` | Add the selected node or diagnostic as a prompt reference and focus the input, expanding Agent if collapsed |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |
@@ -340,7 +361,7 @@ zoom_out = ["v"]
 
 | Scope | Action fields |
 | --- | --- |
-| Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `help`, `commands` |
+| Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `resize_panels`, `help`, `commands` |
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
 | Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `select_child`, `select_parent`, `time_backward`, `time_forward`, `play_pause`, `search_preview`, `next_search_match`, `previous_search_match` |
 | Preview and Nodes | `fit_selected` |

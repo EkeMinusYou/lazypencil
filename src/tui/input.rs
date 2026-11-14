@@ -11,6 +11,11 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return Ok(false);
         }
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.resize.stop();
+        } else if self.resize_key(key, worker) {
+            return Ok(false);
+        }
         self.pointer_keyboard_navigation(key);
         if self.mouse.enabled
             && self.focus == Focus::Preview
@@ -80,6 +85,10 @@ impl App {
         }
         if self.help {
             self.help_input(key);
+            return Ok(false);
+        }
+        if global(&self.navigation, Nav::ResizePanels) {
+            self.start_panel_resize();
             return Ok(false);
         }
         if self.complete_command_key(key) {

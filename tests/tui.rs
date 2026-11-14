@@ -395,6 +395,11 @@ fn real_pty_collapses_panels_resizes_kitty_preview_and_preserves_the_draft() {
 }
 
 #[test]
+fn real_pty_resizes_panels_with_keyboard_and_drag_and_updates_kitty_pixels() {
+    run_pty_case("resizable-panels");
+}
+
+#[test]
 fn real_pty_custom_navigation_preserves_draft_and_changes_preview_pixels() {
     run_pty_case("user-navigation-config");
 }

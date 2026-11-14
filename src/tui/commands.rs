@@ -85,6 +85,10 @@ commands! {
         "toggle-nodes", [], "", 0, 0, Always;
     ToggleAgent, "View", "Toggle Agent panel", "Collapse or expand the Agent panel.",
         "toggle-agent", [], "", 0, 0, Always;
+    ResizePanels, "View", "Resize panels", "Resize with h/l or arrows; Tab switches panels; Esc keeps the widths.",
+        "resize-panels", [], "", 0, 0, Always;
+    ResetPanelSizes, "View", "Reset panel sizes", "Restore the configured initial panel widths.",
+        "reset-panel-sizes", [], "", 0, 0, Always;
     ToggleNodeNames, "View", "Toggle node names", "Show or hide root node names in Preview for this session.",
         "toggle-node-names", [], "", 0, 0, Always;
     Theme, "View", "Theme…", "Select auto, dark, light or monochrome UI colors for this session.",
@@ -467,6 +471,12 @@ impl App {
             }
             Action::ToggleNodes => self.toggle_panel(Nav::ToggleNodesPanel, worker),
             Action::ToggleAgent => self.toggle_panel(Nav::ToggleAgentPanel, worker),
+            Action::ResizePanels => self.start_panel_resize(),
+            Action::ResetPanelSizes => {
+                self.resize.stop();
+                self.resize.widths = None;
+                self.dirty = true;
+            }
             Action::ToggleNodeNames => {
                 self.preview_settings.show_node_names = !self.preview_settings.show_node_names;
                 self.request(worker, false, false);

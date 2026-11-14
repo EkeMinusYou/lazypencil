@@ -14,7 +14,7 @@ fn workspace_commands_keep_legacy_names_and_literal_queue_text() {
         assert!(commands::parse(&format!("/{name} extra")).is_err());
     }
     assert_eq!(commands::COMMANDS.iter().filter(|command| command.slash_enabled()).count(), 12);
-    assert_eq!(commands::COMMANDS.len(), 26);
+    assert_eq!(commands::COMMANDS.len(), 28);
     for command in commands::COMMANDS.iter().filter(|command| !command.slash_enabled()) {
         for name in std::iter::once(&command.name).chain(command.aliases.iter()) {
             let error = commands::parse(&format!("/{name}")).unwrap_err();

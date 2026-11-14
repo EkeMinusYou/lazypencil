@@ -169,14 +169,14 @@ fn prompt_terminal_cursor_tracks_display_cells_scroll_resize_and_focus_for_imes(
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(41, 11));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(38, 11));
         app.editor = editor(&"日".repeat(80));
         terminal
             .draw(|frame| {
                 app.draw(frame);
             })
             .unwrap();
-        assert_eq!(terminal.backend().cursor_position(), Position::new(43, 11));
+        assert_eq!(terminal.backend().cursor_position(), Position::new(46, 11));
         let draft = app.editor.lines().join("\n");
         app.help = true;
         terminal

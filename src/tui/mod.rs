@@ -26,6 +26,7 @@ mod playback;
 mod preview;
 mod preview_search;
 mod references;
+mod resize;
 mod saved;
 mod search;
 mod selection;
@@ -256,6 +257,7 @@ struct App {
     keys: crate::config::keys::PromptKeys,
     navigation: crate::config::keys::NavigationKeys,
     panel_layout: crate::config::keys::PanelLayout,
+    resize: resize::Resize,
     preview_settings: crate::config::keys::PreviewSettings,
     mouse: crate::config::keys::MouseSettings,
     pointer: mouse::Pointer,
@@ -362,6 +364,7 @@ impl App {
             keys: Default::default(),
             navigation: Default::default(),
             panel_layout: Default::default(),
+            resize: Default::default(),
             preview_settings: Default::default(),
             mouse: Default::default(),
             pointer: Default::default(),
@@ -753,6 +756,7 @@ impl App {
                 }
                 self.dirty = true;
             }
+            Event::Paste(_) if self.resize.active() => {}
             Event::Paste(text) if self.focus == Focus::Prompt && !self.has_modal() => {
                 self.insert_text(&text);
                 self.dirty = true;
@@ -770,6 +774,8 @@ impl App {
                 self.dirty = true;
             }
             Event::FocusLost => {
+                self.dirty |= self.resize.active();
+                self.resize.stop();
                 self.native_input.set_focused(false);
                 self.selection.abort();
                 self.pointer.cancel();
@@ -778,6 +784,8 @@ impl App {
             }
             Event::FocusGained => self.native_input.set_focused(true),
             Event::Resize(_, _) => {
+                self.resize.stop();
+                self.resize.areas = None;
                 self.native_input.cancel();
                 self.selection.abort();
                 self.pointer.clear();
@@ -1263,6 +1271,10 @@ impl App {
             label(Nav::ToggleAgentPanel)
         ));
         text.push_str(&format!(
+            "{}: resize panels; h/Left and l/Right move boundaries, Tab switches panels, Esc/Enter keeps widths\nDrag vertical panel borders to resize; Esc during a drag restores the previous widths\n",
+            label(Nav::ResizePanels)
+        ));
+        text.push_str(&format!(
             "{} / {}: switch Agent sections; Esc returns to Prompt\n",
             label(Nav::PreviousSection),
             label(Nav::NextSection)
@@ -1657,6 +1669,8 @@ impl App {
         let area = frame.area();
         frame.render_widget(Block::default().style(theme::base()), area);
         if area.width < 50 || area.height < 16 {
+            self.resize.stop();
+            self.resize.areas = None;
             self.native_input.cancel();
             self.pointer.clear();
             frame.render_widget(
@@ -1668,13 +1682,15 @@ impl App {
             self.presentation.finish(frame.buffer_mut(), true);
             return Size::new(0, 0);
         }
-        let workspace = workspace::areas(
+        let workspace = workspace::sized_areas(
             area,
             &self.panel_layout,
+            self.resize.widths,
             self.nodes_collapsed,
             self.agent_collapsed,
             self.footer_height(),
         );
+        self.resize.areas = Some(workspace);
         let mut header = workspace.header;
         if self.mouse.enabled
             && self.mouse.show_controls
@@ -1807,6 +1823,7 @@ impl App {
         if self.mouse.enabled {
             self.draw_pointer_controls(frame, &workspace);
         }
+        self.draw_resize(frame, workspace);
         if self.help {
             self.pointer.overlay();
             let popup = modal::area(area);

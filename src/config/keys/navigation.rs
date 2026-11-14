@@ -56,6 +56,7 @@ bindings! {
     previous_panel => PreviousPanel(ALL, ["Shift+Tab"]),
     toggle_nodes_panel => ToggleNodesPanel(ALL, ["F2", "Alt+n"]),
     toggle_agent_panel => ToggleAgentPanel(ALL, ["F3", "Alt+a"]),
+    resize_panels => ResizePanels(ALL, ["Alt+r"]),
     previous_section => PreviousSection(CONVERSATION_REGION, ["Alt+Up"]),
     next_section => NextSection(CONVERSATION_REGION, ["Alt+Down"]),
     help => Help(ALL, ["F1", "?"]),
