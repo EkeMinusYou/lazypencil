@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.10
+
+- Expose the complete editing schema through operation guidance when an AI client shortens MCP tool types, and describe node and variable definitions as JSON objects.
+- Identify failed operation positions and explain supported target forms and structural edits, with executable examples for label updates, instance overrides and atomic region replacement.
+- Guide substantial interface improvements from the primary user task through region placement, action grouping and domain relationships before visual detail.
+- Clarify shared component workflows, calculated preview recovery, expansion limits and HTTP image origin restrictions in agent guidance.
+
 ## 0.2.9
 
 - Unify file selection, command palettes, checkpoints, saved conversations, permissions and Help with shared launcher headings, context strips, result rows and footer controls.
