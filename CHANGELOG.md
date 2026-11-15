@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.11
+
+- Attach selected Preview nodes to the next prompt with `a`, including multiple selections, while preserving the draft and focusing the input.
+- Resize workspace panes by dragging their borders or with `Alt+R` and directional keys, preserving pane preferences and supporting reset from the command palette.
+
 ## 0.2.10
 
 - Expose the complete editing schema through operation guidance when an AI client shortens MCP tool types, and describe node and variable definitions as JSON objects.
