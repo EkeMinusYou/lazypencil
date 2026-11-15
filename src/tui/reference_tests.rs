@@ -102,7 +102,7 @@ fn preview_references_capture_canvas_selection_and_preserve_the_draft() {
             json!({"node_id":"instance-b","instance_path":["label"]})
         );
         assert_eq!(app.outbox.references[0].text_excerpt, "購入する");
-        assert_eq!(app.selection.ids, [second.clone()]);
+        assert_eq!(app.selection.ids, std::slice::from_ref(&second));
         assert!(!app.conversation.active());
 
         app.selection.ids.push(first);
