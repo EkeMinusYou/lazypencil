@@ -214,9 +214,6 @@ impl App {
                 self.hint(Nav::ToggleDiagnostics, "diagnostics"),
             ],
             Focus::Preview if !self.preview_search.query.is_empty() => vec![
-                (!self.selection.ids.is_empty())
-                    .then(|| self.hint(Nav::ReferenceNode, "reference"))
-                    .flatten(),
                 self.grouped_hint(&[Nav::NextSearchMatch, Nav::PreviousSearchMatch], "result"),
                 Some(Hint::new("Esc", "clear search")),
             ],

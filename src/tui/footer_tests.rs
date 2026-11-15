@@ -18,6 +18,20 @@ pub(super) fn rows(app: &App, width: u16) -> Vec<String> {
 }
 
 #[test]
+fn preview_search_hints_remain_visible_with_selected_nodes() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.focus = Focus::Preview;
+        app.selection.ids = vec!["selected".into()];
+        app.preview_search.query = "match".into();
+        let line = &rows(&app, 100)[1];
+        assert!(line.contains("n/Shift+N result"));
+        assert!(line.contains("Esc clear search"));
+    });
+}
+
+#[test]
 fn footer_shows_only_contextual_actions_and_prefers_non_function_bindings() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

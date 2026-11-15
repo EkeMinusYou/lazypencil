@@ -976,8 +976,9 @@ fn preview_search(h: &mut Harness) -> Result {
     h.key(b"\x1b")?;
     h.hidden("Nodes /first")?;
     h.key(b"\t")?;
-    h.visible(" pan")?;
-    h.key(b"\t")?;
+    h.visible("a reference")?;
+    h.key(b"a")?;
+    h.visible("References")?;
     h.visible(" send")?;
     h.paste(" 続き")?;
     h.draft(&format!("{draft} 続き"))?;
