@@ -484,7 +484,7 @@ fn invalid_shortcuts_fail_without_silently_restoring_defaults() {
 #[test]
 fn navigation_shortcuts_are_user_owned_replace_defaults_and_validate_scope_conflicts() {
     let f = Fixture::new();
-    let body = "[tui.keys]\nsubmit=['F5']\npaste=[]\n[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8']\ncommands=['F9']\npan_left=['a']\npan_right=['d']\nzoom_in=['z']\nquit=['x']\n";
+    let body = "[tui.keys]\nsubmit=['F5']\npaste=[]\n[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8']\ncommands=['F9']\npan_left=['a']\nreference_node=['b']\npan_right=['d']\nzoom_in=['z']\nquit=['x']\n";
     f.settings(body);
     let shown = f.data(&["config", "show", "--user"]);
     let navigation = &shown["settings"]["tui"]["navigation"];

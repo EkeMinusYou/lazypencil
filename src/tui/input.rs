@@ -331,6 +331,10 @@ impl App {
         }
         match self.focus {
             Focus::Preview => {
+                if action(Nav::ReferenceNode) {
+                    self.reference_canvas_selection()?;
+                    return Ok(false);
+                }
                 if action(Nav::SearchPreview) {
                     self.start_preview_search();
                     return Ok(false);

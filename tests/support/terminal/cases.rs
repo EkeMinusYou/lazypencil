@@ -310,7 +310,7 @@ pub fn run(
                 let mut text = "[tui.keys]\nsubmit=['F5']\npaste=[]\n".to_owned();
                 if case == "user-navigation-config" {
                     text.push_str("[tui.layout]\nnodes=1\npreview=2\nagent=1\n");
-                    text.push_str("[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8','t']\ncommands=['F9']\nquit=['x']\npan_left=['a']\npan_right=['d']\npan_up=['w']\npan_down=['s']\nzoom_in=['z']\nzoom_out=['v']\n");
+                    text.push_str("[tui.navigation]\nnext_panel=['F6']\nprevious_panel=['F7']\nhelp=['F8','t']\ncommands=['F9']\nquit=['x']\npan_left=['a']\nreference_node=['b']\npan_right=['d']\npan_up=['w']\npan_down=['s']\nzoom_in=['z']\nzoom_out=['v']\n");
                 }
                 text
             }

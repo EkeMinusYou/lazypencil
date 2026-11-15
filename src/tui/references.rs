@@ -11,6 +11,27 @@ pub(super) fn history(references: &[Reference]) -> String {
 }
 
 impl App {
+    pub(super) fn reference_canvas_selection(&mut self) -> Result<()> {
+        let references = self
+            .selection
+            .ids
+            .iter()
+            .filter_map(|id| {
+                self.preview
+                    .as_ref()
+                    .filter(|preview| !preview.attachment)?
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == *id)
+            })
+            .map(|node| self.captured_reference(node, None))
+            .collect::<Vec<_>>();
+        if references.is_empty() {
+            return Err(Error::new("INVALID_ARGUMENT", "Select a node first"));
+        }
+        self.add_prompt_references(references)
+    }
+
     pub(super) fn reference_selected_node(&mut self) -> Result<()> {
         let node = self
             .selected_node()
@@ -55,14 +76,23 @@ impl App {
     }
 
     fn add_prompt_reference(&mut self, reference: Reference) -> Result<()> {
-        let diagnostic = reference.diagnostic.is_some();
+        self.add_prompt_references(vec![reference])
+    }
+
+    fn add_prompt_references(&mut self, references: Vec<Reference>) -> Result<()> {
+        let diagnostic = references
+            .iter()
+            .any(|reference| reference.diagnostic.is_some());
         let mut pending = self.outbox.references.clone();
-        if let Some(previous) = pending.iter_mut().find(|item| {
-            item.target == reference.target && item.diagnostic_code() == reference.diagnostic_code()
-        }) {
-            *previous = reference;
-        } else {
-            pending.push(reference);
+        for reference in references {
+            if let Some(previous) = pending.iter_mut().find(|item| {
+                item.target == reference.target
+                    && item.diagnostic_code() == reference.diagnostic_code()
+            }) {
+                *previous = reference;
+            } else {
+                pending.push(reference);
+            }
         }
         references::decode(references::selection(&pending).as_ref())?;
         self.outbox.references = pending;

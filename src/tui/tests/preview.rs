@@ -1124,6 +1124,7 @@ fn custom_navigation_preserves_typing_search_modals_and_moves_the_actual_preview
             next_panel: vec!["F6".into()], previous_panel: vec!["F7".into()],
             help: vec!["F8".into(), "t".into()], commands: vec!["F9".into()],
             quit: vec!["x".into()], pan_left: vec!["a".into()], pan_right: vec!["d".into()],
+            reference_node: vec!["b".into()],
             pan_up: vec!["w".into()], pan_down: vec!["s".into()],
             zoom_in: vec!["z".into()], zoom_out: vec!["v".into()],
             fit_document: vec!["c".into()], next_item: vec!["n".into()],

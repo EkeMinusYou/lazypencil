@@ -1320,7 +1320,7 @@ impl App {
             (Nav::SearchNodes, "Nodes: search names and IDs"),
             (
                 Nav::ReferenceNode,
-                "Nodes/Diagnostics: add a prompt reference and focus input",
+                "Preview/Nodes/Diagnostics: add prompt references and focus input",
             ),
             (Nav::ToggleDiagnostics, "Nodes: switch Nodes / Diagnostics"),
             (

@@ -61,7 +61,8 @@ attachments added later belong to the next request.
 
 ### Refer to nodes and diagnostics
 
-Select a node in Nodes and press `a` to add it to the next prompt's References.
+Select nodes in Preview or a node in Nodes and press `a` to add them to the next
+prompt's References.
 Selecting or fitting a node only changes what you are viewing; add a reference
 when your request should target it. A prompt allows up to 16 references / 64 KiB.
 
@@ -239,7 +240,7 @@ command palette.
 | `Tab` / `Shift+Tab` | Move right / left through visible Nodes, Preview, Prompt; wrap at either end and skip collapsed panels. Agent history, attachments and references enter this cycle at Prompt |
 | `F2` or `Alt+N` / `F3` or `Alt+A` | Collapse or expand Nodes / Agent, including while typing. Preview fills the freed space; expanding focuses the panel. Drafts, history and node selection are retained. Also available in the command palette |
 | `Alt+R` | Enter keyboard resize mode; h/l or Left/Right moves boundaries, Tab switches the target panel, Esc/Enter keeps the widths and exits |
-| Nodes / Diagnostics: `a` | Add the selected node or diagnostic as a prompt reference and focus the input, expanding Agent if collapsed |
+| Preview / Nodes / Diagnostics: `a` | Add the selected nodes or diagnostic as prompt references and focus the input, expanding Agent if collapsed |
 | Right region: `Alt+Up` / `Alt+Down` | Switch between conversation history, pending images, node references, and Prompt; skip empty lists |
 | Agent history / Attachments / References: `Esc` | Return to Prompt |
 | References: arrows / `j`/`k`; Delete / Backspace / `d` | Select a reference; remove it |
@@ -351,6 +352,7 @@ previous_panel = ["F8"]
 help = ["F9", "?"]
 commands = ["F10"]
 quit = ["x"]
+reference_node = ["b"]
 pan_left = ["a"]
 pan_right = ["d"]
 pan_up = ["w"]
@@ -364,9 +366,9 @@ zoom_out = ["v"]
 | Normal panels | `next_panel`, `previous_panel`, `toggle_nodes_panel`, `toggle_agent_panel`, `resize_panels`, `help`, `commands` |
 | Outside Prompt | `quit`, `refresh`, `open_preview` |
 | Preview | `pan_left`, `pan_right`, `pan_up`, `pan_down`, `zoom_in`, `zoom_out`, `fit_document`, `select_child`, `select_parent`, `time_backward`, `time_forward`, `play_pause`, `search_preview`, `next_search_match`, `previous_search_match` |
-| Preview and Nodes | `fit_selected` |
+| Preview and Nodes | `fit_selected`, `reference_node` |
 | Nodes, Attachments and References | `previous_item`, `next_item` |
-| Nodes (including Diagnostics) | `reference_node`, `toggle_diagnostics`, `diagnostic_scope`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
+| Nodes (including Diagnostics) | `toggle_diagnostics`, `diagnostic_scope`, `search_nodes`, `clear_selection`, `activate_node`, `expand_node`, `collapse_node`, `toggle_node`, `node_page_up`, `node_page_down` |
 | Attachments and References | `remove_attachment` |
 | Agent history | `scroll_up`, `scroll_down`, `follow_output` |
 

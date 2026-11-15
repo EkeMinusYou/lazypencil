@@ -60,6 +60,107 @@ fn document() -> Value {
 }
 
 #[test]
+fn preview_references_capture_canvas_selection_and_preserve_the_draft() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "image-inspect");
+        let mut design = document();
+        design["children"]
+            .as_array_mut()
+            .unwrap()
+            .extend((0..17).map(
+            |index| json!({"type":"rectangle","id":format!("box-{index}"),"width":10,"height":10}),
+        ));
+        std::fs::write(app.conversation.store().path(), design.to_string()).unwrap();
+        let worker = Worker::start(
+            app.conversation.store().clone(),
+            vec![],
+            Backend::halfblocks(),
+            196,
+        )
+        .unwrap();
+        app.cells = Size::new(20, 12);
+        app.request(&worker, false, false);
+        rendered(&mut app, &worker).await;
+        app.insert_text("Update these labels");
+
+        select(&mut app, "instance-b", &["label"]);
+        let second = app.selected_node().unwrap().id.clone();
+        select(&mut app, "instance-a", &["label"]);
+        let first = app.selected_node().unwrap().id.clone();
+        app.selection.ids = vec![second.clone()];
+        app.focus = Focus::Preview;
+        app.agent_collapsed = true;
+        assert!(super::footer_tests::rows(&app, 100)[1].contains("a reference"));
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Prompt);
+        assert!(!app.agent_collapsed);
+        assert_eq!(app.editor.lines(), ["Update these labels"]);
+        assert_eq!(app.outbox.references.len(), 1);
+        assert_eq!(
+            app.outbox.references[0].target["address"],
+            json!({"node_id":"instance-b","instance_path":["label"]})
+        );
+        assert_eq!(app.outbox.references[0].text_excerpt, "購入する");
+        assert_eq!(app.selection.ids, [second.clone()]);
+        assert!(!app.conversation.active());
+
+        app.selection.ids.push(first);
+        app.navigation.reference_node = vec!["b".into()];
+        app.navigation.validate(&app.keys).unwrap();
+        app.focus = Focus::Preview;
+        press(&mut app, KeyCode::Char('a'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.focus, Focus::Preview);
+        assert_eq!(app.outbox.references.len(), 1);
+        press(&mut app, KeyCode::Char('b'), KeyModifiers::NONE, &worker).await;
+        assert_eq!(app.outbox.references.len(), 2);
+        assert_eq!(
+            app.outbox.references[1].target["address"]["node_id"],
+            "instance-a"
+        );
+        assert_eq!(app.editor.lines(), ["Update these labels"]);
+        app.submit().await.unwrap();
+        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
+        app.sync_turn(&worker);
+        assert_eq!(references_received(&temp, 1).len(), 2);
+
+        app.selection.clear();
+        app.focus = Focus::Preview;
+        let error = app
+            .key(
+                KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+                &Backend::halfblocks(),
+                &worker,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert!(app.outbox.references.is_empty());
+        assert_eq!(app.focus, Focus::Preview);
+
+        app.insert_text("Keep this draft if the selection exceeds the limit");
+        app.selection.ids = (0..17).map(|index| format!("box-{index}")).collect();
+        let error = app
+            .key(
+                KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+                &Backend::halfblocks(),
+                &worker,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "INVALID_ARGUMENT");
+        assert!(app.outbox.references.is_empty());
+        assert_eq!(
+            app.editor.lines(),
+            ["Keep this draft if the selection exceeds the limit"]
+        );
+        assert!(error.message.contains("16"), "{error}");
+        assert_eq!(app.focus, Focus::Preview);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn explicit_references_preserve_drafts_instances_cursor_and_saved_history() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

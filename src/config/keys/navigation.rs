@@ -82,7 +82,7 @@ bindings! {
     previous_search_match => PreviousSearchMatch(PREVIEW, ["Shift+n"]),
     previous_item => PreviousItem(NODES | ATTACHMENTS | REFERENCES, ["Up", "k"]),
     next_item => NextItem(NODES | ATTACHMENTS | REFERENCES, ["Down", "j"]),
-    reference_node => ReferenceNode(NODES, ["a"]),
+    reference_node => ReferenceNode(PREVIEW | NODES, ["a"]),
     search_nodes => SearchNodes(NODES, ["/"]),
     toggle_diagnostics => ToggleDiagnostics(NODES, ["d"]),
     diagnostic_scope => DiagnosticScope(NODES, ["s"]),
@@ -227,6 +227,9 @@ mod tests {
         assert!(keys.validate(&PromptKeys::default()).is_err());
         keys.search_preview = vec!["/".into()];
         keys.next_search_match = vec!["p".into()];
+        assert!(keys.validate(&PromptKeys::default()).is_err());
+        keys.next_search_match = vec!["n".into()];
+        keys.pan_left = vec!["a".into()];
         assert!(keys.validate(&PromptKeys::default()).is_err());
     }
 
