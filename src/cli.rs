@@ -706,7 +706,15 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                     },
                 ),
                 IconCommand::Setup { pack, archive } => {
-                    crate::icons::setup(&data, pack, archive.as_deref())
+                    let executable = std::env::current_exe()
+                        .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
+                    crate::icons::setup_with_cancellation(
+                        &data,
+                        pack,
+                        archive.as_deref(),
+                        Some(&crate::cancel::token()),
+                        Some(&executable),
+                    )
                 }
             }
         }
@@ -863,7 +871,11 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             "MCP uses the streaming stdio entry point",
         )),
         Command::Guidance { id, file } => match file {
-            Some(file) => crate::service::project_guidance(&open(file)?, id.as_deref()),
+            Some(file) => crate::service::project_guidance_with_cancellation(
+                &open(file)?,
+                id.as_deref(),
+                Some(&crate::cancel::token()),
+            ),
             None => crate::guidance::get_guidance(id.as_deref()),
         },
         Command::Styles {
@@ -872,16 +884,21 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
             limit,
             cursor,
         } => match file {
-            Some(file) => crate::service::project_styles(
+            Some(file) => crate::service::project_styles_with_cancellation(
                 &open(file)?,
                 use_case.as_deref(),
                 *limit,
                 cursor.as_deref(),
+                Some(&crate::cancel::token()),
             ),
             None => crate::guidance::list_styles(use_case.as_deref(), *limit, cursor.as_deref()),
         },
         Command::Style { id, file } => match file {
-            Some(file) => crate::service::project_style(&open(file)?, id),
+            Some(file) => crate::service::project_style_with_cancellation(
+                &open(file)?,
+                id,
+                Some(&crate::cancel::token()),
+            ),
             None => crate::guidance::get_style(id),
         },
         Command::Assets { command } => match command {
@@ -917,7 +934,10 @@ pub fn run(arguments: &Arguments) -> Result<Value> {
                 offset,
                 limit,
             } => {
-                let project = crate::project::Project::load(&open(file)?)?;
+                let project = crate::project::Project::load_with_cancellation(
+                    &open(file)?,
+                    Some(&crate::cancel::token()),
+                )?;
                 crate::assets::read_asset(
                     &project,
                     &crate::assets::ReadAssetRequest {

@@ -18,9 +18,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod download;
 #[cfg(feature = "rendering")]
 mod drawing;
 mod optional;
+pub use download::serve_worker as serve_download_worker;
 #[cfg(feature = "rendering")]
 pub use drawing::shape;
 
@@ -583,6 +585,18 @@ pub fn list(data: &Path, request: &ListRequest) -> Result<Value> {
 }
 
 pub fn setup(data: &Path, id: &str, archive: Option<&Path>) -> Result<Value> {
+    setup_with_cancellation(data, id, archive, None, None)
+}
+
+/// Cancellable network transfers require an explicit application executable.
+pub fn setup_with_cancellation(
+    data: &Path,
+    id: &str,
+    archive: Option<&Path>,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+    executable: Option<&Path>,
+) -> Result<Value> {
+    crate::cancel::check(cancel)?;
     let descriptor = descriptor(id)?;
     if descriptor.bundled {
         bundled()?;
@@ -601,10 +615,9 @@ pub fn setup(data: &Path, id: &str, archive: Option<&Path>) -> Result<Value> {
     let lock = options
         .open(&lock_path)
         .map_err(|error| Error::io(&lock_path, error))?;
-    let cancel = crate::cancel::token();
     let start = Instant::now();
     loop {
-        crate::cancel::check(Some(&cancel))?;
+        crate::cancel::check(cancel)?;
         match lock.try_lock_exclusive() {
             Ok(()) => break,
             Err(error)
@@ -623,31 +636,25 @@ pub fn setup(data: &Path, id: &str, archive: Option<&Path>) -> Result<Value> {
         );
     }
     let archive = if let Some(path) = archive {
-        read(path, MAX_ARCHIVE)?.to_vec()
+        crate::store::content::read_bounded(
+            crate::store::open_regular_file(path)?,
+            path,
+            MAX_ARCHIVE,
+            cancel,
+            integrity("Icon input exceeds its size limit"),
+        )?
+    } else if let Some(executable) = executable {
+        download::run(descriptor, executable, cancel)?
     } else {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(60)))
-            .build()
-            .into();
-        let mut response = agent.get(&descriptor.source_url).call().map_err(|error| {
-            Error::new(
-                "ICON_UNAVAILABLE",
-                format!("Cannot retrieve pinned icon archive: {error}"),
-            )
-        })?;
-        let mut bytes = vec![];
-        response
-            .body_mut()
-            .as_reader()
-            .take(MAX_ARCHIVE as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
-        if bytes.len() > MAX_ARCHIVE {
-            return Err(integrity("Icon archive exceeds 16 MiB"));
+        if cancel.is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Cancellable icon downloads require the lazypencil executable",
+            ));
         }
-        bytes
+        download::direct(descriptor)?
     };
-    crate::cancel::check(Some(&cancel))?;
+    crate::cancel::check(cancel)?;
     verify(&archive, &descriptor.source_sha256)?;
     let (bytes, license) = match descriptor.source_format.as_deref() {
         None => convert_feather(&archive, descriptor)?,
@@ -655,7 +662,7 @@ pub fn setup(data: &Path, id: &str, archive: Option<&Path>) -> Result<Value> {
         Some("ttf") => optional::material(descriptor)?,
         _ => return Err(integrity("Unknown pinned icon source format")),
     };
-    crate::cancel::check(Some(&cancel))?;
+    crate::cancel::check(cancel)?;
     let staging = tempfile::tempdir_in(&parent).map_err(|error| Error::io(&parent, error))?;
     atomic_replace(&staging.path().join("icons.json"), &bytes)?;
     atomic_replace(&staging.path().join("LICENSE"), &license)?;
@@ -666,7 +673,7 @@ pub fn setup(data: &Path, id: &str, archive: Option<&Path>) -> Result<Value> {
         &staging.path().join("manifest.json"),
         &serde_json::to_vec(descriptor).map_err(|error| integrity(error.to_string()))?,
     )?;
-    crate::cancel::check(Some(&cancel))?;
+    crate::cancel::check(cancel)?;
     fs::rename(staging.path(), directory(data, descriptor))
         .map_err(|error| Error::io(&parent, error))?;
     crate::store::sync_directory(&parent)?;

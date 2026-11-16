@@ -11,6 +11,85 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[path = "support/fixture.rs"]
+mod fixture_support;
+
+#[test]
+fn cancelled_icon_setup_does_not_create_local_state() {
+    let temp = TempDir::new().unwrap();
+    let data = temp.path().join("absent");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    for pack in ["lucide", "feather"] {
+        assert_eq!(
+            icons::setup_with_cancellation(&data, pack, None, Some(&cancel), None)
+                .unwrap_err()
+                .code,
+            "CANCELLED"
+        );
+    }
+    assert!(!data.exists());
+}
+
+#[test]
+fn blocked_icon_download_is_cancelled_reaped_and_never_installed() {
+    use std::{
+        sync::atomic::{AtomicBool, Ordering},
+        time::{Duration, Instant},
+    };
+    let temp = TempDir::new().unwrap();
+    let executable = temp
+        .path()
+        .join(format!("download-fixture{}", std::env::consts::EXE_SUFFIX));
+    let started = temp.path().join("download.pid");
+    fixture_support::process(
+        &executable,
+        json!({
+            "pid_file":started,"stdout":"partial archive","sleep_ms":60000
+        }),
+    );
+    let data = temp.path().join("data");
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let observed = AtomicBool::new(false);
+    let elapsed = Instant::now();
+    let result = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !started.is_file() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            observed.store(started.is_file(), Ordering::SeqCst);
+            cancel.cancel();
+        });
+        icons::setup_with_cancellation(&data, "feather", None, Some(&cancel), Some(&executable))
+    });
+    assert!(
+        observed.load(Ordering::SeqCst),
+        "The owned download process did not start"
+    );
+    assert_eq!(result.unwrap_err().code, "CANCELLED");
+    assert!(elapsed.elapsed() < Duration::from_secs(12));
+    #[cfg(unix)]
+    {
+        let pid = std::fs::read_to_string(started)
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+    assert_eq!(
+        std::fs::read_dir(data.join("icons/feather"))
+            .unwrap()
+            .count(),
+        1,
+        "Only the installer lock may remain"
+    );
+}
+
 fn archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/icons/feather-icons-4.29.2.tgz")
 }

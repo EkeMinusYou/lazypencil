@@ -127,7 +127,7 @@ pub(super) fn run(
     Ok(())
 }
 
-/// Use the same owner-pipe, cancellation and reap path for bounded image reads.
+/// Use the same owner-pipe, cancellation and reap path for bounded downloads.
 /// Neither worker creates child processes; no independent network task survives
 /// its host. The request is carried over stdin rather than exposed in argv.
 pub(crate) fn collect(

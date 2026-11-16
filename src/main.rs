@@ -270,6 +270,13 @@ fn main() -> ExitCode {
 /// Private workers run before application configuration or document leases.
 fn dispatch_worker(command: Option<&std::ffi::OsStr>) -> Option<ExitCode> {
     let result = match command?.to_str()? {
+        "__icon_download_worker" => {
+            return Some(if lazypencil::icons::serve_download_worker().is_ok() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            });
+        }
         "__http_image_worker" => {
             // Image URLs can carry private information; worker errors stay silent.
             return Some(if lazypencil::remote_images::serve_worker().is_ok() {

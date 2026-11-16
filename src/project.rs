@@ -989,7 +989,7 @@ impl Project {
             }
             return Ok(());
         }
-        let bytes = read_binary(&path)?;
+        let bytes = read_binary(&path, self.cancel.as_ref())?;
         self.capture_bytes(path, kind, bytes.into())
     }
 
@@ -1295,7 +1295,11 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new("INVALID_DOCUMENT", message)
 }
 
-fn read_binary(path: &Path) -> Result<Vec<u8>> {
+fn read_binary(
+    path: &Path,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<Vec<u8>> {
+    crate::cancel::check(cancel)?;
     if !std::fs::metadata(path)
         .map_err(|e| Error::io(path, e))?
         .is_file()
@@ -1310,9 +1314,33 @@ fn read_binary(path: &Path) -> Result<Vec<u8>> {
         file,
         path,
         MAX_ASSET_BYTES,
-        None,
+        cancel,
         invalid("An asset exceeds 64 MiB"),
     )
+}
+
+#[cfg(test)]
+mod asset_read_tests {
+    use super::*;
+
+    #[test]
+    fn local_asset_reads_observe_cancellation_before_opening_or_capturing_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("asset");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            read_binary(&path, Some(&cancel)).unwrap_err().code,
+            "CANCELLED"
+        );
+        let bytes = vec![0x57; 128 * 1024];
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_binary(&path, None).unwrap(), bytes);
+        assert_eq!(
+            read_binary(&path, Some(&cancel)).unwrap_err().code,
+            "CANCELLED"
+        );
+    }
 }
 
 fn collect_icon_libraries(node: &ResolvedNode, libraries: &mut BTreeSet<String>) {

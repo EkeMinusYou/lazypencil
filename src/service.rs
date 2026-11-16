@@ -277,23 +277,6 @@ struct WriteConditions<'a> {
     fingerprint: String,
 }
 
-fn project_with_fonts(
-    store: &Store,
-    document: Document,
-    font_files: &[PathBuf],
-) -> Result<Project> {
-    project_with_overlay(store, document, font_files, &Default::default())
-}
-
-fn project_with_overlay(
-    store: &Store,
-    document: Document,
-    font_files: &[PathBuf],
-    overlay: &crate::managed::Overlay,
-) -> Result<Project> {
-    project_with_overlay_and_cancellation(store, document, font_files, overlay, None)
-}
-
 fn project_with_overlay_and_cancellation(
     store: &Store,
     document: Document,
@@ -1087,7 +1070,13 @@ pub fn inspect_store_nodes_with_images(
         result["view"] = json!("stored");
         result
     } else {
-        let mut project = project_with_fonts(store, document.clone(), fonts)?;
+        let mut project = project_with_overlay_and_cancellation(
+            store,
+            document.clone(),
+            fonts,
+            &Default::default(),
+            cancel,
+        )?;
         if acquire_images {
             project.acquire_remote_images()?;
         }
@@ -1102,6 +1091,7 @@ pub fn inspect_store_nodes_with_images(
 /// Read one immutable project snapshot, including inherited and library nodes.
 /// Expanded properties retain variable references; layout supplies computed values.
 pub fn inspect_project_nodes(project: &Project, request: &InspectNodesRequest) -> Result<Value> {
+    project.check_cancelled()?;
     if request.calculated || request.snapshot_id.is_some() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
