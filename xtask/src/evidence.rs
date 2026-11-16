@@ -404,9 +404,7 @@ pub fn collect(arguments: &Arguments) -> Result<Value> {
         .captures(&compiler)
         .context("Compiler does not report host target")?[1]
         .to_owned();
-    let cargo = cargo
-        .map(Path::to_owned)
-        .unwrap_or(notices::cargo_home_default()?);
+    let cargo = notices::resolve_cargo_home(cargo.map(Path::to_owned))?;
     let quick = &selected["rquickjs_sys"];
     let manifest = PathBuf::from(string(&quick["manifest_path"])?);
     let quick_out = target.join(string(&quick["out_dir"])?);

@@ -171,7 +171,7 @@ impl Command {
                 let result = if operation == "collect" {
                     rust::collect(
                         &root,
-                        &cargo_home.unwrap_or(cargo_home_default()?),
+                        &resolve_cargo_home(cargo_home)?,
                         &upstream.context("--upstream is required")?,
                         &output.context("--output is required")?,
                     )?
@@ -188,11 +188,14 @@ impl Command {
     }
 }
 
-pub fn cargo_home_default() -> Result<PathBuf> {
-    Ok(std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or(
+pub fn resolve_cargo_home(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = explicit.or_else(|| std::env::var_os("CARGO_HOME").map(PathBuf::from)) {
+        return Ok(path);
+    }
+    Ok(
         PathBuf::from(std::env::var_os("HOME").context("CARGO_HOME or HOME is required")?)
             .join(".cargo"),
-    ))
+    )
 }
 
 #[derive(Serialize, Deserialize)]

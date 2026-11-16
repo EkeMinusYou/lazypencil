@@ -21,7 +21,7 @@ pub fn run(stage: Stage) -> Result<()> {
     let root = s.temporary.join("lazypencil-wasm-source");
     let target = s.temporary.join("lazypencil-wasm-target");
     let manifest = root.join("src/shader/preprocessor/Cargo.toml");
-    let cargo = notices::cargo_home_default()?;
+    let cargo = notices::resolve_cargo_home(None)?;
     let flags = format!(
         "--remap-path-prefix={}=/source --remap-path-prefix={}=/cargo -C link-arg=--import-memory -C link-arg=--initial-memory=16777216 -C link-arg=--max-memory=67108864 -C link-arg=-z -C link-arg=stack-size=1048576",
         root.display(),
