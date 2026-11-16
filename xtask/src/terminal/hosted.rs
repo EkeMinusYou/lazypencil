@@ -391,6 +391,10 @@ impl Emulator {
     }
 
     fn verify(mut self) -> Result<Value> {
+        // Existing documents open in Preview. Wait for its rendered markers
+        // before focusing the prompt so startup cannot consume the Tab.
+        self.phase("preview-loaded", |_, frame| cursor(frame).is_none())?;
+        self.key("Tab")?;
         self.phase("loaded", |_, frame| cursor(frame).is_some())?;
         let initial_cursor =
             cursor(&self.frame()?).context("Missing initial native prompt cursor")?;
@@ -509,7 +513,7 @@ impl Emulator {
             json!({"screen_capture":if cfg!(target_os="macos") {"Kitty visible-window native framebuffer PNG"} else {"XWD v7 TrueColor from real X11 window"},
             "document_sha256":util::file_digest(&self.root.join("design.pen"))?,
             "markers":"three connected primary-color regions, at least 1024 pixels each",
-            "phases":["loaded","typed-cursor","prompt-restored","japanese-commit","japanese-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
+            "phases":["preview-loaded","loaded","typed-cursor","prompt-restored","japanese-commit","japanese-restored","initial","zoomed","panned-right","pan-restored","zoom-restored","resized","size-restored"],
             "native_prompt_cursor":{"initial":initial_cursor,"typed_one_cell_right":true,"backspace_restored":true,"hidden_outside_prompt":true},
             "japanese_commit":{"text":JAPANESE,"draft_sha256":util::digest(JAPANESE.as_bytes()),"source":if cfg!(target_os="macos") {"Kitty remote-control committed text; not physical IME"} else {"XTest Unicode keys through the real emulator; not physical IME"},"persisted_exactly":true,"native_cursor_cells":6,"backspace_restored":true,"font":if cfg!(target_os="macos") {"Menlo with macOS Japanese fallback"} else {"Noto Sans Mono CJK JP"}},
             "keyboard_exit":"success","prompt_draft_empty":true,"agent_started":false,
