@@ -707,34 +707,70 @@ fn local_kitty_upload_links_preserve_pixels_after_cached_sources_are_evicted() {
 }
 
 #[test]
-fn evicted_local_transfer_files_fall_back_to_lossless_inline_pixels() {
-    for compressed in [false, true] {
-        let local = Arc::new(LocalTransfer::new().unwrap());
-        let backend = Backend {
-            font: FontSize::new(1, 1),
-            protocol: ProtocolType::Kitty,
-            kitty_compression: compressed,
-            local_transfer: Some(local.clone()),
-            ..Backend::halfblocks()
-        };
-        let pixels = image::RgbaImage::from_pixel(80, 64, image::Rgba([12, 34, 56, 127]));
-        let Encoded::Native(encoded) = backend
-            .encode_preview(pixels.clone().into(), Size::new(80, 64), 42)
-            .unwrap()
-        else {
-            panic!("Expected a native image")
-        };
-        // Removing the original reproduces eviction while the encoded source lives.
-        local.drain();
-        for entry in std::fs::read_dir(local.directory.path()).unwrap() {
-            std::fs::remove_file(entry.unwrap().path()).unwrap();
+fn local_transfer_failures_preserve_negotiated_inline_pixels() {
+    #[derive(Clone, Copy, Debug)]
+    enum Failure {
+        Creation,
+        Eviction,
+        Upload,
+    }
+    for failure in [Failure::Creation, Failure::Eviction, Failure::Upload] {
+        for compressed in [false, true] {
+            let local = Arc::new(LocalTransfer::new().unwrap());
+            if matches!(failure, Failure::Creation) {
+                std::fs::remove_dir_all(local.directory.path()).unwrap();
+            }
+            let (width, height, color) = match failure {
+                Failure::Upload => (3, 2, [12, 34, 56, 255]),
+                _ => (80, 64, [12, 34, 56, 127]),
+            };
+            let pixels = image::RgbaImage::from_pixel(width, height, image::Rgba(color));
+            let backend = Backend {
+                font: FontSize::new(1, 1),
+                protocol: ProtocolType::Kitty,
+                kitty_compression: compressed,
+                local_transfer: Some(local.clone()),
+                ..Backend::halfblocks()
+            };
+            let Encoded::Native(encoded) = backend
+                .encode_preview(
+                    pixels.clone().into(),
+                    Size::new(width as u16, height as u16),
+                    42,
+                )
+                .unwrap()
+            else {
+                panic!("Expected a native image");
+            };
+            assert_eq!(
+                encoded.raw_upload.is_none(),
+                matches!(failure, Failure::Creation)
+            );
+            match failure {
+                Failure::Creation => {}
+                Failure::Eviction => {
+                    local.drain();
+                    for entry in std::fs::read_dir(local.directory.path()).unwrap() {
+                        std::fs::remove_file(entry.unwrap().path()).unwrap();
+                    }
+                }
+                Failure::Upload => {
+                    local.drain();
+                    std::fs::remove_dir_all(local.directory.path()).unwrap();
+                }
+            }
+            let wire = encoded.upload(43);
+            assert!(!wire.contains(",t=t;"), "{failure:?}/{compressed}");
+            assert_eq!(wire.contains("o=z"), compressed, "{failure:?}");
+            let mut decoder = observer::KittyFrames::default();
+            decoder.feed(wire.as_bytes()).unwrap();
+            assert_eq!(decoder.images.len(), 1);
+            assert_eq!(
+                decoder.images[0].rgba(),
+                pixels.as_raw(),
+                "{failure:?}/{compressed}"
+            );
         }
-        let wire = encoded.upload(43);
-        assert!(!wire.contains(",t=t;"));
-        let mut decoder = observer::KittyFrames::default();
-        decoder.feed(wire.as_bytes()).unwrap();
-        assert_eq!(decoder.images.len(), 1);
-        assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
     }
 }
 
@@ -769,51 +805,6 @@ fn native_image_placements_preserve_the_canvas_background_without_terminal_image
             .iter()
             .all(|cell| !cell.symbol().contains("old"))
     );
-}
-
-#[test]
-fn local_file_creation_failure_preserves_the_negotiated_inline_pixels() {
-    for compressed in [false, true] {
-        let local = Arc::new(LocalTransfer::new().unwrap());
-        std::fs::remove_dir_all(local.directory.path()).unwrap();
-        let pixels = image::RgbaImage::from_pixel(80, 64, image::Rgba([12, 34, 56, 127]));
-        let encoded = NativeImage::new(
-            pixels.clone().into(),
-            Size::new(80, 64),
-            42,
-            compressed,
-            Some(&local),
-        )
-        .unwrap();
-        assert!(encoded.raw_upload.is_none());
-        let wire = encoded.upload(43);
-        assert!(!wire.contains(",t=t;"));
-        assert_eq!(wire.contains("o=z"), compressed);
-        let mut decoder = observer::KittyFrames::default();
-        decoder.feed(wire.as_bytes()).unwrap();
-        assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
-    }
-}
-
-#[test]
-fn local_kitty_upload_failure_falls_back_to_the_exact_inline_pixels() {
-    let local = Arc::new(LocalTransfer::new().unwrap());
-    let pixels = image::RgbaImage::from_pixel(3, 2, image::Rgba([12, 34, 56, 255]));
-    let encoded = NativeImage::new(
-        DynamicImage::ImageRgba8(pixels.clone()),
-        Size::new(3, 2),
-        42,
-        true,
-        Some(&local),
-    )
-    .unwrap();
-    local.drain();
-    std::fs::remove_dir_all(local.directory.path()).unwrap();
-    let wire = encoded.upload(43);
-    assert!(!wire.contains(",t=t;"));
-    let mut decoder = observer::KittyFrames::default();
-    decoder.feed(wire.as_bytes()).unwrap();
-    assert_eq!(decoder.images[0].rgba(), pixels.as_raw());
 }
 
 #[cfg(unix)]
