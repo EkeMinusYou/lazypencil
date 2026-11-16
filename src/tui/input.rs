@@ -162,11 +162,13 @@ impl App {
         }
         self.panel_input(key, picker, worker)
     }
-    fn cancel_input(&mut self) -> Result<bool> {
-        if self.conversation.active() {
+    pub(super) fn cancel_input(&mut self) -> Result<bool> {
+        let saved = if self.conversation.active() {
             self.outbox.paused = true;
-            self.outbox.save(self.conversation.directory())?;
-        }
+            self.outbox.save(self.conversation.directory())
+        } else {
+            Ok(())
+        };
         if let Some(task) = &self.document_task {
             task.cancel.cancel();
             if self.conversation.active() {
@@ -188,7 +190,7 @@ impl App {
         } else {
             return Ok(true);
         }
-        Ok(false)
+        saved.map(|()| false)
     }
     fn permission_input(&mut self, key: KeyEvent) -> Result<()> {
         if key.code == KeyCode::Char('p') {

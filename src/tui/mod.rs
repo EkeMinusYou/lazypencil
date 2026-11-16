@@ -556,17 +556,11 @@ impl App {
                 } => { self.dirty = true; },
                 signal = tokio::signal::ctrl_c() => {
                     signal.map_err(terminal::io)?;
-                    if self.conversation.active() {
-                        self.outbox.paused = true;
-                        self.outbox.save(self.conversation.directory())?;
+                    match self.cancel_input() {
+                        Ok(true) => { self.save_draft()?; return Ok(()); }
+                        Ok(false) => {}
+                        Err(error) => self.error(error),
                     }
-                    if let Some(task) = &self.document_task {
-                        task.cancel.cancel();
-                        if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
-                    }
-                    else if self.conversation.active() { self.conversation.cancel(); self.permissions.clear(); }
-                    else if self.playback.active() { self.pause_playback(); self.dirty = true; }
-                    else { self.save_draft()?; return Ok(()); }
                 },
                 signal = &mut termination => { signal.map_err(terminal::io)?; self.save_draft()?; return Ok(()); },
                 event = events.next() => {

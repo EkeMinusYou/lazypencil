@@ -640,6 +640,30 @@ fn steering_unconfirmed_delivery_survives_reopening_without_automatic_replay() {
 }
 
 #[test]
+fn cancelling_a_turn_still_reaches_the_adapter_when_the_outbox_cannot_be_saved() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "steering-flood");
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 189).unwrap();
+        app.insert_text("Cancel despite storage failure");
+        app.submit().await.unwrap();
+        steering_working(&mut app).await;
+        app.insert_text("Keep this draft");
+        let path = app.conversation.directory().join("prompt-outbox.json");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let error = app.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL), &Backend::halfblocks(), &worker).await.unwrap_err();
+        assert_eq!(error.code, "IO_ERROR");
+        assert!(app.outbox.paused);
+        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "failed");
+        assert!(!app.conversation.active());
+        assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        std::fs::remove_dir(&path).unwrap();
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn cancelling_a_turn_pauses_follow_ups_and_restores_input_focus() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
