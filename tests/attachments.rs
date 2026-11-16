@@ -463,6 +463,84 @@ mod originals {
     }
 
     #[test]
+    fn configured_maximum_image_count_reaches_the_adapter_with_all_images_intact() {
+        use skia_safe::{Color, Data, Image};
+        use std::{process::Command, time::Duration};
+        let temp = TempDir::new().unwrap();
+        let count = lazypencil::config::attachments::MAX_IMAGES;
+        let user = temp.path().join("user");
+        std::fs::create_dir(&user).unwrap();
+        std::fs::create_dir(temp.path().join(".git")).unwrap();
+        std::fs::write(
+            user.join("config.toml"),
+            format!("[attachments]\nmax_images={count}\n"),
+        )
+        .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        command
+            .current_dir(temp.path())
+            .env("LAZYPENCIL_CONFIG_DIR", user)
+            .env("LAZYPENCIL_LOCK_DIR", temp.path().join("locks"))
+            .args(["--json", "--data-dir"])
+            .arg(temp.path().join("data"))
+            .arg("prompt")
+            .arg(temp.path().join("design.pen"))
+            .arg("Inspect all references")
+            .arg("--create")
+            .arg("--adapter")
+            .arg(fixture_support::helper())
+            .args([
+                "--adapter-arg=acp",
+                "--adapter-arg=image-inspect",
+                "--non-interactive",
+                "--timeout=10",
+            ]);
+        for index in 0..count {
+            let mut surface = skia_safe::surfaces::raster_n32_premul((1, 1)).unwrap();
+            surface
+                .canvas()
+                .clear(Color::from_rgb(index as u8, 64, 128));
+            let png = skia_safe::png_encoder::encode_image(
+                None,
+                &surface.image_snapshot(),
+                &Default::default(),
+            )
+            .unwrap();
+            let path = temp.path().join(format!("reference-{index}.png"));
+            std::fs::write(&path, png.as_bytes()).unwrap();
+            command.arg("--image").arg(path);
+        }
+        let output = fixture_support::output(&mut command, Duration::from_secs(35));
+        assert!(
+            output.status.success(),
+            "{}: {} {}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .last()
+                .unwrap_or_default(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let received: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(temp.path().join("received-turn-1.json")).unwrap(),
+        )
+        .unwrap();
+        let images = received["images"].as_array().unwrap();
+        assert_eq!(images.len(), count);
+        for (index, image) in images.iter().enumerate() {
+            let png = std::fs::read(temp.path().join(image.as_str().unwrap())).unwrap();
+            let image = Image::from_encoded(Data::new_copy(&png))
+                .unwrap()
+                .make_raster_image(None, None)
+                .unwrap();
+            assert_eq!(
+                image.peek_pixels().unwrap().get_color((0, 0)),
+                Color::from_rgb(index as u8, 64, 128)
+            );
+        }
+    }
+
+    #[test]
     fn parsed_cli_send_bounds_reach_the_actual_acp_image_without_changing_the_original() {
         use clap::Parser;
         use lazypencil::conversation::{Conversation, ConversationEvent};

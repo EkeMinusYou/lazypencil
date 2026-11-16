@@ -23,6 +23,19 @@ use tokio_util::{
 };
 
 const MAX_LINE: usize = 96 * 1024 * 1024;
+// Each image has a description and payload. Reserve context blocks for document
+// guidance, preview controls, the draft, selection, and session continuity.
+const MAX_PROMPT_BLOCKS: usize = 2 * crate::config::attachments::MAX_IMAGES + 5;
+
+fn validate_prompt(content: &[ContentBlock]) -> Result<()> {
+    if content.is_empty() || content.len() > MAX_PROMPT_BLOCKS {
+        return Err(Error::new(
+            "INVALID_ARGUMENT",
+            format!("A prompt must contain 1..{MAX_PROMPT_BLOCKS} content blocks"),
+        ));
+    }
+    Ok(())
+}
 
 pub mod auth;
 mod diagnostics;
@@ -332,12 +345,7 @@ impl AgentHost {
         if self.deferred_options.is_some() {
             return Err(agent_error("Choose a document before submitting a prompt"));
         }
-        if content.is_empty() || content.len() > 32 {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "A prompt must contain 1..32 content blocks",
-            ));
-        }
+        validate_prompt(&content)?;
         let commands = self
             .commands
             .as_ref()
@@ -399,12 +407,7 @@ impl AgentHost {
                 "This adapter does not support safe mid-turn input",
             ));
         }
-        if content.is_empty() || content.len() > 32 {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "A prompt must contain 1..32 content blocks",
-            ));
-        }
+        validate_prompt(&content)?;
         let turn = self.steering_turn.lock().expect("steering lock");
         let generation = turn.ok_or_else(|| agent_error("The active turn has already finished"))?;
         self.steering

@@ -68,6 +68,9 @@ fn steering_is_delivered_mid_turn_and_settled_before_prompt_completion() {
         "steering-failure",
     ] {
         let directory = TempDir::new().unwrap();
+        let follow_up: Vec<_> = (0..if mode == "steering" { 133 } else { 1 })
+            .map(|index| ContentBlock::Text(TextContent::new(format!("Use English {index}"))))
+            .collect();
         runtime().block_on(async {
             let mut host = AgentHost::spawn(options(mode, directory.path())).unwrap();
             ready(&mut host).await;
@@ -80,11 +83,7 @@ fn steering_is_delivered_mid_turn_and_settled_before_prompt_completion() {
             .await
             .unwrap();
             assert_eq!(message(&mut host).await["type"], "update");
-            host.steer(
-                "follow-up".into(),
-                vec![ContentBlock::Text(TextContent::new("Use English"))],
-            )
-            .unwrap();
+            host.steer("follow-up".into(), follow_up.clone()).unwrap();
             loop {
                 let event = message(&mut host).await;
                 if event["type"] == "steering_result" {
@@ -125,7 +124,10 @@ fn steering_is_delivered_mid_turn_and_settled_before_prompt_completion() {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(received.len(), 1);
-        assert_eq!(received[0]["prompt"][0]["text"], "Use English");
+        assert_eq!(
+            received[0]["prompt"],
+            serde_json::to_value(&follow_up).unwrap()
+        );
     }
 }
 
