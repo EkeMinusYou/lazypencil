@@ -327,20 +327,11 @@ impl Solver<'_> {
         inherited_enabled: bool,
     ) -> Result<usize> {
         (self.check)()?;
+        crate::document::validate_resolved_properties(&node.properties, &node.id())?;
         let children = std::mem::take(&mut node.children);
         let index = self.items.len();
         let enabled =
             inherited_enabled && node.properties.get("enabled") != Some(&Value::Bool(false));
-        let diagnostics = crate::document::node_property_diagnostics(&node.properties, &node.id())
-            .into_iter()
-            .map(|diagnostic| LayoutDiagnostic {
-                code: "UNKNOWN_PROPERTY",
-                severity: diagnostic.severity,
-                node_id: node.id(),
-                message: diagnostic.message,
-                details: Value::Null,
-            })
-            .collect();
         self.items.push(LayoutItem {
             record: LayoutRecord {
                 id: node.id(),
@@ -355,7 +346,7 @@ impl Solver<'_> {
                 visual_bounds: Rect::default(),
                 sizing: [String::new(), String::new()],
                 text: None,
-                diagnostics,
+                diagnostics: Vec::new(),
                 generated_by: node.generated_by.clone(),
                 icon: node.icon_metadata.clone(),
             },
@@ -405,7 +396,7 @@ impl Solver<'_> {
         }
         self.active.push((index, axis));
         let kind = self.items[index].node.kind();
-        let is_text = matches!(kind, "text" | "note" | "prompt" | "context");
+        let is_text = matches!(kind, "text" | "note");
         let growth = self.string(index, "textGrowth", "auto").to_string();
         let value = if is_text && (growth == "auto" || axis == 1 && growth == "fixed-width") {
             let width = if growth == "auto" {
@@ -460,7 +451,7 @@ impl Solver<'_> {
     fn sizing(&self, index: usize, axis: usize) -> Result<Sizing> {
         let key = if axis == 0 { "width" } else { "height" };
         let node = &self.items[index].node;
-        if matches!(node.kind(), "text" | "note" | "prompt" | "context") {
+        if matches!(node.kind(), "text" | "note") {
             let growth = self.string(index, "textGrowth", "auto");
             if growth == "auto" || axis == 1 && growth == "fixed-width" {
                 return Ok(Sizing::Fit(None));
@@ -468,10 +459,7 @@ impl Solver<'_> {
         }
         let Some(value) = node.properties.get(key) else {
             return Ok(
-                if matches!(
-                    node.kind(),
-                    "frame" | "group" | "text" | "note" | "prompt" | "context"
-                ) {
+                if matches!(node.kind(), "frame" | "group" | "text" | "note") {
                     Sizing::Fit(None)
                 } else {
                     Sizing::Fixed(0.0)
@@ -623,7 +611,7 @@ impl Solver<'_> {
     fn content(&mut self, index: usize, axis: usize, fallback: Option<f32>) -> Result<f32> {
         (self.check)()?;
         let kind = self.items[index].node.kind().to_string();
-        if matches!(kind.as_str(), "text" | "note" | "prompt" | "context") {
+        if matches!(kind.as_str(), "text" | "note") {
             if axis == 0 {
                 self.measure_text(index, None)?;
                 return Ok(self.blocks[&index].metrics.width);

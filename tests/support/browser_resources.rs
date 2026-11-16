@@ -53,7 +53,7 @@ fn packed_web_resources_keep_original_urls_empty_files_aliases_and_revision_afte
                 .read()
                 .unwrap()
                 .value()
-                .pointer("/metadata/lazypencil/browser_resources/roots")
+                .pointer("/children/1/metadata/lazypencil/browser_resources/roots")
                 .is_none()
         );
         fs::remove_dir_all(temp.path().join("web")).unwrap();
@@ -81,14 +81,14 @@ fn packed_web_resources_keep_original_urls_empty_files_aliases_and_revision_afte
             .unwrap();
         assert_eq!(packed.asset(&payload.path).unwrap().bytes.as_ref(), binary);
         let declaration =
-            store.read().unwrap().value()["metadata"]["lazypencil"]["browser_resources"].clone();
+            store.read().unwrap().value()["children"][1]["metadata"]["lazypencil"]["browser_resources"].clone();
         service::apply_request(
             &store,
             &edit(&store, "pack-repeat", operations.clone(), false),
         )
         .unwrap();
         assert_eq!(
-            store.read().unwrap().value()["metadata"]["lazypencil"]["browser_resources"],
+            store.read().unwrap().value()["children"][1]["metadata"]["lazypencil"]["browser_resources"],
             declaration
         );
         let moved = temp.path().join("relocated");
@@ -194,7 +194,8 @@ fn packed_catalogues_reject_invalid_names_versions_and_response_metadata() {
         )
         .unwrap();
         let mut document: Value = serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
-        let declaration = &mut document["metadata"]["lazypencil"]["browser_resources"]["bundle"];
+        let declaration =
+            &mut document["children"][1]["metadata"]["lazypencil"]["browser_resources"]["bundle"];
         let path = temp.path().join(declaration["uri"].as_str().unwrap());
         let mut catalog: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         match case {
@@ -307,8 +308,8 @@ fn fixture() -> (TempDir, Store) {
 }
 
 fn scene(roots: Value) -> Value {
-    json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{"version":1,"roots":roots}}},
-        "children":[{"id":"page","type":"browser","url":format!("{BASE}index.html"),"width":32,"height":32}]})
+    json!({"version":"2.21",
+        "children":[{"id":"page","type":"browser","url":format!("{BASE}index.html"),"width":32,"height":32},lazypencil::document::data_node(json!({"lazypencil":{"browser_resources":{"version":1,"roots":roots}}})["lazypencil"].clone())]})
 }
 
 #[test]
@@ -319,9 +320,14 @@ fn resource_declaration_edits_create_namespaces_preview_pack_and_clear_atomicall
     ] {
         let (_temp, store) = fixture();
         let mut document = scene(json!([]));
-        document.as_object_mut().unwrap().remove("metadata");
+        document["children"].as_array_mut().unwrap().pop();
         if let Some(metadata) = &metadata {
-            document["metadata"] = metadata.clone();
+            let mut node = lazypencil::document::data_node(metadata["lazypencil"].clone());
+            node["metadata"]
+                .as_object_mut()
+                .unwrap()
+                .extend(metadata.as_object().unwrap().clone());
+            document["children"].as_array_mut().unwrap().push(node);
         }
         write(store.path(), document);
         let before = fs::read(store.path()).unwrap();
@@ -346,13 +352,16 @@ fn resource_declaration_edits_create_namespaces_preview_pack_and_clear_atomicall
             packed
                 .root_document()
                 .value()
-                .pointer("/metadata/lazypencil/browser_resources/bundle")
+                .pointer("/children/1/metadata/lazypencil/browser_resources/bundle")
                 .is_some()
         );
         if metadata.is_some() {
-            assert_eq!(packed.root_document().value()["metadata"]["label"], "keep");
             assert_eq!(
-                packed.root_document().value()["metadata"]["lazypencil"]["custom"],
+                packed.root_document().value()["children"][1]["metadata"]["label"],
+                "keep"
+            );
+            assert_eq!(
+                packed.root_document().value()["children"][1]["metadata"]["lazypencil"]["custom"],
                 7
             );
         }
@@ -752,7 +761,7 @@ fn invalid_declarations_and_oversized_files_fail_before_page_navigation() {
         assert!(Project::load(&store).is_err());
     }
     let mut value = scene(json!([{"url":BASE,"path":"web"}]));
-    value["metadata"]["lazypencil"]["browser_resources"]["version"] = json!(99);
+    value["children"][1]["metadata"]["lazypencil"]["browser_resources"]["version"] = json!(99);
     write(store.path(), value);
     assert_eq!(
         Project::load(&store).err().unwrap().code,

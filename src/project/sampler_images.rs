@@ -4,8 +4,8 @@ use super::*;
 
 pub(super) fn parse(document: &Document) -> Result<BTreeMap<String, String>> {
     let Some(value) = document
-        .value()
-        .pointer("/metadata/lazypencil/sampler_images")
+        .document_data()?
+        .and_then(|value| value.get("sampler_images"))
     else {
         return Ok(BTreeMap::new());
     };

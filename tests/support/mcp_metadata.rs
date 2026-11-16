@@ -50,6 +50,7 @@ fn large_document_overviews_page_complete_entries_and_scope_their_cursors() {
     );
     assert_eq!(diagnostics["diagnostics"].as_array().unwrap().len(), 1);
     assert_eq!(diagnostics["diagnostics"][0]["code"], "UNKNOWN_PROPERTY");
+    assert_eq!(diagnostics["diagnostics"][0]["severity"], "error");
     let nodes = client.data("read_nodes", json!({"node_id":"root500","depth":0}));
     assert_eq!(nodes["nodes"][0]["id"], "root500");
     assert_eq!(fs::read_to_string(&file).unwrap(), source);

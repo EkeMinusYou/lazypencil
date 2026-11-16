@@ -115,7 +115,7 @@ mod tests {
                 Some(temp.path().join(format!("private-{name}"))),
             )
             .unwrap();
-            fs::write(store.path(),json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{"version":1,"roots":[{"url":"file:///original/site/","path":"web"}]}}},"children":[{"id":"page","type":"browser","url":url,"width":32,"height":32}]}).to_string()).unwrap();
+            fs::write(store.path(),json!({"version":"2.21","children":[{"id":"page","type":"browser","url":url,"width":32,"height":32},crate::document::data_node(json!({"lazypencil":{"browser_resources":{"version":1,"roots":[{"url":"file:///original/site/","path":"web"}]}}})["lazypencil"].clone())]}).to_string()).unwrap();
             let project = Project::load(&store).unwrap();
             let scene = project.resolve().unwrap();
             let node = &scene.roots[0];

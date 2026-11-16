@@ -274,7 +274,21 @@ fn every_blend_mode_and_nested_opacity_match_the_existing_paint_path() {
 fn mesh_fills_share_shape_clipping_text_masks_and_all_stroke_alignments() {
     for kind in ["ellipse", "path", "text", "rectangle"] {
         for alignment in ["inner", "center", "outer"] {
-            let children = |fill| json!([{"id":"page","type":"frame","layout":"none","width":180,"height":100,"children":[{"id":"tile","type":kind,"x":20,"y":20,"width":130,"height":60,"cornerRadius":12,"geometry":"M0 0 L100 0 L50 60 Z","viewBox":[0,0,100,60],"textGrowth":"fixed-width-height","content":"A 日本語","fontSize":24,"underline":true,"fill":["#FF0000",fill],"stroke":fill,"strokeWidth":4,"strokeAlignment":alignment}]}]);
+            let children = |fill| json!([{"id":"page","type":"frame","layout":"none","width":180,"height":100,"children":[{"id":"tile","type":kind,"x":20,"y":20,"width":130,"height":60,"fill":["#FF0000",fill],"stroke":fill,"strokeWidth":4,"strokeAlignment":alignment}]}]);
+            let children = |fill| {
+                let mut children = children(fill);
+                let node = children[0]["children"][0].as_object_mut().unwrap();
+                let properties = match kind {
+                    "rectangle" => json!({"cornerRadius":12}),
+                    "path" => json!({"geometry":"M0 0 L100 0 L50 60 Z","viewBox":[0,0,100,60]}),
+                    "text" => {
+                        json!({"textGrowth":"fixed-width-height","content":"A 日本語","fontSize":24,"underline":true})
+                    }
+                    _ => json!({}),
+                };
+                node.extend(properties.as_object().unwrap().clone());
+                children
+            };
             let actual = output(
                 children(mesh(json!(vec!["#0000FF80"; 4]))),
                 &Default::default(),
@@ -377,7 +391,7 @@ fn malformed_meshes_fail_with_source_context_and_disabled_paints_are_not_evaluat
         bad[name] = value;
         cases.push(bad);
     }
-    for mut fill in cases {
+    for fill in cases {
         for property in ["fill", "stroke"] {
             let mut children = scene(json!("#000"), 32, 24);
             children[0][property] = fill.clone();
@@ -396,9 +410,15 @@ fn malformed_meshes_fail_with_source_context_and_disabled_paints_are_not_evaluat
                     .ends_with("mesh.pen")
             );
         }
-        fill["enabled"] = json!(false);
-        output(scene(json!(["#123456", fill]), 32, 24), &Default::default()).unwrap();
     }
+    let mut disabled = valid;
+    disabled["rows"] = json!(65);
+    disabled["enabled"] = json!(false);
+    output(
+        scene(json!(["#123456", disabled]), 32, 24),
+        &Default::default(),
+    )
+    .unwrap();
 }
 
 #[test]

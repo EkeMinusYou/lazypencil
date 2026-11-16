@@ -932,7 +932,7 @@ fn linking_a_style_preserves_comments_and_escapes_in_unrelated_imports() {
     let source = r#"{"version":"2.21","imports":{
       // Keep the existing library comment.
       "ui":"library/u\u0069.lib.pen"
-    },"children":[],"extra":1.000e2}"#;
+    },"children":[{"id":"preserved","type":"rectangle","metadata":{"type":"test","number":1.000e2}}]}"#;
     fs::write(store.path(), source).unwrap();
     let op = json!({"op":"import_component","mode":"link","source":{"style_id":"standard-ui","node_id":"button"}});
     service::apply_request(

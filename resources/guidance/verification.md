@@ -21,7 +21,7 @@ get_variables separates raw definitions from resolved values and source document
 
 Use validate_document independently of a UI or attached issue summary. Read current affected nodes before repairing a reported problem; captured summaries may be stale. Follow next_cursor with the returned snapshot_id for layout diagnostic pages. Read all pages needed for the requested scope, including every page for a document-wide inspection. Error/warning counts cover the whole calculation, even when findings are on later pages.
 
-Warnings need interpretation: an intentional clipped input value can differ from an accidental clipped heading. UNKNOWN_PROPERTY identifies an unrecognized property, often a spelling error; its stored presence does not establish an effect. Arbitrary keys inside metadata and script inputs are not node-property warnings. The complete flag covers the requested checks, not every paint or dynamic acquisition.
+Warnings need interpretation: an intentional clipped input value can differ from an accidental clipped heading. UNKNOWN_PROPERTY is an error identifying a property outside the public schema for that node type, often a spelling error. Correct it before editing or rendering. Arbitrary keys inside metadata and script inputs follow their own schemas. The complete flag covers the requested checks, not every paint or dynamic acquisition.
 
 For RESOURCE_LIMIT from component or variable expansion, see Expansion limits in [component-import](component-import.md); the budget applies to ordinary calculations as well as imports.
 

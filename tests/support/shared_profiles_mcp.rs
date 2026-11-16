@@ -338,7 +338,7 @@ fn shared_profile_keeps_identical_file_urls_bound_to_each_projects_captured_reso
         .unwrap();
         let file = root.join("local.pen");
         Store::init(&file, Some(study.data.clone())).unwrap();
-        fs::write(&file,json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{"version":1,"roots":[{"url":"file:///original/site/","path":"web"}]}}},"children":[{"id":"page","type":"browser","width":32,"height":32,"url":"file:///original/site/index.html"}]}).to_string()).unwrap();
+        fs::write(&file,json!({"version":"2.21","children":[{"id":"page","type":"browser","width":32,"height":32,"url":"file:///original/site/index.html"},lazypencil::document::data_node(json!({"lazypencil":{"browser_resources":{"version":1,"roots":[{"url":"file:///original/site/","path":"web"}]}}})["lazypencil"].clone())]}).to_string()).unwrap();
         file
     };
     let green = make_project("green", "#00ff00");

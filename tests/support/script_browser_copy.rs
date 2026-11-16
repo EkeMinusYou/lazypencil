@@ -125,14 +125,14 @@ pub fn setup(version: &str, style: &str, declared: bool) -> (TempDir, Store, Str
     reusable["reusable"] = json!(true);
     write(
         &temp.path().join("library/base/base.pen"),
-        json!({"version":version,"metadata":resources("web"),"children":[reusable,
-        {"id":"panel","type":"frame","reusable":true,"layout":"none","width":32,"height":16,"children":[page("inside")]}]}),
+        json!({"version":version,"children":[reusable,
+        {"id":"panel","type":"frame","reusable":true,"layout":"none","width":32,"height":16,"children":[page("inside")]},lazypencil::document::data_node(json!(resources("web"))["lazypencil"].clone())]}),
     );
     if matches!(style, "scope-qualified" | "scope-default-shift-metadata") {
         site(&temp.path().join("library/base/leaf/web"), "#0000ff");
         write(
             &temp.path().join("library/base/leaf/leaf.pen"),
-            json!({"version":version,"metadata":resources("web"),"children":[]}),
+            json!({"version":version,"children":[lazypencil::document::data_node(json!(resources("web"))["lazypencil"].clone())]}),
         );
         let base_path = temp.path().join("library/base/base.pen");
         let mut base: Value = serde_json::from_slice(&fs::read(&base_path).unwrap()).unwrap();
@@ -227,13 +227,18 @@ pub fn setup(version: &str, style: &str, declared: bool) -> (TempDir, Store, Str
     let mut library = json!({"version":version,"imports":{"base":"base/base.pen"},"children":[
         {"id":"generator","type":"script","reusable":true,"scriptUri":"draw.js","width":32,"height":16} ]});
     if declared {
-        library["metadata"] = resources("web");
+        library["children"]
+            .as_array_mut()
+            .unwrap()
+            .push(lazypencil::document::data_node(
+                resources("web")["lazypencil"].clone(),
+            ));
     }
     write(&temp.path().join("library/ui.pen"), library);
     write(
         &temp.path().join("main.pen"),
         json!({"version":version,"imports":{"ui":"library/ui.pen"},
-        "metadata":resources("consumer-web"),"children":[{"id":"use","type":"ref","ref":"ui:generator"}]}),
+        "children":[{"id":"use","type":"ref","ref":"ui:generator"},lazypencil::document::data_node(json!(resources("consumer-web"))["lazypencil"].clone())]}),
     );
     let store = Store::open(
         temp.path().join("main.pen"),
@@ -316,7 +321,7 @@ fn recopy(temp: &TempDir, store: &Store, version: &str, component: &str) -> Stor
     site(&second_dir.join("web"), "#ffffff");
     write(
         &second_dir.join("scene.pen"),
-        json!({"version":version,"imports":{"src":"../main.pen"},"metadata":resources("web"),"children":[]}),
+        json!({"version":version,"imports":{"src":"../main.pen"},"children":[lazypencil::document::data_node(json!(resources("web"))["lazypencil"].clone())]}),
     );
     let second = Store::open(
         second_dir.join("scene.pen"),
@@ -480,7 +485,6 @@ pub fn reject_empty_namespace_after_recopy() {
         });
         let mut document: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
         if mode == "inactive-default" {
-            document.as_object_mut().unwrap().remove("metadata");
             document["children"]
                 .as_array_mut()
                 .unwrap()
@@ -489,8 +493,9 @@ pub fn reject_empty_namespace_after_recopy() {
             document["imports"]["empty"] = json!("empty.pen");
             let mut empty = json!({"version":version,"children":[]});
             if mode == "empty" {
-                empty["metadata"] =
-                    json!({"lazypencil":{"browser_resources":{"version":1,"roots":[]}}});
+                empty["children"] = json!([lazypencil::document::data_node(
+                    json!({"browser_resources":{"version":1,"roots":[]}})
+                )]);
             }
             write(&temp.path().join("library/empty.pen"), empty);
             let changed = code.replace("\"library\":\"base\"", "\"library\":\"empty\"");
@@ -585,7 +590,7 @@ pub fn reject_uncaptured_explicit_namespace() {
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         write(
             &temp.path().join("consumer.pen"),
-            json!({"version":version,"metadata":resources("consumer-web"),"children":[]}),
+            json!({"version":version,"children":[lazypencil::document::data_node(json!(resources("consumer-web"))["lazypencil"].clone())]}),
         );
         apply(
             &store,

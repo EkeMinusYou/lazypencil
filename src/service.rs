@@ -691,15 +691,18 @@ mod import_write_tests {
             cancel: None,
             fingerprint: "oversized-report".into(),
         };
-        let error = save_project(&store, &conditions, &[], |document| {
-            let mut after = document.clone();
-            after.set_property("", "metadata", &json!({"changed":true}))?;
-            Ok(operations::PreparedBatch::plain(
-                after,
-                json!({"report":"x".repeat(4*1024*1024)}),
-            ))
-        })
-        .unwrap_err();
+        let error =
+            save_project(&store, &conditions, &[], |document| {
+                let mut after = document.clone();
+                after.set_property("", "children", &json!([
+                {"id":"changed","type":"rectangle","metadata":{"type":"test","changed":true}}
+            ]))?;
+                Ok(operations::PreparedBatch::plain(
+                    after,
+                    json!({"report":"x".repeat(4*1024*1024)}),
+                ))
+            })
+            .unwrap_err();
         assert_eq!(error.code, "INVALID_ARGUMENT");
         assert_eq!(store.read().unwrap().text(), before.text());
         assert!(store.history(10, None).unwrap().is_empty());

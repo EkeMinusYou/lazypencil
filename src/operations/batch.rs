@@ -106,27 +106,8 @@ impl Batch<'_> {
         crate::cancel::check(self.context.cancel)?;
         match operation {
             Operation::SetBrowserResources { roots } => {
-                for (pointer, key) in [("", "metadata"), ("/metadata", "lazypencil")] {
-                    let value = self
-                        .edited
-                        .value()
-                        .pointer(pointer)
-                        .and_then(|value| value.get(key));
-                    match value {
-                        None => self.edited.set_property(pointer, key, &json!({}))?,
-                        Some(value) if value.is_object() => {}
-                        Some(_) => {
-                            return Err(invalid(
-                                "Browser resources require object metadata and a lazypencil namespace",
-                            ));
-                        }
-                    }
-                }
-                self.edited.set_property(
-                    "/metadata/lazypencil",
-                    "browser_resources",
-                    &json!({"version":1,"roots":roots}),
-                )?;
+                self.edited
+                    .set_document_data("browser_resources", &json!({"version":1,"roots":roots}))?;
             }
             Operation::PackBrowserResources {} => {
                 let path = self.context.path.ok_or_else(|| {
@@ -138,11 +119,8 @@ impl Batch<'_> {
                 for file in files {
                     self.context.stage(file, true)?;
                 }
-                self.edited.set_property(
-                    "/metadata/lazypencil",
-                    "browser_resources",
-                    &declaration,
-                )?;
+                self.edited
+                    .set_document_data("browser_resources", &declaration)?;
                 self.generated.insert(
                     index.to_string(),
                     json!({"assets":assets,"browser_resources":declaration}),

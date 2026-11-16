@@ -44,7 +44,7 @@ fn inherited_script_overrides_copy_without_running_code_and_survive_independent_
                     "base"
                 }
             );
-            let code = if ["code", "combined", "nullable"].contains(mode) {
+            let code = if ["code", "combined", "defaults"].contains(mode) {
                 UI
             } else {
                 BASE

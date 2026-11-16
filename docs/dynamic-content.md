@@ -31,11 +31,12 @@ expects a node array. It has no DOM, host filesystem/network, timers, or module 
 Each evaluation has a fresh context. `Math.random` uses Mulberry32, reseeded to zero
 for every evaluation.
 
-Typed inputs are `number`, `string`, `boolean`, `color`, `enum`, and `ref`. Omission or
-null uses a declared default; otherwise the implicit values are clamped zero, empty
+Typed inputs are `number`, `string`, `boolean`, `color`, `enum`, and `ref`. Omission
+uses a declared default; otherwise the implicit values are clamped zero, empty
 string, false, `#000000`, first enum option, and empty ref respectively. Empty ref means
 no component selection. Nonempty refs select existing reusable definitions. Saved keys
 absent from the header remain stored but do not enter execution or variable lookup.
+Stored input values must be strings, numbers, or booleans; `null` is not a reset value.
 See the [script guide](../resources/guidance/scripts.md) for input and diagnostic rules.
 
 Generated records are derived data with `generated_by` provenance. Read them through
@@ -85,6 +86,12 @@ files from its namespace are served. `pack_browser_resources` saves them as a po
 managed bundle. Empty roots remove the declaration. Changed resources invalidate old
 rasters and retained DOM. Code/URL text is not rewritten during copy. Local page capture supports declared files. Pages relying on native file metadata,
 range/media loading, worklets, popups or complex worker startup may need adaptation.
+
+Document-wide browser and relocated sampler declarations are stored in the metadata
+of a disabled standard frame named `Document resources`. Its metadata type is
+`lazypencil-document`. Keep this node with the document; it carries no visible geometry.
+The document root has no custom metadata field. Copies use the same standard-node
+representation in their managed resource libraries.
 
 ### Capture policies and reproducibility
 

@@ -57,8 +57,11 @@ shader-preprocessor component are tracked source inputs.
 ## Document and save invariants
 
 The `.pen` file is authoritative. Read adapters accept 2.19, 2.21, and 2.22, and new empty files
-use 2.22. Copied examples retain their original version. Edits preserve the existing version, comments, unknown fields, and unrelated
-source text. An unknown version fails explicitly; it is not silently upgraded.
+use 2.22. Copied examples retain their original version. Edits preserve the existing
+version, comments and unrelated source text. Public-schema node properties and
+enumerated values are checked before saving or resolving a scene. Unknown fields
+remain readable for repair, but must be removed or moved into `metadata` before
+editing or rendering. An unknown version fails explicitly; it is not silently upgraded.
 
 A batch resolves references against captured inputs, validates the resulting document,
 and checks expected document/dependency revisions before publication. Immutable assets

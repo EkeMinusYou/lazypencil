@@ -136,7 +136,7 @@ fn review_and_apply_keep_sibling_disabled_theme_and_unknown_metadata_references(
     fs::write(&fixture.file, json!({"version":"2.21","themes":{"Mode":["light","dark"]},"variables":{"hidden":{"type":"string","value":[{"value":"none","theme":{"Mode":"light"}},{"value":inactive,"theme":{"Mode":"dark"}}]}},"children":[{"type":"rectangle","id":"disabled","enabled":false,"width":1,"height":1,"fill":{"type":"image","url":disabled}}]}).to_string()).unwrap();
     fs::write(
         fixture.root.join("sibling.PEN"),
-        json!({"version":"2.19","metadata":{"future":{"asset":sibling}},"children":[]}).to_string(),
+        json!({"version":"2.19","children":[lazypencil::document::data_node(json!({"future":{"asset":sibling}}))]}).to_string(),
     )
     .unwrap();
     let before = fs::read(&fixture.file).unwrap();
@@ -178,7 +178,7 @@ fn real_checkpoint_retention_protects_assets_until_the_referencing_history_is_pr
                     &format!("edit-{index}"),
                     |document| {
                         let mut after = document.clone();
-                        after.set_property("", "metadata", &metadata)?;
+                        after.set_document_data("retention_fixture", &metadata)?;
                         Ok((after, json!({})))
                     },
                 )
@@ -228,7 +228,7 @@ fn every_current_checkpoint_state_protects_assets_across_document_namespaces() {
         fs::write(&owner, r#"{"version":"2.21","children":[]}"#).unwrap();
         fixture.checkpoint(
             &owner,
-            json!({"version":"2.21","children":[],"metadata":{"previous_asset":uri}}),
+            json!({"version":"2.21","children":[lazypencil::document::data_node(json!({"previous_asset":uri}))]}),
             state,
             false,
         );
@@ -399,7 +399,7 @@ fn the_bound_document_is_a_retention_root_inside_managed_storage_or_without_a_pe
         let mut fixture = Fixture::new();
         let (uri, retained) = fixture.asset(b"referenced", "png");
         let (_, orphan) = fixture.asset(b"orphan", "glsl");
-        let document = json!({"version":"2.21","children":[],"metadata":{"asset":uri}}).to_string();
+        let document = json!({"version":"2.21","children":[lazypencil::document::data_node(json!({"asset":uri}))]}).to_string();
         if managed {
             fixture.file = fixture.asset(document.as_bytes(), "lib.pen").1;
         } else {
@@ -435,7 +435,7 @@ fn the_cli_reviews_pending_cleanup_and_restores_newly_referenced_quarantined_ass
         if referenced {
             fs::write(
                 &fixture.file,
-                json!({"version":"2.21","children":[],"metadata":{"asset":uri}}).to_string(),
+                json!({"version":"2.21","children":[lazypencil::document::data_node(json!({"asset":uri}))]}).to_string(),
             )
             .unwrap();
         }

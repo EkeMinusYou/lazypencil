@@ -219,7 +219,7 @@ fn setup(version: &str, case: &Case<'_>, count: usize) -> (TempDir, Store, Strin
             changes["inputs"] = json!({"selected":"$selection","stale":"$missing"})
         }
         Mode::BadVariable => changes["inputs"] = json!({"selected":"$missing"}),
-        Mode::Null => changes["inputs"] = json!({"selected":null,"stale":"$missing"}),
+        Mode::DefaultInput => changes["inputs"] = json!({"stale":"$missing"}),
         Mode::Metadata => {
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone"})
         }
@@ -1226,7 +1226,7 @@ fn generated_script_code_overrides_keep_saved_input_ownership_after_copy_and_rec
         for version in ["2.19", "2.21"] {
             threads.spawn(move || {
                 for style in ["direct", "descendant", "replacement"] {
-                    for mode in ["inherit", "literal", "variable", "null", "metadata"] {
+                    for mode in ["inherit", "literal", "variable", "default", "metadata"] {
                         let first = if ["inherit", "metadata"].contains(&mode) {
                             Color::RED
                         } else {

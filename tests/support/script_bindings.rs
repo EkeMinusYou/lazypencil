@@ -128,8 +128,8 @@ fn renamed_bindings_preserve_real_script_defaults_overrides_themes_and_live_edit
 
     edit(
         &store,
-        "null-input",
-        json!([{"op":"update","target":"use","set":{"inputs":{"selected":null}}}]),
+        "default-input",
+        json!([{"op":"update","target":"use","set":{"inputs":{}}}]),
     );
     let (_, _, reset) = snapshot(&store);
     assert_eq!(pixel(&reset, 25), Color::BLUE);

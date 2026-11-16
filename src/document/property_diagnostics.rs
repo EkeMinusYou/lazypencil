@@ -79,22 +79,26 @@ pub(crate) fn node_property_diagnostics(
     node_id: &str,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let kind = properties.get("type").and_then(Value::as_str);
     for key in properties.keys() {
-        if NODE_PROPERTIES.contains(&key.as_str()) {
+        if schema::known_property(kind, key) {
             continue;
         }
-        let suggestion = NODE_PROPERTIES
-            .iter()
-            .find(|known| one_edit_apart(key, known));
+        let suggestion = NODE_PROPERTIES.iter().find(|known| {
+            **known != key.as_str()
+                && schema::known_property(kind, known)
+                && one_edit_apart(key, known)
+        });
         let hint = suggestion
             .map(|known| format!(" Did you mean {known:?}?"))
             .unwrap_or_default();
         diagnostics.push(Diagnostic {
             code: "UNKNOWN_PROPERTY".into(),
-            severity: "warning",
+            severity: "error",
             node_id: Some(node_id.into()),
             message: format!(
-                "Property {key:?} is not recognized; it is preserved but may have no effect.{hint}"
+                "Property {key:?} is not in the public .pen schema for {}.{hint}",
+                kind.unwrap_or("an override")
             ),
         });
     }
@@ -129,25 +133,9 @@ impl Document {
             let node = self.value.pointer(&location.pointer).expect("indexed node");
             if NODE_TYPES.contains(&node["type"].as_str().unwrap_or_default()) {
                 diagnostics.extend(node_property_diagnostics(node.as_object().unwrap(), id));
-                override_diagnostics(node, id, &mut diagnostics);
             }
         }
         diagnostics
-    }
-}
-
-fn override_diagnostics(node: &Value, owner: &str, diagnostics: &mut Vec<Diagnostic>) {
-    if let Some(overrides) = node.get("descendants").and_then(Value::as_object) {
-        for (path, changes) in overrides {
-            // Replacement nodes and their children are already in the document index.
-            if changes.get("type").is_none() {
-                let address = format!("{owner}/{path}");
-                if let Some(properties) = changes.as_object() {
-                    diagnostics.extend(node_property_diagnostics(properties, &address));
-                }
-                override_diagnostics(changes, &address, diagnostics);
-            }
-        }
     }
 }
 
@@ -156,30 +144,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn property_warnings_preserve_extensions_and_ignore_open_map_keys() {
+    fn property_errors_preserve_source_and_ignore_open_metadata() {
         let source = json!({"version":"2.22","children":[
             {"id":"title","type":"text","fontSize":24,"fontSzie":42,"futureFeature":true,
-             "metadata":{"fontSzie":9},"inputs":{"custom":1}},
+             "metadata":{"fontSzie":9}},
             {"id":"instance","type":"ref","ref":"title","descendants":{"label":{"fontWieght":"700"}}},
             {"id":"future","type":"future","anything":true}
         ]}).to_string();
         let document = Document::parse(source.clone()).unwrap();
-        let warnings = document.property_diagnostics();
-        assert_eq!(warnings.len(), 3);
+        let diagnostics = document.property_diagnostics();
+        assert_eq!(diagnostics.len(), 2);
         assert!(
-            warnings
+            diagnostics
                 .iter()
-                .all(|warning| warning.code == "UNKNOWN_PROPERTY" && warning.severity == "warning")
+                .all(|diagnostic| diagnostic.code == "UNKNOWN_PROPERTY"
+                    && diagnostic.severity == "error")
         );
         assert!(
-            warnings
+            diagnostics
                 .iter()
-                .any(|warning| warning.message.contains("Did you mean \"fontSize\"?"))
-        );
-        assert!(
-            warnings
-                .iter()
-                .any(|warning| warning.node_id.as_deref() == Some("instance/label"))
+                .any(|diagnostic| diagnostic.message.contains("Did you mean \"fontSize\"?"))
         );
         assert_eq!(document.text(), source);
         assert_eq!(document.node("title").unwrap()["fontSize"], 24);

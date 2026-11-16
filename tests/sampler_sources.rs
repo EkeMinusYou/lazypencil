@@ -958,12 +958,22 @@ fn sampler_image_bindings_reject_unknown_versions_and_unsafe_targets_before_open
         ),
     ] {
         let mut document = original.clone();
-        document["metadata"] = json!({"lazypencil":{"sampler_images":binding}});
+        document["children"]
+            .as_array_mut()
+            .unwrap()
+            .push(lazypencil::document::data_node(
+                json!({"sampler_images":binding}),
+            ));
         write(store.path(), document);
         assert_eq!(Project::load(&store).err().unwrap().code, code);
     }
     let mut document = original;
-    document["metadata"] = json!({"lazypencil":{"sampler_images":{"version":1,"images":{"/unused.png":"missing.png"}}}});
+    document["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(lazypencil::document::data_node(
+            json!({"sampler_images":{"version":1,"images":{"/unused.png":"missing.png"}}}),
+        ));
     write(store.path(), document);
     assert!(Project::load(&store).is_ok());
     assert!(!temp.path().join("assets").exists());
@@ -1252,7 +1262,12 @@ fn mapped_sampler_images_cannot_escape_allowed_roots_through_symlinks() {
     let source = temp.path().join("library/data/images.lib.pen");
     let mut document: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
     document["variables"]["leaf"]["value"] = json!("/original.png");
-    document["metadata"] = json!({"lazypencil":{"sampler_images":{"version":1,"images":{"/original.png":"redirect.png"}}}});
+    document["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(lazypencil::document::data_node(
+            json!({"sampler_images":{"version":1,"images":{"/original.png":"redirect.png"}}}),
+        ));
     write(&source, document);
     assert_eq!(Project::load(&store).err().unwrap().code, "ASSET_NOT_FOUND");
     assert!(!temp.path().join("assets").exists());

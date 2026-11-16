@@ -92,7 +92,7 @@ impl Copier<'_> {
         } else {
             (json!({"version":1,"roots":[]}), Vec::new())
         };
-        let document = json!({"version":self.project.root_document().version(),"metadata":{"lazypencil":{"browser_resources":declaration}},"children":[]});
+        let document = json!({"version":self.project.root_document().version(),"children":[crate::document::data_node(json!({"browser_resources":declaration}))]});
         let library = crate::managed::File::new(
             destination,
             serde_json::to_vec(&document)

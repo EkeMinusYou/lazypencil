@@ -71,7 +71,7 @@ fn imported_bound_detach_preserves_saved_default_and_live_variable_inputs() {
                 fixture::apply(
                     &target,
                     "default-after-detach",
-                    json!([{"op":"update","target":address,"set":{"inputs":{"selected":null}}}]),
+                    json!([{"op":"update","target":address,"set":{"inputs":{}}}]),
                 );
                 let reset = png(&target, None);
                 assert_eq!(pixel(&reset, 5), Color::RED);

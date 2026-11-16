@@ -30,81 +30,41 @@ mod http_image_reference;
 mod scheduling;
 
 #[test]
-fn mcp_property_typos_warn_on_edits_and_validation_without_losing_unknown_fields() {
-    let (temp, file, data) = fixture();
+fn mcp_property_typos_reject_edits_without_changing_source_or_history() {
+    let (_temp, file, data) = fixture();
     let source = json!({"version":"2.22","children":[
         {"id":"title","type":"text","content":"MCP","fontSize":24,
-         "metadata":{"custom":{"fontSzie":99}}}
+         "metadata":{"type":"custom","custom":{"fontSzie":99}}}
     ]})
     .to_string();
     fs::write(&file, &source).unwrap();
     let mut client = Client::start(&file, &data);
     let before = client.data("get_document", json!({}));
-    let request = json!({"request_id":"typo","expected_revision":before["revision"],
-        "expected_dependency_revision":before["dependency_revision"],
-        "operations":[{"op":"update","target":"title","set":{"fontSzie":42,"futureFeature":true}}]});
-    let mut dry_run = request.clone();
-    dry_run["dry_run"] = json!(true);
-    let proposed = client.data("apply_operations", dry_run);
-    assert_eq!(proposed["diagnostics"].as_array().unwrap().len(), 2);
-    assert_eq!(fs::read_to_string(&file).unwrap(), source);
-    let edited = client.data("apply_operations", request.clone());
-    assert_eq!(edited["diagnostics"], proposed["diagnostics"]);
-    assert!(
-        edited["diagnostics"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(
-                |warning| warning["code"] == "UNKNOWN_PROPERTY" && warning["severity"] == "warning"
-            )
-    );
-    assert!(
-        edited["diagnostics"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|warning| warning["message"]
-                .as_str()
+    for dry_run in [true, false] {
+        let result = client.call("apply_operations", json!({"request_id":"typo",
+            "expected_revision":before["revision"],
+            "expected_dependency_revision":before["dependency_revision"],"dry_run":dry_run,
+            "operations":[{"op":"update","target":"title","set":{"fontSzie":42,"futureFeature":true}}]}));
+        assert_eq!(result["isError"], true, "{result}");
+        assert!(result.to_string().contains("INVALID_DOCUMENT"), "{result}");
+        assert!(result.to_string().contains("fontSize"), "{result}");
+        assert_eq!(fs::read_to_string(&file).unwrap(), source);
+        assert!(
+            Store::open(&file, Some(data.clone()))
                 .unwrap()
-                .contains("Did you mean \"fontSize\"?"))
-    );
-    let replayed = client.data("apply_operations", request);
-    assert_eq!(replayed["replayed"], true);
-    assert_eq!(replayed["diagnostics"], edited["diagnostics"]);
+                .history(10, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
     let nodes = client.data("read_nodes", json!({"node_id":"title"}));
     assert_eq!(nodes["nodes"][0]["fontSize"], 24);
-    assert_eq!(nodes["nodes"][0]["fontSzie"], 42);
-    assert_eq!(nodes["nodes"][0]["futureFeature"], true);
     assert_eq!(nodes["nodes"][0]["metadata"]["custom"]["fontSzie"], 99);
-    let metadata = client.data("get_document", json!({}));
-    assert_eq!(metadata["diagnostics"], edited["diagnostics"]);
-    for scope in ["structure", "layout"] {
-        if scope == "layout" && !cfg!(feature = "rendering") {
-            continue;
-        }
-        let report = client.data("validate_document", json!({"scope":scope,"limit":1}));
-        assert_eq!(report["valid"], true);
-        assert_eq!(report["complete"], true);
-        assert_eq!(report["total_diagnostics"], 2);
-        let mut query = json!({"scope":scope,"cursor":report["next_cursor"],"limit":1});
-        if let Some(snapshot) = report.get("snapshot_id") {
-            query["snapshot_id"] = snapshot.clone();
-        }
-        let page = client.data("validate_document", query);
-        assert_eq!(page["diagnostics"].as_array().unwrap().len(), 1);
-        assert_eq!(page["next_cursor"], Value::Null);
-    }
-    let fixed = client.data("apply_operations", json!({"request_id":"fix-typo",
-        "expected_revision":edited["revision"],"expected_dependency_revision":edited["dependency_revision"],
-        "operations":[{"op":"update","target":"title","set":{"fontSize":42},"unset":["fontSzie","futureFeature"]}]}));
-    assert_eq!(fixed["diagnostics"], json!([]));
-    assert_eq!(
-        client.data("validate_document", json!({}))["total_diagnostics"],
-        0
-    );
+    let saved = client.data("apply_operations", json!({"request_id":"valid",
+        "expected_revision":before["revision"],"expected_dependency_revision":before["dependency_revision"],
+        "operations":[{"op":"update","target":"title","set":{"fontSize":42}}]}));
+    assert_eq!(saved["diagnostics"], json!([]));
     client.finish();
-    drop(temp);
 }
 
 #[test]
@@ -2016,7 +1976,7 @@ fn mcp_document_versions_create_edit_validate_and_restore_without_migration() {
     for version in ["2.19", "2.21", "2.22"] {
         let (temp, file, data) = fixture();
         let source = format!(
-            "{{\n // retained\n \"version\":\"{version}\",\"future\":{{\"number\":1.000e+3}},\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
+            "{{\n // retained\n \"version\":\"{version}\",\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"metadata\":{{\"type\":\"test\",\"number\":1.000e+3}},\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
         );
         fs::write(&file, &source).unwrap();
         let mut client = Client::start(&file, &data);

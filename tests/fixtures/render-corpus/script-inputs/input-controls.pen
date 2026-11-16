@@ -160,76 +160,64 @@
           }
         },
         {
-          "id": "number-null",
+          "id": "number-default",
           "type": "script",
-          "scriptUri": "number-null.js",
+          "scriptUri": "number-default.js",
           "x": 0,
           "y": 156,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
-          "id": "string-null",
+          "id": "string-default",
           "type": "script",
-          "scriptUri": "string-null.js",
+          "scriptUri": "string-default.js",
           "x": 0,
           "y": 168,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
-          "id": "boolean-null",
+          "id": "boolean-default",
           "type": "script",
-          "scriptUri": "boolean-null.js",
+          "scriptUri": "boolean-default.js",
           "x": 0,
           "y": 180,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
-          "id": "color-null",
+          "id": "color-default",
           "type": "script",
-          "scriptUri": "color-null.js",
+          "scriptUri": "color-default.js",
           "x": 0,
           "y": 192,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
-          "id": "enum-null",
+          "id": "enum-default",
           "type": "script",
-          "scriptUri": "enum-null.js",
+          "scriptUri": "enum-default.js",
           "x": 0,
           "y": 204,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
-          "id": "ref-null",
+          "id": "ref-default",
           "type": "script",
-          "scriptUri": "ref-null.js",
+          "scriptUri": "ref-default.js",
           "x": 0,
           "y": 216,
           "width": 256,
           "height": 8,
-          "inputs": {
-            "value": null
-          }
+          "inputs": {}
         },
         {
           "id": "ref-empty",

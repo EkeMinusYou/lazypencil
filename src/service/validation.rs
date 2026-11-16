@@ -205,12 +205,8 @@ pub fn validation_from_snapshot(
             "The calculation does not belong to this project snapshot",
         ));
     }
-    // Keep the structural scope honest even when a layout engine can measure an unknown node.
-    let diagnostics = project.diagnostics();
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code != "UNKNOWN_PROPERTY")
-    {
+    // Recheck structural diagnostics when validating a retained calculation.
+    if !project.diagnostics().is_empty() {
         let scene = project.resolve()?;
         structural_report(project, &scene, request)?;
     }

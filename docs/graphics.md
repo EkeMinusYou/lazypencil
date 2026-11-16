@@ -59,7 +59,8 @@ Strokes contribute to the exported bounds, including long miters at sharp corner
 Disabled or zero-width strokes add no area. Text boxes and other conservative
 bounds can leave transparent space around the painted content.
 
-[Icons](icons.md) support the same native fills, strokes and effects as shapes.
+[Icons](icons.md) support fills and effects. The public icon schema does not
+include strokes; use a path node when an independently authored outline is needed.
 Image and shader paints inherited from a component resolve relative to the
 component that supplied them.
 

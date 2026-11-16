@@ -393,7 +393,7 @@ fn independent_random_vectors_match_supported_headers_and_reset_for_each_script(
 }
 
 #[test]
-fn input_defaults_null_resets_and_stale_controls_match_independent_contract() {
+fn input_defaults_and_stale_controls_match_independent_contract() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/render-corpus/script-inputs");
     let mut worker = runtime();

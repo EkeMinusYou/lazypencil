@@ -48,7 +48,7 @@ fn geometric_scan_conversion_agrees_with_independent_area_equations() {
 use lazypencil_xtask::fixtures::oracles::shaders::{self, Scene};
 
 #[test]
-fn encoded_script_oracles_keep_reset_rows_gaps_and_raw_null_cases() {
+fn encoded_script_oracles_keep_default_rows_gaps_and_omitted_inputs() {
     let words = scripts::random_words();
     assert_eq!(words.len(), 37);
     let image = scripts::random_raster(2);
@@ -67,10 +67,10 @@ fn encoded_script_oracles_keep_reset_rows_gaps_and_raw_null_cases() {
     assert!(
         cases
             .iter()
-            .find(|c| c.name == "number-null")
+            .find(|c| c.name == "number-default")
             .unwrap()
-            .stored["value"]
-            .is_null()
+            .stored.get("value")
+            .is_none()
     );
     let image = scripts::input_raster(2);
     assert_eq!((image.width, image.height), (512, 528));

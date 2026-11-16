@@ -190,8 +190,10 @@ restart after an input change.
 layout and rendering check its baseline, while structural edits remain available
 for repairs.
 
-Unknown node properties produce `UNKNOWN_PROPERTY` warnings and remain stored.
-Review spelling suggestions before continuing. Boolean properties require booleans,
+Unknown or misplaced node properties produce `UNKNOWN_PROPERTY` errors in document
+metadata and are rejected by edits, validation and rendering. Review spelling
+suggestions before continuing. Stored contents remain readable for repair.
+Boolean properties require booleans,
 including resolved variables and override values; a string such as `"false"`
 is invalid. Arbitrary metadata and script-input keys have their own schemas.
 

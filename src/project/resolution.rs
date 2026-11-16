@@ -69,9 +69,10 @@ impl Project {
         icons: bool,
         count: &mut Expansion,
     ) -> Result<ResolvedScene> {
-        for document in self.documents.values() {
+        for (source, document) in &self.documents {
             self.check_cancelled()?;
-            crate::operations::validate_local_with_cancellation(document, self.cancel.as_ref())?;
+            crate::operations::validate_local_with_cancellation(document, self.cancel.as_ref())
+                .map_err(|error| schema_error(error, source))?;
         }
         let mut roots = Vec::new();
         for node in self.root_document().value()["children"]
@@ -127,6 +128,8 @@ impl Project {
         let id = node["id"]
             .as_str()
             .ok_or_else(|| invalid("A component child requires an ID"))?;
+        crate::document::validate_authored_properties(node, id)
+            .map_err(|error| schema_error(error, origin))?;
         count.reserve(instance.unwrap_or(id).len())?;
         for part in path {
             count.key(part)?;
@@ -519,9 +522,18 @@ impl Project {
             let origin = node.property_sources.get(key).unwrap_or(&node.source_path);
             *value = self.resolve_value_bounded(origin, value, &theme, &mut Vec::new(), budget)?;
         }
-        if crate::document::NODE_TYPES.contains(&node.kind()) {
-            crate::document::validate_resolved_booleans(&node.properties, &node.id())?;
-        }
+        crate::document::validate_resolved_properties(&node.properties, &node.id()).map_err(
+            |error| {
+                let property = error
+                    .details
+                    .as_ref()
+                    .and_then(|details| details["property"].as_str());
+                let source = property
+                    .map(|key| node.property_source(key))
+                    .unwrap_or(&node.source_path);
+                schema_error(error, source)
+            },
+        )?;
         for child in &mut node.children {
             self.resolve_properties(child, &theme, budget)?;
         }
@@ -937,4 +949,9 @@ impl Project {
         }
         Ok(result)
     }
+}
+
+fn schema_error(mut error: Error, source: &Path) -> Error {
+    error.details.get_or_insert_with(|| json!({}))["source_path"] = json!(source);
+    error
 }

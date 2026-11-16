@@ -7,10 +7,9 @@ fn boolean_literals_reject_invalid_types_without_changing_the_document() {
     for version in ["2.19", "2.21", "2.22"] {
         let source = json!({"version":version,"children":[{
             "id":"box","type":"frame","width":20,"height":20,
-            "metadata":{"enabled":"false"},"futureFeature":{"enabled":"false"}
+            "metadata":{"type":"test","enabled":"false","futureFeature":{"enabled":"false"}}
         }]})
         .to_string();
-        let document = Document::parse(source.clone()).unwrap();
         for key in [
             "enabled",
             "flipX",
@@ -22,6 +21,11 @@ fn boolean_literals_reject_invalid_types_without_changing_the_document() {
             "layoutIncludeStroke",
             "placeholder",
         ] {
+            let mut value: Value = serde_json::from_str(&source).unwrap();
+            if matches!(key, "underline" | "strikethrough") {
+                value["children"][0]["type"] = json!("text");
+            }
+            let document = Document::parse(value.to_string()).unwrap();
             for value in [
                 json!("false"),
                 json!("true"),
@@ -52,12 +56,11 @@ fn boolean_literals_reject_invalid_types_without_changing_the_document() {
                 assert_eq!(after.node("box").unwrap()[key], value);
                 assert_eq!(after.node("box").unwrap()["metadata"]["enabled"], "false");
                 assert_eq!(
-                    after.node("box").unwrap()["futureFeature"]["enabled"],
+                    after.node("box").unwrap()["metadata"]["futureFeature"]["enabled"],
                     "false"
                 );
             }
         }
-        assert_eq!(document.text(), source);
     }
 }
 

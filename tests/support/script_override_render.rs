@@ -36,12 +36,12 @@ fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_in
         for mode in fixture::MODES {
             let (temp, store) = fixture::fixture(version, mode);
             let before = rendered(&store);
-            let selected = if ["inputs", "combined", "literal", "nullable"].contains(mode) {
+            let selected = if ["inputs", "combined", "literal", "defaults"].contains(mode) {
                 Color::GREEN
             } else {
                 Color::RED
             };
-            let tone = if ["code", "combined", "nullable"].contains(mode) {
+            let tone = if ["code", "combined", "defaults"].contains(mode) {
                 Color::GREEN
             } else {
                 Color::RED
@@ -117,7 +117,7 @@ fn inherited_overrides_preserve_live_namespaces_metadata_and_pixels_after_two_in
             let explicit = rendered(&second);
             assert_eq!(
                 pixel(&explicit, 5),
-                if ["literal", "nullable"].contains(mode) {
+                if ["literal", "defaults"].contains(mode) {
                     Color::GREEN
                 } else {
                     Color::MAGENTA

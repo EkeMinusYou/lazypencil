@@ -58,8 +58,8 @@ pub struct BrowserResources {
 
 fn declarations(document: &Document) -> Result<Vec<Root>> {
     let Some(value) = document
-        .value()
-        .pointer("/metadata/lazypencil/browser_resources")
+        .document_data()?
+        .and_then(|value| value.get("browser_resources"))
     else {
         return Ok(Vec::new());
     };
@@ -137,8 +137,8 @@ impl Project {
     pub(super) fn capture_browser_resources(&mut self, origin: &Path) -> Result<()> {
         let roots = declarations(&self.documents[origin])?;
         let packed = self.documents[origin]
-            .value()
-            .pointer("/metadata/lazypencil/browser_resources/bundle")
+            .document_data()?
+            .and_then(|value| value.pointer("/browser_resources/bundle"))
             .cloned();
         if let Some(value) = packed {
             let mut resources = self.capture_browser_bundle(origin, &value)?;
@@ -148,8 +148,8 @@ impl Project {
         }
         if roots.is_empty()
             && self.documents[origin]
-                .value()
-                .pointer("/metadata/lazypencil/browser_resources")
+                .document_data()?
+                .and_then(|value| value.get("browser_resources"))
                 .is_none()
         {
             return Ok(());
@@ -568,9 +568,9 @@ mod tests {
             Some(state.path().join("private")),
         )
         .unwrap();
-        fs::write(store.path(), json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{
+        fs::write(store.path(), json!({"version":"2.21","children":[crate::document::data_node(json!({"lazypencil":{"browser_resources":{
             "version":1,"roots":[{"url":"file:///first/","path":"."},{"url":"file:///second/","path":"."}]
-        }}},"children":[]}).to_string()).unwrap();
+        }}})["lazypencil"].clone())]}).to_string()).unwrap();
         let project = Project::load(&store).unwrap();
         let resources = &project.browser_resources[store.path()];
         assert!(Arc::ptr_eq(

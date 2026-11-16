@@ -1,4 +1,4 @@
-//! Check boolean attributes without interpreting open metadata or input maps.
+//! Validate properties without interpreting open metadata or input maps as nodes.
 use super::*;
 
 const VARIABLE_BOOLEANS: &[&str] = &[
@@ -11,7 +11,7 @@ const VARIABLE_BOOLEANS: &[&str] = &[
 ];
 const LITERAL_BOOLEANS: &[&str] = &["reusable", "layoutIncludeStroke", "placeholder"];
 
-pub(crate) fn validate_authored_booleans(node: &Value, id: &str) -> Result<()> {
+pub(crate) fn validate_authored_properties(node: &Value, id: &str) -> Result<()> {
     validate_properties(node.as_object().expect("indexed object"), id, true)?;
     if matches!(node.get("type").and_then(Value::as_str), None | Some("ref"))
         && let Some(overrides) = node.get("descendants").and_then(Value::as_object)
@@ -19,14 +19,14 @@ pub(crate) fn validate_authored_booleans(node: &Value, id: &str) -> Result<()> {
         for (path, changes) in overrides {
             // Replacement nodes and their children have their own document index entries.
             if changes.get("type").is_none() {
-                validate_authored_booleans(changes, &format!("{id}/{path}"))?;
+                validate_authored_properties(changes, &format!("{id}/{path}"))?;
             }
         }
     }
     Ok(())
 }
 
-pub(crate) fn validate_resolved_booleans(
+pub(crate) fn validate_resolved_properties(
     properties: &serde_json::Map<String, Value>,
     id: &str,
 ) -> Result<()> {
@@ -38,6 +38,7 @@ fn validate_properties(
     id: &str,
     allow_variables: bool,
 ) -> Result<()> {
+    schema::validate(properties, id, allow_variables)?;
     for key in VARIABLE_BOOLEANS {
         check(
             properties.get(*key),

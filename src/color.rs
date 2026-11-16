@@ -6,7 +6,7 @@ use skia_safe::Color;
 pub(crate) fn hex_rgba(value: &str) -> Option<[u8; 4]> {
     let digits = value.strip_prefix('#').filter(|s| s.is_ascii())?;
     let step = match digits.len() {
-        3 | 4 => 1,
+        3 => 1,
         6 | 8 => 2,
         _ => return None,
     };
@@ -28,7 +28,7 @@ pub fn parse(value: &str) -> Result<Color> {
 fn invalid(value: &str) -> Error {
     Error::new(
         "INVALID_DOCUMENT",
-        format!("Unsupported color {value:?}; expected #RGB, #RGBA, #RRGGBB, or #RRGGBBAA"),
+        format!("Unsupported color {value:?}; expected #RGB, #RRGGBB, or #RRGGBBAA"),
     )
 }
 
@@ -40,7 +40,6 @@ mod tests {
     fn hex_colors_expand_each_channel_and_default_only_missing_alpha() {
         for (literal, expected) in [
             ("#AbC", [170, 187, 204, 255]),
-            ("#AbCd", [170, 187, 204, 221]),
             ("#123456", [18, 52, 86, 255]),
             ("#12345600", [18, 52, 86, 0]),
         ] {
@@ -50,6 +49,7 @@ mod tests {
             "",
             "123456",
             "#12",
+            "#AbCd",
             "#12345",
             "#1234567",
             "#ggg",

@@ -66,7 +66,7 @@ fn fixture(children: Value) -> (TempDir, Store) {
         &path,
         format!(
             "// Preserve this comment.\n{}",
-            json!({"version":"2.21","future":{"keep":17},"children":children})
+            json!({"version":"2.21","themes":{"keep":["17"]},"children":children})
         ),
     )
     .unwrap();
@@ -378,7 +378,10 @@ fn missing_library_can_be_rebound_with_revision_checks_without_inventing_its_con
             .text()
             .contains("// Preserve this comment.")
     );
-    assert_eq!(store.read().unwrap().value()["future"]["keep"], 17);
+    assert_eq!(
+        store.read().unwrap().value()["themes"]["keep"],
+        json!(["17"])
+    );
     assert!(!temp.path().join("lost").exists());
 }
 
@@ -633,7 +636,7 @@ fn declared_missing_assets_have_revisions_and_support_partial_dry_runs_and_saved
     assert!(repaired["asset_diagnostics"].as_array().unwrap().is_empty());
     let document = store.read().unwrap();
     assert!(document.text().contains("// Preserve this comment."));
-    assert_eq!(document.value()["future"]["keep"], 17);
+    assert_eq!(document.value()["themes"]["keep"], json!(["17"]));
     assert_eq!(store.history(10, None).unwrap().len(), 2);
 }
 

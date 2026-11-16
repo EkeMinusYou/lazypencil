@@ -324,7 +324,7 @@ fn repeated_copy_keeps_original_and_saved_input_namespaces_after_each_source_is_
         fixture::apply(
             &third,
             "default-after-third-copy",
-            json!([{"op":"update","target":third_instance,"set":{"inputs":{"selected":null}}}]),
+            json!([{"op":"update","target":third_instance,"set":{"inputs":{}}}]),
         );
         let default = png(&third, None);
         assert_eq!(pixel(&default, 5), Color::RED);

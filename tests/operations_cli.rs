@@ -106,7 +106,7 @@ fn cli_document_versions_create_validate_edit_and_preserve_source() {
     .unwrap();
     for version in ["2.19", "2.21", "2.22"] {
         let source = format!(
-            "{{\n // retained\n \"version\":\"{version}\",\"metadata\":{{\"number\":1.000e+3}},\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
+            "{{\n // retained\n \"version\":\"{version}\",\n \"children\":[{{\"id\":\"box\",\"type\":\"rectangle\",\"metadata\":{{\"type\":\"test\",\"number\":1.000e+3}},\"width\":20,\"height\":10,\"fill\":\"#123456\"}}]\n}}\n"
         );
         fs::write(file, &source).unwrap();
         let metadata = run(&["inspect", file]);
@@ -525,11 +525,11 @@ fn inherited_targets_never_silently_edit_the_instance_root() {
 }
 
 #[test]
-fn local_variable_validation_preserves_opaque_roots_and_deferred_script_override_inputs() {
+fn local_validation_rejects_unknown_nodes_and_defers_script_override_inputs() {
     for (children, valid) in [
         (
             json!([{"type":"future","id":"opaque","fill":"$opaque"}]),
-            true,
+            false,
         ),
         (
             json!([{"type":"future","id":"opaque","fill":"$opaque","children":[{"type":"rectangle","id":"known","fill":"$missing"}]}]),
@@ -561,8 +561,10 @@ fn local_variable_validation_preserves_opaque_roots_and_deferred_script_override
         let result = operations::validate_local(&document);
         assert_eq!(result.is_ok(), valid, "{children}: {result:?}");
         if let Err(error) = result {
-            assert_eq!(error.code, "INVALID_OPERATION");
-            assert!(error.message.contains("Missing variable $missing"));
+            assert!(
+                matches!(error.code, "INVALID_DOCUMENT" | "INVALID_OPERATION"),
+                "{error}"
+            );
         }
     }
 }
@@ -593,10 +595,9 @@ fn malformed_variables_and_reference_cycles_fail_validation() {
     .unwrap_err();
     assert_eq!(error.code, "REFERENCE_CYCLE");
     let error = operations::apply(
-        &scene(),
+        &Document::empty(),
         &operations(json!([
-            {"op":"update","target":"button","set":{"ref":"instance"}},
-            {"op":"update","target":"instance","set":{"reusable":true,"ref":"instance"}}
+            {"op":"insert","node":{"id":"cycle","type":"ref","reusable":true,"ref":"cycle"}}
         ])),
     )
     .unwrap_err();

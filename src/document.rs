@@ -9,14 +9,17 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 
 mod codec;
+mod data;
+pub use data::data_node;
 mod properties;
 mod property_diagnostics;
 mod property_types;
+mod schema;
 pub use codec::{Codec, SUPPORTED_DOCUMENT_VERSIONS};
 pub(crate) use properties::PropertyEdit;
-#[cfg(feature = "rendering")]
 pub(crate) use property_diagnostics::node_property_diagnostics;
-pub(crate) use property_types::{validate_authored_booleans, validate_resolved_booleans};
+pub(crate) use property_types::{validate_authored_properties, validate_resolved_properties};
+pub(crate) use schema::valid_size;
 
 pub const DOCUMENT_VERSION: &str = Codec::DEFAULT.version();
 pub const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
@@ -32,8 +35,6 @@ pub const NODE_TYPES: &[&str] = &[
     "path",
     "text",
     "note",
-    "prompt",
-    "context",
     "icon",
     "script",
     "browser",
@@ -194,8 +195,11 @@ impl Document {
             if !NODE_TYPES.contains(&node["type"].as_str().unwrap_or_default()) {
                 result.push(Diagnostic {
                     code: "UNSUPPORTED_FEATURE".into(),
-                    severity: "warning",
-                    message: format!("Unknown node type {} is preserved", node["type"]),
+                    severity: "error",
+                    message: format!(
+                        "Node type {} is not in the public .pen schema",
+                        node["type"]
+                    ),
                     node_id: Some(id.clone()),
                 });
             }

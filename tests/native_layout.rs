@@ -87,7 +87,9 @@ fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_sourc
             )
             .unwrap();
             assert_eq!(
-                layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+                project
+                    .resolve()
+                    .and_then(|scene| layout::compute(scene, &mut Fonts::new(&[]).unwrap()))
                     .err()
                     .unwrap()
                     .code,
@@ -110,7 +112,9 @@ fn vertical_alignment_changes_bounds_and_both_painters() {
             &[],
         )
         .unwrap();
-        let error = layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+        let error = project
+            .resolve()
+            .and_then(|scene| layout::compute(scene, &mut Fonts::new(&[]).unwrap()))
             .err()
             .unwrap();
         assert_eq!(error.code, "INVALID_DOCUMENT");

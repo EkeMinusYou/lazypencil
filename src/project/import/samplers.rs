@@ -170,8 +170,9 @@ impl Copier<'_> {
             };
             let mut document = json!({"version":self.project.root_document().version(),"variables":variables,"children":[]});
             if !relocated.is_empty() {
-                document["metadata"] =
-                    json!({"lazypencil":{"sampler_images":{"version":1,"images":relocated}}});
+                document["children"] = json!([crate::document::data_node(
+                    json!({"sampler_images":{"version":1,"images":relocated}})
+                )]);
             }
             let bytes: Arc<[u8]> = serde_json::to_vec(&document)
                 .map_err(|_| copy_error("Cannot encode copied sampler variables"))?

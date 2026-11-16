@@ -69,7 +69,7 @@ fn random_sequence_and_supported_headers_match_independent_pixels_without_saving
 }
 
 #[test]
-fn input_controls_match_independent_pixels_and_preserve_saved_nulls_and_stale_keys() {
+fn input_controls_match_independent_pixels_and_preserve_saved_defaults_and_stale_keys() {
     independent_script_contract("script-inputs", "input-controls", "codec-script-inputs");
 }
 
@@ -230,12 +230,13 @@ fn generated_geometry_is_measured_painted_and_never_saved_as_stored_children() {
 
 #[test]
 fn color_inputs_render_the_same_hex_forms_that_the_header_accepts() {
-    for (literal, alpha) in [
-        ("#0f0", 255),
-        ("#0f08", 136),
-        ("#00ff00", 255),
-        ("#00ff0088", 136),
-    ] {
+    assert!(
+        lazypencil::script::header::Header::parse(
+            "/** @schema 2.22\n * @input ink: color = #0f08\n */\nreturn [];"
+        )
+        .is_err()
+    );
+    for (literal, alpha) in [("#0f0", 255), ("#00ff00", 255), ("#00ff0088", 136)] {
         let (temp, store) = fixture(
             "return [{type:'rectangle',width:8,height:8,fill:pencil.input.ink}];",
             json!({"id":"chart","type":"script","scriptUri":"draw.js","width":8,"height":8}),
@@ -403,7 +404,7 @@ fn generated_script_inputs_resolve_after_code_capture_and_ignore_stale_variable_
 }
 
 #[test]
-fn null_reference_overrides_use_the_default_component_from_the_script_library() {
+fn omitted_reference_overrides_use_the_default_component_from_the_script_library() {
     let temp = TempDir::new().unwrap();
     let library = temp.path().join("lib");
     fs::create_dir(&library).unwrap();
@@ -416,7 +417,7 @@ fn null_reference_overrides_use_the_default_component_from_the_script_library() 
     let path = temp.path().join("main.pen");
     let source = json!({"version":"2.21","imports":{"ui":"lib/ui.pen"},"children":[
         {"id":"button","type":"rectangle","reusable":true,"x":100,"fill":"#0000ff","width":30,"height":20},
-        {"id":"chart","type":"ref","ref":"ui:chart","inputs":{"target":null,"unused":"$missing"}}
+        {"id":"chart","type":"ref","ref":"ui:chart","inputs":{"unused":"$missing"}}
     ]}).to_string();
     fs::write(&path, &source).unwrap();
     let store = Store::open(&path, Some(temp.path().join("data"))).unwrap();

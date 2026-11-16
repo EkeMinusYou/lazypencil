@@ -868,7 +868,7 @@ fn invalid_image_paints_report_the_supported_modes_and_complete_update_shape() {
         let error = scene.render().err().expect("invalid image mode");
         assert_eq!(error.code, "INVALID_DOCUMENT");
         assert_eq!(
-            error.details.unwrap()["allowed_modes"],
+            error.details.unwrap()["allowed_values"],
             json!(["cover", "contain", "stretch"])
         );
     }

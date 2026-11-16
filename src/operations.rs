@@ -1,6 +1,6 @@
 use crate::{
     Error, Result,
-    document::{Document, NODE_TYPES, hash, pointer_key},
+    document::{Document, NODE_TYPES, hash, pointer_key, valid_size},
     project::{NodeAddress, Project, literal_variable_property},
 };
 use serde::{Deserialize, Serialize};
@@ -249,6 +249,19 @@ pub(crate) fn validate_local_with_cancellation(
 ) -> Result<()> {
     let check = || crate::cancel::check(cancel);
     check()?;
+    for key in document
+        .value()
+        .as_object()
+        .expect("parsed document")
+        .keys()
+    {
+        if !["version", "children", "imports", "variables", "themes"].contains(&key.as_str()) {
+            return Err(Error::new(
+                "INVALID_DOCUMENT",
+                format!("Document property {key:?} is not in the public .pen schema"),
+            ));
+        }
+    }
     let imports = document.value().get("imports").and_then(Value::as_object);
     let has_imports = imports.is_some_and(|v| !v.is_empty());
     let variables = document.value().get("variables").and_then(Value::as_object);
@@ -275,10 +288,7 @@ pub(crate) fn validate_local_with_cancellation(
             .pointer(&location.pointer)
             .expect("indexed node");
         let kind = node["type"].as_str().unwrap_or_default();
-        if !NODE_TYPES.contains(&kind) {
-            continue;
-        }
-        crate::document::validate_authored_booleans(node, id)?;
+        crate::document::validate_authored_properties(node, id)?;
         if kind == "ref" {
             let target = node["ref"]
                 .as_str()
@@ -328,44 +338,14 @@ pub(crate) fn validate_local_with_cancellation(
                 }
             }
         }
-        for (key, allowed) in [
-            ("layout", &["none", "horizontal", "vertical"][..]),
-            ("layoutPosition", &["auto", "absolute"][..]),
-            (
-                "textGrowth",
-                &["auto", "fixed-width", "fixed-width-height"][..],
-            ),
-            (
-                "justifyContent",
-                &["start", "center", "end", "space_between", "space_around"][..],
-            ),
-            ("alignItems", &["start", "center", "end"][..]),
-        ] {
-            if let Some(value) = node.get(key)
-                && !value.as_str().is_some_and(|s| allowed.contains(&s))
-            {
-                return Err(invalid(format!("{id}.{key} has an unsupported value")));
-            }
-        }
     }
     if !has_imports {
-        let mut roots: Vec<_> = document.value()["children"]
+        for node in document.value()["children"]
             .as_array()
-            .expect("document children")
-            .iter()
-            .rev()
-            .collect();
-        while let Some(node) = roots.pop() {
+            .expect("parsed document")
+        {
             check()?;
-            if NODE_TYPES.contains(&node["type"].as_str().unwrap_or_default()) {
-                // The recursive validator covers this entire subtree, including
-                // partial overrides. Do not revisit it through the node index.
-                check_variable_uses(node, variables)?;
-            } else if let Some(children) = node.get("children").and_then(Value::as_array) {
-                // Unknown roots stay opaque, but their indexed known children
-                // still require validation even without a known ancestor.
-                roots.extend(children.iter().rev());
-            }
+            check_variable_uses(node, variables)?;
         }
     }
     reference_cycles::check(document, &check)
@@ -1051,28 +1031,6 @@ fn check_variable_uses(value: &Value, variables: Option<&Map<String, Value>>) ->
         }
     }
     Ok(())
-}
-
-fn valid_size(value: &str) -> bool {
-    if value.starts_with('$') && value.len() > 1 {
-        return true;
-    }
-    for prefix in ["fit_content", "fill_container"] {
-        if value == prefix {
-            return true;
-        }
-        if let Some(number) = value
-            .strip_prefix(prefix)
-            .and_then(|v| v.strip_prefix('('))
-            .and_then(|v| v.strip_suffix(')'))
-            && number
-                .parse::<f64>()
-                .is_ok_and(|n| n.is_finite() && n >= 0.0)
-        {
-            return true;
-        }
-    }
-    false
 }
 
 fn variable_name(name: &str) -> Result<()> {

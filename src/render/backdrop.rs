@@ -452,7 +452,7 @@ impl Renderer<'_> {
         let mut mask = surface(coverage.width(), coverage.height())?;
         let canvas = mask.canvas();
         canvas.concat(&matrix(viewport.then(item.record.transform)));
-        if matches!(node.kind(), "text" | "note" | "prompt" | "context") {
+        if matches!(node.kind(), "text" | "note") {
             let block = self
                 .snapshot
                 .text_blocks

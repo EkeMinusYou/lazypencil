@@ -581,9 +581,9 @@ fn captured_local_files_render_after_source_removal_and_deny_unlisted_host_files
     url.set_query(Some("theme=green"));
     url.set_fragment(Some("original-location"));
     let file = original.path().join("scene.pen");
-    let document = json!({"version":"2.21","metadata":{"lazypencil":{"browser_resources":{
+    let document = json!({"version":"2.21","children":[lazypencil::document::data_node(json!({"lazypencil":{"browser_resources":{
         "version":1,"roots":[{"url":url::Url::from_directory_path(&site).unwrap().as_str(),"path":site.file_name().unwrap().to_str().unwrap()}]
-    }}},"children":[]}).to_string();
+    }}})["lazypencil"].clone())]}).to_string();
     fs::write(&file, &document).unwrap();
     let project = Project::from_document(&file, Document::parse(document).unwrap(), &[]).unwrap();
     let captured = project

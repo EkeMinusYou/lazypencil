@@ -9,7 +9,7 @@ use std::{fs, path::Path};
 use tempfile::TempDir;
 
 pub const MODES: &[&str] = &[
-    "inputs", "code", "metadata", "combined", "literal", "nullable",
+    "inputs", "code", "metadata", "combined", "literal", "defaults",
 ];
 pub const BASE: &str = r#"/**
  * @schema 2.21
@@ -51,10 +51,10 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
     if mode == "literal" {
         changes["inputs"] = json!({"selected":"badge","amount":2});
     }
-    if mode == "nullable" {
-        changes["inputs"] = json!({"selected":null,"amount":2});
+    if mode == "defaults" {
+        changes["inputs"] = json!({"amount":2});
     }
-    if ["code", "combined", "nullable"].contains(&mode) {
+    if ["code", "combined", "defaults"].contains(&mode) {
         changes["scriptUri"] = json!("ui.js");
     }
     if ["metadata", "combined"].contains(&mode) {

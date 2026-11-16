@@ -963,8 +963,6 @@ impl Renderer<'_> {
                 | "path"
                 | "text"
                 | "note"
-                | "prompt"
-                | "context"
                 | "script"
                 | "browser"
                 | "icon"
@@ -1062,7 +1060,7 @@ impl Renderer<'_> {
         } else {
             shape(node, rect)?
         };
-        if matches!(kind, "text" | "note" | "prompt" | "context") {
+        if matches!(kind, "text" | "note") {
             self.text(
                 index,
                 rect,
@@ -1115,9 +1113,7 @@ impl Renderer<'_> {
         self.canvas.reset_matrix();
         self.canvas
             .concat(&matrix(self.viewport.then(item.record.transform)));
-        if !matches!(kind, "text" | "note" | "prompt" | "context")
-            && own_pass != Some(OwnPass::Fill)
-        {
+        if !matches!(kind, "text" | "note") && own_pass != Some(OwnPass::Fill) {
             self.stroke(node, &shape, rect)?;
         }
         if has_layer {
@@ -1727,7 +1723,7 @@ impl Renderer<'_> {
         paint.set_blender(blending::paint(fill, node, property)?);
         self.canvas.save();
         let mode = crate::image_geometry::image_mode(fill)?;
-        let text = matches!(node.kind(), "text" | "note" | "prompt" | "context");
+        let text = matches!(node.kind(), "text" | "note");
         if property != "stroke" && !text || mode != "cover" {
             self.canvas.clip_rect(
                 SkRect::from_xywh(

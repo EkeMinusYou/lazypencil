@@ -257,7 +257,7 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
     );
     for version in ["2.19", "2.21"] {
         for mode in [
-            "inputs", "code", "metadata", "combined", "literal", "nullable",
+            "inputs", "code", "metadata", "combined", "literal", "defaults",
         ] {
             let rows: Vec<_> = cases
                 .iter()
