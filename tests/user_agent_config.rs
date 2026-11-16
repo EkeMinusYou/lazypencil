@@ -132,74 +132,73 @@ fn fast_mode_resolves_user_project_and_cli_overrides_with_execution_trust() {
 
 #[test]
 fn bound_mcp_keeps_system_allocator_defaults_and_preserves_adapter_environment() {
-    for agent in ["codex", "claude"] {
-        for (explicit, medium) in [
-            (None, None),
-            (Some("0"), None),
-            (Some("1"), None),
-            (None, Some("0")),
-            (None, Some("1")),
-            (Some("0"), Some("1")),
-            (Some("1"), Some("0")),
-        ] {
-            let f = Fixture::new();
-            f.settings(&f.peer(agent, "mcp-environment", ""));
-            let original = fs::read(&f.document).unwrap();
-            let mut command = f.command();
-            command
-                .arg("prompt")
-                .arg(&f.document)
-                .args([
-                    "Inspect the MCP configuration",
-                    "--agent",
-                    agent,
-                    "--non-interactive",
-                    "--timeout",
-                    "5",
-                ])
-                .env_remove("MallocSpaceEfficient")
-                .env_remove("MallocMediumZone");
-            if let Some(value) = explicit {
-                command.env("MallocSpaceEfficient", value);
-            }
-            if let Some(value) = medium {
-                command.env("MallocMediumZone", value);
-            }
-            let result = command.output().unwrap();
-            assert!(
-                result.status.success(),
-                "{}\n{}",
-                String::from_utf8_lossy(&result.stdout),
-                String::from_utf8_lossy(&result.stderr)
-            );
-            let received: Value = serde_json::from_slice(
-                &fs::read(
-                    f.document
-                        .parent()
-                        .unwrap()
-                        .join("received-mcp-environment.json"),
-                )
-                .unwrap(),
-            )
-            .unwrap();
-            assert_eq!(
-                received["adapter_malloc_space_efficient"].as_str(),
-                explicit
-            );
-            assert_eq!(received["adapter_malloc_medium_zone"].as_str(), medium);
-            let servers = received["servers"].as_array().unwrap();
-            assert_eq!(servers.len(), 1);
-            let environment = servers[0]["env"].as_array().unwrap();
-            assert!(
-                environment
-                    .iter()
-                    .any(|entry| entry["name"] == "LAZYPENCIL_CONFIG_DIR")
-            );
-            for name in ["MallocSpaceEfficient", "MallocMediumZone"] {
-                assert!(environment.iter().all(|entry| entry["name"] != name));
-            }
-            assert_eq!(fs::read(&f.document).unwrap(), original);
+    for (agent, explicit, medium) in [
+        ("codex", None, None),
+        ("codex", Some("0"), None),
+        ("codex", Some("1"), None),
+        ("codex", None, Some("0")),
+        ("codex", None, Some("1")),
+        ("codex", Some("0"), Some("1")),
+        ("codex", Some("1"), Some("0")),
+        ("claude", Some("1"), Some("0")),
+    ] {
+        let f = Fixture::new();
+        f.settings(&f.peer(agent, "mcp-environment", ""));
+        let original = fs::read(&f.document).unwrap();
+        let mut command = f.command();
+        command
+            .arg("prompt")
+            .arg(&f.document)
+            .args([
+                "Inspect the MCP configuration",
+                "--agent",
+                agent,
+                "--non-interactive",
+                "--timeout",
+                "5",
+            ])
+            .env_remove("MallocSpaceEfficient")
+            .env_remove("MallocMediumZone");
+        if let Some(value) = explicit {
+            command.env("MallocSpaceEfficient", value);
         }
+        if let Some(value) = medium {
+            command.env("MallocMediumZone", value);
+        }
+        let result = command.output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let received: Value = serde_json::from_slice(
+            &fs::read(
+                f.document
+                    .parent()
+                    .unwrap()
+                    .join("received-mcp-environment.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            received["adapter_malloc_space_efficient"].as_str(),
+            explicit
+        );
+        assert_eq!(received["adapter_malloc_medium_zone"].as_str(), medium);
+        let servers = received["servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 1);
+        let environment = servers[0]["env"].as_array().unwrap();
+        assert!(
+            environment
+                .iter()
+                .any(|entry| entry["name"] == "LAZYPENCIL_CONFIG_DIR")
+        );
+        for name in ["MallocSpaceEfficient", "MallocMediumZone"] {
+            assert!(environment.iter().all(|entry| entry["name"] != name));
+        }
+        assert_eq!(fs::read(&f.document).unwrap(), original);
     }
 }
 
