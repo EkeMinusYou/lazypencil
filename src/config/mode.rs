@@ -28,6 +28,7 @@ pub struct Prepared {
     requested: PathBuf,
     discovery: Discovery,
     before: Option<Vec<u8>>,
+    missing: Option<crate::paths::MissingPath>,
     after: Vec<u8>,
 }
 
@@ -86,6 +87,11 @@ impl Prepared {
         };
         let path = destination(&requested)?;
         let before = contents(&path)?;
+        let missing = if before.is_none() {
+            crate::paths::MissingPath::capture(&requested)?
+        } else {
+            None
+        };
         let text = std::str::from_utf8(before.as_deref().unwrap_or(b"version = 1\n"))
             .map_err(|_| invalid("Configuration must be UTF-8"))?;
         let mut parsed = text
@@ -139,6 +145,7 @@ impl Prepared {
             requested,
             discovery,
             before,
+            missing,
             after,
         })
     }
@@ -157,6 +164,9 @@ impl Prepared {
     }
 
     pub fn verify(&self) -> Result<()> {
+        if let Some(missing) = &self.missing {
+            missing.verify()?;
+        }
         if locate(&self.document)? != self.discovery
             || destination(&self.requested)? != self.path
             || contents(&self.path)? != self.before
@@ -171,6 +181,7 @@ impl Prepared {
 
     /// The project variant is called only after an explicit Trust & apply action.
     pub fn save(&self, store: &Store) -> Result<Option<agent_execution::Selection>> {
+        self.verify()?;
         let parent = self
             .path
             .parent()
@@ -323,5 +334,59 @@ mod tests {
         fs::write(&other, "version=1\n").unwrap();
         std::os::unix::fs::symlink(other, &requested).unwrap();
         assert_eq!(prepared.save(&store).unwrap_err().code, "REVISION_CONFLICT");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn new_mode_defaults_reject_redirected_parents_before_creating_directories() {
+        use std::os::unix::fs::symlink;
+        for existing_link in [false, true] {
+            let (temp, store) = fixture();
+            let first = temp.path().join("first");
+            let second = temp.path().join("second");
+            fs::create_dir(&first).unwrap();
+            fs::create_dir(&second).unwrap();
+            let parent = temp.path().join("settings");
+            if existing_link {
+                symlink(&first, &parent).unwrap();
+            }
+            let requested = parent.join("nested/config.toml");
+            let prepared = Prepared::prepare(
+                store.path(),
+                AgentName::Codex,
+                "agent",
+                Scope::Global,
+                Some(&requested),
+            )
+            .unwrap();
+            prepared.verify().unwrap();
+            if existing_link {
+                fs::remove_file(&parent).unwrap();
+            }
+            symlink(&second, &parent).unwrap();
+            assert_eq!(prepared.verify().unwrap_err().code, "REVISION_CONFLICT");
+            assert_eq!(prepared.save(&store).unwrap_err().code, "REVISION_CONFLICT");
+            assert!(!first.join("nested").exists());
+            assert!(!second.join("nested").exists());
+        }
+    }
+
+    #[test]
+    fn new_mode_defaults_allow_creating_ordinary_parent_directories() {
+        let (temp, store) = fixture();
+        let requested = temp.path().join("settings/nested/config.toml");
+        let prepared = Prepared::prepare(
+            store.path(),
+            AgentName::Codex,
+            "workspace-write",
+            Scope::Global,
+            Some(&requested),
+        )
+        .unwrap();
+        fs::create_dir(temp.path().join("settings")).unwrap();
+        prepared.verify().unwrap();
+        prepared.save(&store).unwrap();
+        let file: UserFile = parse(&fs::read(requested).unwrap(), prepared.path()).unwrap();
+        assert_eq!(file.agents.codex.mode.as_deref(), Some("workspace-write"));
     }
 }
