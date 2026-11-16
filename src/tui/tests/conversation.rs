@@ -509,6 +509,40 @@ async fn steering_working(app: &mut App) {
 }
 
 #[test]
+fn steering_storage_failures_preserve_the_draft_without_delivering_input() {
+    for blocked in ["prompt-outbox.json", "last-conversation.json"] {
+        let temp = TempDir::new().unwrap();
+        runtime().block_on(async {
+            let mut app = app(&temp, "steering-flood");
+            app.insert_text("First request");
+            app.submit().await.unwrap();
+            steering_working(&mut app).await;
+            app.insert_text("Durable follow-up");
+            let path = if blocked == "prompt-outbox.json" {
+                app.conversation.directory().join(blocked)
+            } else {
+                app.conversation.store().document_data_dir().join(blocked)
+            };
+            std::fs::remove_file(&path).unwrap();
+            std::fs::create_dir(&path).unwrap();
+            assert!(app.submit().await.is_err());
+            assert_eq!(app.editor.lines(), ["Durable follow-up"]);
+            assert!(app.outbox.steering.is_none());
+            assert!(app.conversation.can_steer());
+            assert!(!temp.path().join("received-steering.jsonl").exists());
+            std::fs::remove_dir(&path).unwrap();
+            app.submit().await.unwrap();
+            for value in complete(&mut app).await { app.message(&value); }
+            let received = std::fs::read_to_string(temp.path().join("received-steering.jsonl")).unwrap();
+            assert_eq!(received.lines().count(), 1);
+            let received: Value = serde_json::from_str(received.lines().next().unwrap()).unwrap();
+            assert_eq!(received["prompt"][0]["text"], "Durable follow-up");
+            app.conversation.close().await.unwrap();
+        });
+    }
+}
+
+#[test]
 fn steering_submit_delivers_during_work_and_queue_remains_explicit() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {

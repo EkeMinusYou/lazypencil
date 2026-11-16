@@ -158,24 +158,43 @@ impl App {
     }
 
     pub(super) fn steer_prompt(&mut self, text: String) -> Result<()> {
-        let id = match self.conversation.steer(text.clone()) {
-            Ok(id) => id,
+        self.conversation.remember_for_tui()?;
+        let directory = self.conversation.directory().to_owned();
+        let draft = self.outbox.draft.clone();
+        let mut saved = false;
+        let mut save_failed = false;
+        let result = self.conversation.steer(text.clone(), |id| {
+            self.outbox.steering = Some(SteeringPrompt {
+                id: id.into(),
+                text: text.clone(),
+            });
+            self.outbox.draft = Some(String::new());
+            if let Err(error) = self.outbox.save(&directory) {
+                save_failed = true;
+                return Err(error);
+            }
+            saved = true;
+            Ok(())
+        });
+        if result.is_err() {
+            self.outbox.steering = None;
+            self.outbox.draft = draft;
+            if saved {
+                // A host rejection confirms that this request was not enqueued.
+                self.outbox.save(&directory)?;
+            }
+        }
+        match result {
+            Ok(_) => {}
+            Err(error) if save_failed => return Err(error),
             Err(_) if !self.conversation.can_steer() => {
                 self.queue_prompt(text)?;
                 self.set_status("The turn has finished accepting input; follow-up queued".into());
                 return Ok(());
             }
             Err(error) => return Err(error),
-        };
-        self.outbox.steering = Some(SteeringPrompt { id, text });
-        if let Err(error) = self.conversation.remember_for_tui() {
-            self.append(&format!(
-                "\nCould not remember this conversation: {error}\n"
-            ));
         }
         self.editor = editor("");
-        self.outbox.draft = Some(String::new());
-        self.outbox.save(self.conversation.directory())?;
         self.draft_changed = false;
         self.set_status("Sending mid-turn input…".into());
         Ok(())

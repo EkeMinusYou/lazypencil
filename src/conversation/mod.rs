@@ -235,8 +235,13 @@ impl Conversation {
             && self.host.as_ref().is_some_and(AgentHost::can_steer)
     }
 
-    /// Send text into the active turn; delivery is reported by steering_result.
-    pub fn steer(&mut self, text: String) -> Result<String> {
+    /// Persist the input's recovery identity before allowing delivery into the
+    /// active turn. Delivery is reported by steering_result.
+    pub fn steer(
+        &mut self,
+        text: String,
+        before_send: impl FnOnce(&str) -> Result<()>,
+    ) -> Result<String> {
         self.require_project_agent()?;
         if text.trim().is_empty() || text.len() > 1024 * 1024 {
             return Err(Error::new(
@@ -251,6 +256,7 @@ impl Conversation {
             ));
         }
         let id = uuid::Uuid::new_v4().to_string();
+        before_send(&id)?;
         self.host.as_ref().expect("active host").steer(
             id.clone(),
             vec![ContentBlock::Text(TextContent::new(&text))],
