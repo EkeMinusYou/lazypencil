@@ -202,6 +202,31 @@ fn generated_geometry_is_measured_painted_and_never_saved_as_stored_children() {
 }
 
 #[test]
+fn color_inputs_render_the_same_hex_forms_that_the_header_accepts() {
+    for (literal, alpha) in [
+        ("#0f0", 255),
+        ("#0f08", 136),
+        ("#00ff00", 255),
+        ("#00ff0088", 136),
+    ] {
+        let (temp, store) = fixture(
+            "return [{type:'rectangle',width:8,height:8,fill:pencil.input.ink}];",
+            json!({"id":"chart","type":"script","scriptUri":"draw.js","width":8,"height":8}),
+        );
+        fs::write(temp.path().join("draw.js"), format!(
+            "/** @schema 2.22\n * @input ink: color = {literal}\n */\nreturn [{{type:'rectangle',width:8,height:8,fill:pencil.input.ink}}];"
+        )).unwrap();
+        let (project, layout) = snapshot(&store);
+        let output = render::png(&project, &layout, &Default::default()).unwrap();
+        assert_eq!(
+            raster(&output.png).peek_pixels().unwrap().get_color((4, 4)),
+            Color::from_argb(alpha, 0, 255, 0),
+            "{literal}"
+        );
+    }
+}
+
+#[test]
 fn scripts_use_parent_fill_sizes_and_content_sizing_converges_when_independent() {
     let (_temp, store) = fixture(
         "return [{type:'rectangle',width:pencil.width,height:pencil.height}];",

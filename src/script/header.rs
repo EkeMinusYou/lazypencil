@@ -160,11 +160,7 @@ impl Input {
             }
             InputKind::String => value.is_string(),
             InputKind::Boolean => value.is_boolean(),
-            InputKind::Color => value.as_str().is_some_and(|s| {
-                matches!(s.len(), 4 | 5 | 7 | 9)
-                    && s.starts_with('#')
-                    && s[1..].bytes().all(|c| c.is_ascii_hexdigit())
-            }),
+            InputKind::Color => value.as_str().and_then(crate::color::hex_rgba).is_some(),
             InputKind::Enum { options } => value
                 .as_str()
                 .is_some_and(|s| options.iter().any(|option| option == s)),

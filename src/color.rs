@@ -1,32 +1,62 @@
+#[cfg(feature = "rendering")]
 use crate::{Error, Result};
+#[cfg(feature = "rendering")]
 use skia_safe::Color;
 
-pub fn parse(value: &str) -> Result<Color> {
-    let bytes = value
-        .strip_prefix('#')
-        .filter(|s| s.is_ascii())
-        .ok_or_else(|| invalid(value))?;
-    let expanded = match bytes.len() {
-        3 => bytes.chars().flat_map(|c| [c, c]).collect::<String>(),
-        6 | 8 => bytes.into(),
-        _ => return Err(invalid(value)),
+pub(crate) fn hex_rgba(value: &str) -> Option<[u8; 4]> {
+    let digits = value.strip_prefix('#').filter(|s| s.is_ascii())?;
+    let step = match digits.len() {
+        3 | 4 => 1,
+        6 | 8 => 2,
+        _ => return None,
     };
-    let number = u32::from_str_radix(&expanded, 16).map_err(|_| invalid(value))?;
-    Ok(if expanded.len() == 8 {
-        Color::from_argb(
-            number as u8,
-            (number >> 24) as u8,
-            (number >> 16) as u8,
-            (number >> 8) as u8,
-        )
-    } else {
-        Color::from_rgb((number >> 16) as u8, (number >> 8) as u8, number as u8)
-    })
+    let mut rgba = [0, 0, 0, 255];
+    for (index, component) in rgba.iter_mut().enumerate().take(digits.len() / step) {
+        let byte = u8::from_str_radix(&digits[index * step..(index + 1) * step], 16).ok()?;
+        *component = if step == 1 { byte * 17 } else { byte };
+    }
+    Some(rgba)
 }
 
+#[cfg(feature = "rendering")]
+pub fn parse(value: &str) -> Result<Color> {
+    let [r, g, b, a] = hex_rgba(value).ok_or_else(|| invalid(value))?;
+    Ok(Color::from_argb(a, r, g, b))
+}
+
+#[cfg(feature = "rendering")]
 fn invalid(value: &str) -> Error {
     Error::new(
         "INVALID_DOCUMENT",
-        format!("Unsupported color {value:?}; expected #RGB, #RRGGBB, or #RRGGBBAA"),
+        format!("Unsupported color {value:?}; expected #RGB, #RGBA, #RRGGBB, or #RRGGBBAA"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_colors_expand_each_channel_and_default_only_missing_alpha() {
+        for (literal, expected) in [
+            ("#AbC", [170, 187, 204, 255]),
+            ("#AbCd", [170, 187, 204, 221]),
+            ("#123456", [18, 52, 86, 255]),
+            ("#12345600", [18, 52, 86, 0]),
+        ] {
+            assert_eq!(hex_rgba(literal), Some(expected), "{literal}");
+        }
+        for literal in [
+            "",
+            "123456",
+            "#12",
+            "#12345",
+            "#1234567",
+            "#ggg",
+            "#１２３",
+            "#fff ",
+        ] {
+            assert_eq!(hex_rgba(literal), None, "{literal}");
+        }
+    }
 }

@@ -8,7 +8,6 @@ pub mod cdp;
 pub mod cli;
 #[cfg(feature = "tui")]
 pub mod clipboard;
-#[cfg(feature = "rendering")]
 pub mod color;
 pub mod config;
 pub mod conversation;
