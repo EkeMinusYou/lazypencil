@@ -41,14 +41,23 @@ pub(super) struct Bindings {
     pub(super) library: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) browser_library: Option<String>,
+    #[serde(default)]
+    pub(super) inputs_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) input_components: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) script_namespace: Option<String>,
+    #[serde(flatten, with = "shared_tables")]
+    pub(super) tables: Arc<BindingTables>,
+}
+
+/// Scope selection changes metadata while all captured lookup tables stay shared.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(super) struct BindingTables {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) browser_libraries: Option<BTreeMap<String, String>>,
     #[serde(default)]
-    pub(super) inputs_hash: Option<String>,
-    #[serde(default)]
     pub(super) components: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) input_components: Option<BTreeMap<String, String>>,
     #[serde(default)]
     pub(super) variables: BTreeMap<String, String>,
     #[serde(default)]
@@ -61,8 +70,37 @@ pub(super) struct Bindings {
     pub(super) assets: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) script_scopes: BTreeMap<String, CapturedScope>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) script_namespace: Option<String>,
+}
+
+impl std::ops::Deref for Bindings {
+    type Target = BindingTables;
+
+    fn deref(&self) -> &Self::Target {
+        &self.tables
+    }
+}
+
+impl std::ops::DerefMut for Bindings {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.tables)
+    }
+}
+
+mod shared_tables {
+    use super::*;
+
+    pub fn serialize<S: serde::Serializer>(
+        value: &BindingTables,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        value.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Arc<BindingTables>, D::Error> {
+        BindingTables::deserialize(deserializer).map(Arc::new)
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -65,10 +65,12 @@ fn custom_bindings_keep_key_shadowing_identity_fallbacks_paths_and_closed_assets
     let mut wrong = serde_json::to_value(native.original()).unwrap();
     wrong["script_scopes"][namespace]["source_variables"]["tone"] = json!("tone");
     assert!(parse(&wrong).is_err());
-    assert_eq!(
-        native.document_scope().unwrap().component("badge").unwrap(),
-        "copied-badge"
-    );
+    let document_owner = native.document_scope().unwrap();
+    assert!(Arc::ptr_eq(
+        &native.original().tables,
+        &document_owner.original().tables
+    ));
+    assert_eq!(document_owner.component("badge").unwrap(), "copied-badge");
     assert_eq!(
         native.document_scope().unwrap().values.variables["tone"],
         "copied-tone"
@@ -196,10 +198,12 @@ fn captured_code_owner_stays_distinct_from_output_and_requires_valid_provenance(
     values.code_namespace = Some("base".into());
     let bound = Bound::from_values(parent.origin.clone(), false, values.clone()).unwrap();
     assert_eq!(bound.component("badge").unwrap(), "copied-badge");
-    assert_eq!(
-        bound.code_scope().unwrap().component("badge").unwrap(),
-        "base-badge"
-    );
+    let code_owner = bound.code_scope().unwrap();
+    assert!(Arc::ptr_eq(
+        &bound.original().tables,
+        &code_owner.original().tables
+    ));
+    assert_eq!(code_owner.component("badge").unwrap(), "base-badge");
     assert!(parse(&serde_json::to_value(&values).unwrap()).is_ok());
     let output = bound
         .inherited_output_with_hash("nested.js", None, Some(hash(b"nested.js")), &mut 0)
@@ -656,8 +660,21 @@ fn generated_explicit_scope_selection_keeps_shared_tables_and_rejects_unreachabl
     .unwrap();
     let parent = Bound::from_values(PathBuf::from("/captured/main.pen"), false, values).unwrap();
     assert_eq!(parent.component("badge").unwrap(), "ui-target");
+    let saved = serde_json::to_value(parent.original()).unwrap();
+    assert!(saved.get("tables").is_none());
     let base = parent.selected("base").unwrap();
+    assert!(Arc::ptr_eq(
+        &parent.original().tables,
+        &base.original().tables
+    ));
     assert_eq!(base.component("badge").unwrap(), "base-target");
+    let mut edited = base.original().clone();
+    edited
+        .components
+        .insert("base-member".into(), "edited-target".into());
+    assert!(!Arc::ptr_eq(&parent.original().tables, &edited.tables));
+    assert_eq!(base.component("badge").unwrap(), "base-target");
+    assert_eq!(serde_json::to_value(parent.original()).unwrap(), saved);
     assert_eq!(base.values.descendants["badge"]["label"], "base-label");
     let mut tone = json!("$tone");
     base.declared_input(&mut tone).unwrap();

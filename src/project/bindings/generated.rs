@@ -223,11 +223,11 @@ impl<'a> Scopes<'a> {
                 && let Some(scope) = &scope.inputs
                 && super::super::scope::value_hash(raw) == scope.hash
             {
-                owner.values.components = parent
-                    .document_scope()?
-                    .selected(&scope.library)?
-                    .values
-                    .components;
+                let selected = parent.document_scope()?.selected(&scope.library)?;
+                owner.values.components = match Arc::try_unwrap(selected.values.tables) {
+                    Ok(tables) => tables.components,
+                    Err(tables) => tables.components.clone(),
+                };
                 input_active = true;
             }
         }

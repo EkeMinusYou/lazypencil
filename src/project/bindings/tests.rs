@@ -27,6 +27,10 @@ fn binding_validation_requires_local_targets_and_a_known_bounded_format() {
             "INVALID_DOCUMENT",
         ),
         (
+            json!({"version":1,"script_uri":"draw.js","tables":{}}),
+            "INVALID_DOCUMENT",
+        ),
+        (
             json!({"version":1,"script_uri":"draw.js","library":12}),
             "INVALID_DOCUMENT",
         ),

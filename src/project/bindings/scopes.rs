@@ -257,38 +257,40 @@ impl Bound {
             script_uri: values.script_uri.clone(),
             library: values.library.clone(),
             browser_library: scope.browser_library.clone(),
-            browser_libraries: Some(scope.browser_libraries.clone()),
             inputs_hash: values.inputs_hash.clone(),
             input_components: values.input_components.clone(),
-            components: select(&scope.components, &values.components),
-            variables: select(&scope.variables, &values.variables),
-            themes: select(&scope.themes, &values.themes),
-            assets: Some(scope.assets.clone()),
-            descendants: scope
-                .components
-                .iter()
-                .filter_map(|(name, key)| {
-                    values
-                        .descendants
-                        .get(key)
-                        .map(|paths| (name.clone(), paths.clone()))
-                })
-                .collect(),
-            descendant_contexts: scope
-                .components
-                .iter()
-                .filter_map(|(name, key)| {
-                    values
-                        .descendant_contexts
-                        .get(key)
-                        .map(|paths| (name.clone(), paths.clone()))
-                })
-                .collect(),
-            script_scopes: BTreeMap::new(),
             script_namespace: None,
             source_uri_hash: values.source_uri_hash.clone(),
             input_epoch: values.input_epoch.clone(),
             code_namespace: values.code_namespace.clone(),
+            tables: Arc::new(BindingTables {
+                browser_libraries: Some(scope.browser_libraries.clone()),
+                components: select(&scope.components, &values.components),
+                variables: select(&scope.variables, &values.variables),
+                themes: select(&scope.themes, &values.themes),
+                assets: Some(scope.assets.clone()),
+                descendants: scope
+                    .components
+                    .iter()
+                    .filter_map(|(name, key)| {
+                        values
+                            .descendants
+                            .get(key)
+                            .map(|paths| (name.clone(), paths.clone()))
+                    })
+                    .collect(),
+                descendant_contexts: scope
+                    .components
+                    .iter()
+                    .filter_map(|(name, key)| {
+                        values
+                            .descendant_contexts
+                            .get(key)
+                            .map(|paths| (name.clone(), paths.clone()))
+                    })
+                    .collect(),
+                script_scopes: BTreeMap::new(),
+            }),
         };
         Ok(Self {
             origin,
