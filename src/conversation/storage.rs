@@ -44,7 +44,7 @@ pub(super) struct Session {
 pub(super) struct RegistryGuard(File);
 
 pub(super) fn exclusive_lease(path: &Path) -> Result<RegistryGuard> {
-    Ok(RegistryGuard(lock_file(path, false)?))
+    Ok(RegistryGuard(lock_file(path)?))
 }
 
 pub(super) fn registry_lock(
@@ -132,7 +132,7 @@ impl Session {
                 .map_err(|e| Error::io(&directory, e))?;
         }
         let lock_path = directory.join("lock");
-        let lock = lock_file(&lock_path, false)?;
+        let lock = lock_file(&lock_path)?;
         let fingerprint = hash(
             &serde_json::to_vec(&(command, &args.adapter_args))
                 .map_err(|e| Error::new("INVALID_ARGUMENT", e.to_string()))?,
@@ -295,7 +295,7 @@ fn require_regular_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn lock_file(path: &Path, wait: bool) -> Result<File> {
+fn lock_file(path: &Path) -> Result<File> {
     let mut options = private_options();
     options.create(true).truncate(false);
     #[cfg(unix)]
@@ -316,25 +316,12 @@ fn lock_file(path: &Path, wait: bool) -> Result<File> {
             "Conversation lock must be a regular file",
         ));
     }
-    let start = std::time::Instant::now();
-    loop {
-        match file.try_lock_exclusive() {
-            Ok(()) => break,
-            Err(error)
-                if wait
-                    && crate::store::lock_contended(&error)
-                    && start.elapsed() < std::time::Duration::from_secs(5) =>
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(error) => {
-                return Err(Error::new(
-                    "REVISION_CONFLICT",
-                    format!("The conversation is already in use: {error}"),
-                ));
-            }
-        }
-    }
+    file.try_lock_exclusive().map_err(|error| {
+        Error::new(
+            "REVISION_CONFLICT",
+            format!("The conversation is already in use: {error}"),
+        )
+    })?;
     Ok(file)
 }
 
@@ -550,11 +537,11 @@ mod tests {
     fn registry_owner_releases_its_short_lease_even_if_a_descriptor_was_duplicated() {
         let temp = tempfile::TempDir::new().unwrap();
         let path = temp.path().join("registry.lock");
-        let guard = RegistryGuard(lock_file(&path, true).unwrap());
+        let guard = RegistryGuard(lock_file(&path).unwrap());
         let duplicate = guard.0.try_clone().unwrap();
-        assert!(lock_file(&path, false).is_err());
+        assert!(lock_file(&path).is_err());
         drop(guard);
-        let next = lock_file(&path, false).unwrap();
+        let next = lock_file(&path).unwrap();
         assert!(duplicate.try_lock_exclusive().is_err());
         drop(next);
         drop(duplicate);
