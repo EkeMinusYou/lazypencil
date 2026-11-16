@@ -167,7 +167,13 @@ void lp_pinch_stop(void *handle) {
     Pinch *pinch = handle;
     pthread_mutex_lock(&pinch->mutex);
     atomic_store(&pinch->stopped,true);
-    if (pinch->loop) CFRunLoopStop(pinch->loop);
+    if (pinch->loop) {
+        // A queued block survives shutdown racing with the initial Run call.
+        CFRunLoopPerformBlock(pinch->loop, kCFRunLoopCommonModes, ^{
+            CFRunLoopStop(CFRunLoopGetCurrent());
+        });
+        CFRunLoopWakeUp(pinch->loop);
+    }
     pthread_mutex_unlock(&pinch->mutex);
     pthread_join(pinch->thread,NULL);
     CFRelease(pinch->tap);

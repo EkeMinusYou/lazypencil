@@ -232,10 +232,19 @@ mod native {
 
     #[test]
     fn native_foreground_tracks_app_switches_and_declines_unknown_owners_without_posting_input() {
+        run_fixture("foreground", include_str!("tests/foreground.m"));
+    }
+
+    #[test]
+    fn native_shutdown_survives_stopping_immediately_before_run_loop_entry() {
+        run_fixture("shutdown", include_str!("tests/shutdown.m"));
+    }
+
+    fn run_fixture(name: &str, body: &str) {
         let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("foreground.m");
-        let executable = temp.path().join("foreground");
-        std::fs::write(&source, include_str!("tests/foreground.m")).unwrap();
+        let source = temp.path().join(format!("{name}.m"));
+        let executable = temp.path().join(name);
+        std::fs::write(&source, body).unwrap();
         let output = std::process::Command::new("clang")
             .args(["-fobjc-arc", "-fblocks", "-Wall", "-Wextra", "-Werror"])
             .arg("-I")
