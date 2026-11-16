@@ -32,6 +32,21 @@ pub fn root() -> PathBuf {
         .to_owned()
 }
 
+/// Fold path components without resolving links; callers enforce confinement.
+pub fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::CurDir => {}
+            component => result.push(component.as_os_str()),
+        }
+    }
+    result
+}
+
 pub fn digest(data: impl AsRef<[u8]>) -> String {
     hex(Sha256::digest(data.as_ref()))
 }

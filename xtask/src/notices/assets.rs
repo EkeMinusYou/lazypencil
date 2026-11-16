@@ -5,7 +5,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 const PACKS: &[&str] = &[
@@ -52,20 +52,6 @@ fn expected_declarations() -> BTreeSet<(String, String)> {
     out
 }
 
-fn lexical(path: &Path) -> PathBuf {
-    let mut result = PathBuf::new();
-    for c in path.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                result.pop();
-            }
-            std::path::Component::CurDir => {}
-            c => result.push(c.as_os_str()),
-        }
-    }
-    result
-}
-
 pub fn declarations(root: &Path) -> Result<BTreeSet<(String, String)>> {
     let root = root.canonicalize()?;
     let source = root.join("src");
@@ -101,7 +87,7 @@ pub fn declarations(root: &Path) -> Result<BTreeSet<(String, String)>> {
             let target = path.parent().unwrap().join(&m[1]);
             let actual = target.canonicalize()?;
             ensure!(
-                actual.starts_with(&root) && actual == lexical(&target),
+                actual.starts_with(&root) && actual == util::lexical_normalize(&target),
                 "Embedded input aliases or escapes its source root"
             );
             let name = actual

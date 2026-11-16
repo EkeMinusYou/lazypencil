@@ -65,16 +65,7 @@ fn array(v: &Value) -> Result<&Vec<Value>> {
 pub fn inside(path: &Path, root: &Path) -> Result<PathBuf> {
     ensure!(path.is_absolute(), "Build evidence requires absolute paths");
     let actual = path.canonicalize()?;
-    let mut lexical = PathBuf::new();
-    for c in path.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                lexical.pop();
-            }
-            std::path::Component::CurDir => {}
-            c => lexical.push(c.as_os_str()),
-        }
-    }
+    let lexical = util::lexical_normalize(path);
     ensure!(
         actual.starts_with(root) && actual == lexical,
         "Build input escapes or aliases selected root: {}",

@@ -5,7 +5,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     time::Duration,
 };
@@ -214,20 +214,6 @@ pub fn query(build: &Path, args: &[&str], ninja: &str) -> Result<String> {
     Ok(String::from_utf8(out.stdout)?)
 }
 
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in path.components() {
-        match c {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            c => out.push(c.as_os_str()),
-        }
-    }
-    out
-}
-
 fn notice_candidate(path: &Path) -> bool {
     path.to_str().is_some_and(super::rust::is_notice)
         || path
@@ -277,7 +263,7 @@ pub fn build_from_graph(
     for (kind, names) in [("graph", graph), ("recorded_header", headers)] {
         for name in names {
             let original = directory.join(name);
-            let lexical = lexical(&original);
+            let lexical = util::lexical_normalize(&original);
             let path = if original.exists() {
                 original.canonicalize()?
             } else {
