@@ -24,14 +24,11 @@ pub(super) struct SavedConversation {
     pub(super) adapter_fingerprint: String,
     pub(super) requested_auth: AuthMode,
     pub(super) native_session_id: Option<String>,
-    #[serde(default)]
     pub(super) continuity_pending: bool,
     pub(super) attachments: Vec<Attachment>,
     #[serde(default)]
     pub(super) authentication: Option<crate::agent::auth::AuthReport>,
-    #[serde(default)]
     pub(super) draft: String,
-    #[serde(default)]
     pub(super) pending_attachments: Vec<Attachment>,
 }
 
@@ -166,7 +163,7 @@ impl Session {
             }
             let state: SavedConversation = serde_json::from_slice(&bytes)
                 .map_err(|_| Error::new("AGENT_ERROR", "Cannot read the conversation metadata"))?;
-            if !matches!(state.version, 1..=3)
+            if state.version != 3
                 || state.id != id
                 || state.document != store.path()
                 || state.agent != args.agent
@@ -207,7 +204,6 @@ impl Session {
         session.reclaim_stale_grants();
         // A report from an earlier process is not evidence for this connection.
         session.state.authentication = None;
-        session.state.version = 3;
         session.save()?;
         Ok(session)
     }
@@ -479,56 +475,50 @@ mod tests {
     }
 
     #[test]
-    fn legacy_sessions_upgrade_without_losing_drafts_and_pending_context_survives_reopen() {
-        for version in [1, 2] {
-            let temp = tempfile::TempDir::new().unwrap();
-            let store = Store::init(
-                temp.path().join("design.pen"),
-                Some(temp.path().join("data")),
-            )
-            .unwrap();
-            let arguments = crate::cli::Arguments::try_parse_from([
-                "lazypencil".into(),
-                "prompt".into(),
-                store.path().as_os_str().to_owned(),
-            ])
-            .unwrap();
-            let crate::cli::Command::Prompt(mut args) = arguments.command else {
-                unreachable!()
-            };
-            let command = Path::new("unused-adapter");
-            let mut session = Session::open(&store, &args, command).unwrap();
-            session.state.draft = "Saved request".into();
-            session.state.native_session_id = Some("saved-native-id".into());
-            session.save().unwrap();
-            args.session = Some(session.state.id.clone());
-            let path = session.directory.join("session.json");
-            drop(session);
-            let mut legacy: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            legacy["version"] = json!(version);
-            legacy.as_object_mut().unwrap().remove("continuity_pending");
-            std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
-            let mut upgraded = Session::open(&store, &args, command).unwrap();
-            assert_eq!(upgraded.state.version, 3);
-            assert_eq!(upgraded.state.draft, "Saved request");
-            assert_eq!(
-                upgraded.state.native_session_id.as_deref(),
-                Some("saved-native-id")
-            );
-            assert!(!upgraded.state.continuity_pending);
-            upgraded.state.continuity_pending = true;
-            upgraded.save().unwrap();
-            drop(upgraded);
-            let resumed = Session::open(&store, &args, command).unwrap();
-            assert!(resumed.state.continuity_pending);
-            assert_eq!(resumed.state.draft, "Saved request");
-            drop(resumed);
-            let mut unknown: Value =
-                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            unknown["version"] = json!(4);
-            let bytes = serde_json::to_vec(&unknown).unwrap();
+    fn current_sessions_preserve_pending_context_and_reject_other_versions_without_writing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let store = Store::init(
+            temp.path().join("design.pen"),
+            Some(temp.path().join("data")),
+        )
+        .unwrap();
+        let arguments = crate::cli::Arguments::try_parse_from([
+            "lazypencil".into(),
+            "prompt".into(),
+            store.path().as_os_str().to_owned(),
+        ])
+        .unwrap();
+        let crate::cli::Command::Prompt(mut args) = arguments.command else {
+            unreachable!()
+        };
+        let command = Path::new("unused-adapter");
+        let mut session = Session::open(&store, &args, command).unwrap();
+        session.state.draft = "Saved request".into();
+        session.state.native_session_id = Some("saved-native-id".into());
+        session.state.continuity_pending = true;
+        session.save().unwrap();
+        args.session = Some(session.state.id.clone());
+        let path = session.directory.join("session.json");
+        drop(session);
+        let resumed = Session::open(&store, &args, command).unwrap();
+        assert_eq!(resumed.state.version, 3);
+        assert!(resumed.state.continuity_pending);
+        assert_eq!(resumed.state.draft, "Saved request");
+        assert_eq!(
+            resumed.state.native_session_id.as_deref(),
+            Some("saved-native-id")
+        );
+        drop(resumed);
+        let current: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for version in [1, 2, 4] {
+            let mut unsupported = current.clone();
+            unsupported["version"] = json!(version);
+            let bytes = serde_json::to_vec(&unsupported).unwrap();
             std::fs::write(&path, &bytes).unwrap();
-            assert!(Session::open(&store, &args, command).is_err());
+            assert_eq!(
+                Session::open(&store, &args, command).err().unwrap().code,
+                "INVALID_ARGUMENT"
+            );
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
         }
     }

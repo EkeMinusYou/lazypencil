@@ -182,7 +182,12 @@ fn saved_log(app: &App, number: usize, text: &str) -> PathBuf {
         &path,
         values
             .into_iter()
-            .map(|value| value.to_string() + "\n")
+            .enumerate()
+            .map(|(index, mut value)| {
+                value["recorded_at_unix_ms"] = json!(number);
+                value["elapsed_us"] = json!(index);
+                value.to_string() + "\n"
+            })
             .collect::<String>(),
     )
     .unwrap();

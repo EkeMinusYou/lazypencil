@@ -807,27 +807,18 @@ fn cancelling_while_an_image_is_being_prepared_keeps_failed_and_next_images_sepa
 }
 
 #[test]
-fn legacy_queued_image_ids_migrate_without_becoming_next_draft_images() {
+fn outboxes_reject_obsolete_image_identifiers_without_changing_stored_state() {
     let temp = TempDir::new().unwrap();
     runtime().block_on(async {
         let mut app = app(&temp, "image-inspect");
-        app.accept_input(pixel_input([255, 0, 0, 255]));
-        let id = app.pending_images()[0].id.clone();
-        std::fs::write(app.conversation.directory().join("prompt-outbox.json"), json!({
-            "draft":"New legacy draft", "paused":true,
-            "queued":[{"text":"Legacy red request", "selection":null, "image_ids":[id]}]
-        }).to_string()).unwrap();
-        app.restore_outbox();
-        assert!(app.pending_images().is_empty());
-        assert_eq!(app.outbox.queued[0].images[0].id, id);
-        app.accept_input(pixel_input([0, 0, 255, 255]));
-        app.outbox.paused = false;
-        app.send_queued().await.unwrap();
-        assert_eq!(complete(&mut app).await.last().unwrap()["type"], "complete");
-        received_pixel(&temp, 1, [255, 0, 0, 255], "Legacy red request");
-        assert_eq!(app.editor.lines(), ["New legacy draft"]);
-        assert_eq!(app.pending_images().len(), 1);
-        assert_ne!(app.pending_images()[0].id, id);
+        let path = app.conversation.directory().join("prompt-outbox.json");
+        let bytes = json!({
+            "draft":"Saved draft", "paused":true,
+            "queued":[{"text":"Old request", "image_ids":["img_old"]}]
+        }).to_string();
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(outbox::Outbox::load(app.conversation.directory()).err().unwrap().code, "IO_ERROR");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), bytes);
         app.conversation.close().await.unwrap();
     });
 }

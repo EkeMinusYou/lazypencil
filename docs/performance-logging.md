@@ -4,8 +4,8 @@ Use conversation timestamps and MCP timing metadata to investigate where a reque
 spends time. CLI/TUI conversation transcripts (`turn-TURN.jsonl` under the document's
 conversation directory) record `recorded_at_unix_ms` and `elapsed_us` on every
 event. The first is wall time in milliseconds since the Unix epoch; the second
-uses a monotonic clock from transcript creation. Older transcripts without these
-fields remain readable; their timestamps stay unspecified.
+uses a monotonic clock from transcript creation. Chronological history requires
+a valid wall-time timestamp.
 
 Match ACP `tool_call` and terminal `tool_call_update` events by `toolCallId` to
 measure the host-observed call interval. Match `permission_request` and

@@ -111,7 +111,7 @@ pub(super) fn session(store: &Store, id: &str) -> Result<(PathBuf, SavedConversa
     directory(&root(store))?;
     let path = root(store).join(id);
     let state = metadata(&path)?;
-    if !matches!(state.version, 1..=3) || state.id != id || state.document != store.path() {
+    if state.version != 3 || state.id != id || state.document != store.path() {
         return Err(Error::new(
             "INVALID_ARGUMENT",
             "Saved conversation belongs to a different document or format",

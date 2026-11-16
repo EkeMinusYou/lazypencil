@@ -106,7 +106,7 @@ fn workspace_command_palette_queues_without_consuming_the_draft_and_cancels_inpu
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE, &worker).await;
         assert!(app.modal.is_none());
         assert_eq!(app.outbox.queued[0].text, "次の依頼は layout's spacing を確認\n画像は変更しない");
-        assert!(app.outbox.queued[0].image_ids.is_empty());
+        assert!(app.outbox.queued[0].images.is_empty());
         assert!(app.command_unavailable(commands::Action::Attach.command()).is_none(), "Files can be attached to the draft while prompts are queued");
         assert!(app.command_unavailable(commands::Action::PasteImage.command()).is_none(), "Clipboard text remains available while prompts are queued");
         assert_eq!(outbox::Outbox::load(app.conversation.directory()).unwrap().queued[0].text, app.outbox.queued[0].text);

@@ -36,7 +36,6 @@ impl Reader {
         let (directory, _) = super::session(&store, &session)?;
         let mut turns = Vec::new();
         let mut unavailable = 0;
-        let mut legacy = false;
         for entry in std::fs::read_dir(&directory).map_err(|error| Error::io(&directory, error))? {
             budget.check()?;
             let entry = entry.map_err(|error| Error::io(&directory, error))?;
@@ -68,10 +67,9 @@ impl Reader {
                 let time = header["recorded_at_unix_ms"]
                     .as_u64()
                     .map(|ms| u128::from(ms) * 1_000_000)
-                    .unwrap_or_else(|| {
-                        legacy = true;
-                        created
-                    });
+                    .ok_or_else(|| {
+                        Error::new("INVALID_ARGUMENT", "Saved turn lacks a valid timestamp")
+                    })?;
                 if time
                     > cutoff
                         .duration_since(std::time::UNIX_EPOCH)
@@ -103,10 +101,6 @@ impl Reader {
             page.text.push_str(&format!(
                 "\n[{unavailable} saved turns unavailable; inspect /logs]\n"
             ));
-        }
-        if legacy {
-            page.text
-                .push_str("\n[Legacy turns without timestamps use local file timestamp order]\n");
         }
         Ok(page)
     }
@@ -292,13 +286,13 @@ mod tests {
     }
 
     #[test]
-    fn timeline_discloses_damaged_and_legacy_history_and_excludes_new_live_turns() {
+    fn timeline_discloses_damaged_or_undated_history_and_excludes_new_live_turns() {
         let (_temp, conversation) = fixture();
         turn(
             &conversation,
             &uuid::Uuid::new_v4().to_string(),
             None,
-            "Legacy request",
+            "Undated request",
         );
         let path = turn(
             &conversation,
@@ -321,9 +315,8 @@ mod tests {
             &CancellationToken::new(),
         )
         .unwrap();
-        assert!(page.text.contains("Legacy request"));
-        assert!(page.text.contains("1 saved turns unavailable"));
-        assert!(page.text.contains("Legacy turns without timestamps"));
+        assert!(!page.text.contains("Undated request"));
+        assert!(page.text.contains("2 saved turns unavailable"));
         assert!(!page.text.contains("New live request"));
     }
 }

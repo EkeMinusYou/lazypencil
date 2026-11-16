@@ -190,7 +190,7 @@ fn conversation(
     entry.session = Some(name.clone());
     let inspect = (|| {
         let state = history::metadata(path)?;
-        if state.id != name || !matches!(state.version, 1..=3) {
+        if state.id != name || state.version != 3 {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
                 "Foreign conversation identity or format",

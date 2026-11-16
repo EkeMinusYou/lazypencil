@@ -4,14 +4,10 @@ use crate::attachments::Attachment;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Prompt {
     pub text: String,
-    pub selection: Option<Value>,
-    #[serde(default)]
     pub references: Vec<crate::conversation::references::Reference>,
-    #[serde(default)]
-    pub image_ids: Vec<String>,
-    #[serde(default)]
     pub images: Vec<Attachment>,
 }
 
@@ -25,7 +21,7 @@ pub(super) struct SteeringPrompt {
 #[serde(default)]
 pub(super) struct Outbox {
     pub draft: Option<String>,
-    // None migrates older outboxes from the conversation's pending attachments.
+    // None uses the conversation's initial inputs until its draft is captured.
     pub draft_images: Option<Vec<Attachment>>,
     pub queued: VecDeque<Prompt>,
     pub paused: bool,
@@ -49,9 +45,7 @@ impl Outbox {
                     // Preserve the text for review without automatically replaying it.
                     outbox.queued.push_front(Prompt {
                         text: input.text,
-                        selection: None,
                         references: vec![],
-                        image_ids: vec![],
                         images: vec![],
                     });
                     outbox.paused = true;
@@ -123,9 +117,7 @@ impl App {
         }
         self.outbox.push(Prompt {
             text,
-            selection: None,
             references: self.outbox.references.clone(),
-            image_ids: images.iter().map(|image| image.id.clone()).collect(),
             images,
         })?;
         self.outbox.references.clear();
@@ -220,9 +212,7 @@ impl App {
         } else {
             self.outbox.queued.push_front(Prompt {
                 text: input.text,
-                selection: None,
                 references: vec![],
-                image_ids: vec![],
                 images: vec![],
             });
             if value["outcome"] == "promptRequired" {
@@ -241,43 +231,7 @@ impl App {
 
     pub(super) fn restore_outbox(&mut self) {
         match Outbox::load(self.conversation.directory()) {
-            Ok(mut outbox) => {
-                let retained = self.conversation.image_references();
-                for prompt in outbox.queued.iter_mut().chain(outbox.in_flight.iter_mut()) {
-                    if prompt.images.is_empty() && !prompt.image_ids.is_empty() {
-                        for id in &prompt.image_ids {
-                            let Some(image) = retained.iter().find(|image| &image.id == id) else {
-                                self.error(Error::new(
-                                    "ATTACHMENT_INVALID",
-                                    "A saved queued image is unavailable",
-                                ));
-                                return;
-                            };
-                            prompt.images.push(image.clone());
-                        }
-                    }
-                }
-                if outbox.draft_images.is_none()
-                    && (outbox.in_flight.is_some()
-                        || outbox.queued.iter().any(|prompt| !prompt.images.is_empty()))
-                {
-                    outbox.draft_images = Some(
-                        self.conversation
-                            .images()
-                            .iter()
-                            .filter(|image| {
-                                !outbox
-                                    .queued
-                                    .iter()
-                                    .chain(outbox.in_flight.iter())
-                                    .any(|prompt| {
-                                        prompt.images.iter().any(|captured| captured.id == image.id)
-                                    })
-                            })
-                            .cloned()
-                            .collect(),
-                    );
-                }
+            Ok(outbox) => {
                 if let Some(draft) = &outbox.draft
                     && (outbox.in_flight.is_some()
                         || !draft.is_empty()
@@ -318,8 +272,7 @@ impl App {
         let Some(prompt) = self.outbox.queued.front().cloned() else {
             return Ok(());
         };
-        let selection = crate::conversation::references::selection(&prompt.references)
-            .or(prompt.selection.clone());
+        let selection = crate::conversation::references::selection(&prompt.references);
         self.conversation
             .set_pending_input(prompt.text.clone(), prompt.images.clone())?;
         self.outbox.queued.pop_front();
