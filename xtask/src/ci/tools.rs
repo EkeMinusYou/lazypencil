@@ -5,7 +5,7 @@ use clap::Subcommand;
 use std::{
     collections::BTreeMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command as Process,
     time::{Duration, UNIX_EPOCH},
 };
@@ -51,7 +51,8 @@ impl Command {
                 // fallback caches never contain this package's outputs.
                 let times =
                     fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(946684800));
-                let mut inputs = util::walk_filtered(&workspace, |p| p.starts_with(&target))?;
+                let mut inputs =
+                    util::walk_filtered(&workspace, |p| p.starts_with(Path::new("target")))?;
                 // The archive regression compiles this isolated Rust helper,
                 // not the Skia crate. The Actions tool key includes it too.
                 inputs.push(
