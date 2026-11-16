@@ -40,6 +40,7 @@ a path on the same connection reuses its existing ID. Use `close_document` with
 Use `query` to filter collected relative paths, `recursive` to change traversal,
 and `limit` (1–500) with `cursor` to page results. Repeat the same directory,
 recursive and query values on later pages.
+Discovery checks the requested directory first, then continues one level at a time.
 
 Discovery stops at 10,000 documents, 100,000 entries or five seconds. Check
 `complete`, `stop_reason`, `entries_scanned` and `unreadable_directories` before

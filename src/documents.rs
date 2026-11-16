@@ -2,6 +2,7 @@
 use crate::{Error, Result};
 use serde::Serialize;
 use std::{
+    collections::VecDeque,
     fs::ReadDir,
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -34,7 +35,8 @@ pub struct Listing {
 }
 pub struct Scan {
     pub listing: Listing,
-    stack: Vec<ReadDir>,
+    directory: Option<(ReadDir, usize)>,
+    pending: VecDeque<(PathBuf, usize)>,
     limits: Limits,
     started: Instant,
     recursive: bool,
@@ -53,7 +55,8 @@ impl Scan {
                 entries_scanned: 0,
                 unreadable_directories: 0,
             },
-            stack: vec![entries],
+            directory: Some((entries, 0)),
+            pending: VecDeque::new(),
             limits,
             started: Instant::now(),
             recursive,
@@ -62,7 +65,8 @@ impl Scan {
     }
     fn stop(&mut self, reason: &'static str) {
         self.listing.stop_reason = Some(reason);
-        self.stack.clear();
+        self.directory = None;
+        self.pending.clear();
         self.finished = true;
     }
     /// Process a small batch so callers can publish results and handle input.
@@ -87,7 +91,16 @@ impl Scan {
                 self.stop("time_limit");
                 break;
             }
-            let Some(directory) = self.stack.last_mut() else {
+            if self.directory.is_none()
+                && let Some((path, depth)) = self.pending.pop_front()
+            {
+                match std::fs::read_dir(path) {
+                    Ok(entries) => self.directory = Some((entries, depth)),
+                    Err(_) => self.listing.unreadable_directories += 1,
+                }
+                continue;
+            }
+            let Some((directory, depth)) = &mut self.directory else {
                 self.finished = true;
                 self.listing.complete = self.listing.unreadable_directories == 0;
                 if !self.listing.complete {
@@ -96,7 +109,7 @@ impl Scan {
                 break;
             };
             let Some(entry) = directory.next() else {
-                self.stack.pop();
+                self.directory = None;
                 continue;
             };
             self.listing.entries_scanned += 1;
@@ -115,14 +128,12 @@ impl Scan {
                 }
             };
             if kind.is_dir() && self.recursive {
-                if self.stack.len() >= 128 {
+                if *depth >= 127 {
                     self.listing.unreadable_directories += 1;
                     continue;
                 }
-                match std::fs::read_dir(entry.path()) {
-                    Ok(directory) => self.stack.push(directory),
-                    Err(_) => self.listing.unreadable_directories += 1,
-                }
+                // Finish this level before descending, without holding queued directories open.
+                self.pending.push_back((entry.path(), *depth + 1));
             } else if kind.is_file()
                 && is_pen(&entry.path())
                 && let Ok(path) = entry.path().strip_prefix(&self.listing.root)
@@ -158,6 +169,40 @@ pub fn require_pen(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bounded_discovery_finds_shallow_documents_before_deeper_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("design.pen"), "").unwrap();
+        let mut shallow = vec![PathBuf::from("design.pen")];
+        for name in ["a", "b", "c"] {
+            let directory = temp.path().join(name);
+            std::fs::create_dir_all(directory.join("deep")).unwrap();
+            std::fs::write(directory.join("child.pen"), "").unwrap();
+            shallow.push(PathBuf::from(name).join("child.pen"));
+            for index in 0..8 {
+                std::fs::write(directory.join("deep").join(format!("{index}.txt")), "").unwrap();
+            }
+        }
+        shallow.sort();
+        let cancel = CancellationToken::new();
+        // Each budget covers one more level, regardless of filesystem entry order.
+        for (entries, expected) in [(4, vec![PathBuf::from("design.pen")]), (10, shallow)] {
+            let listing = Scan::new(
+                temp.path(),
+                true,
+                Limits {
+                    entries,
+                    ..Limits::default()
+                },
+            )
+            .unwrap()
+            .finish(&cancel);
+            assert_eq!(listing.documents, expected);
+            assert_eq!(listing.entries_scanned, entries);
+            assert_eq!(listing.stop_reason, Some("entry_limit"));
+            assert!(!listing.complete);
+        }
+    }
     #[test]
     fn recursive_discovery_includes_ignored_files_and_bounds_work() {
         let temp = tempfile::tempdir().unwrap();
