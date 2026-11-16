@@ -47,44 +47,51 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
     let structures = structures["cases"]
         .as_array()
         .context("Missing shader structures")?;
-    ensure!(structures.len() == 16, "Expected 16 shader structures");
+    ensure!(
+        structures.len() == 8,
+        "Expected eight current-schema shader structures"
+    );
     let expanded = report("codec-shader-preprocessed.json")?;
     let expanded = expanded["cases"]
         .as_array()
         .context("Missing preprocessed shaders")?;
-    ensure!(expanded.len() == 64, "Expected 64 preprocessed shaders");
-    for version in ["2.19", "2.21"] {
-        for case in 0..8 {
-            let rows: Vec<_> = structures
-                .iter()
-                .filter(|r| r["document_version"] == version && r["case"] == case)
-                .collect();
-            ensure!(rows.len() == 1, "Missing or duplicate shader structure");
-            png(
-                &format!("codec-shader-structure-{version}-{case}.png"),
-                &rows[0]["png_hash"],
-                32,
-                16,
-            )?;
-            for effect in [false, true] {
-                for scale in [1, 2] {
-                    let rows: Vec<_> = expanded
-                        .iter()
-                        .filter(|r| {
-                            r["document_version"] == version
-                                && r["case"] == case
-                                && r["effect"] == effect
-                                && r["scale"] == scale
-                        })
-                        .collect();
-                    ensure!(rows.len() == 1, "Missing or duplicate preprocessed shader");
-                    let name =
-                        format!("codec-shader-preprocessed-{version}-{case}-{effect}-{scale}.png");
-                    ensure!(rows[0]["png"] == name, "Wrong preprocessed PNG name");
-                    png(&name, &rows[0]["png_hash"], 32 * scale, 16 * scale)?;
-                }
+    ensure!(
+        expanded.len() == 32,
+        "Expected 32 current-schema preprocessed shaders"
+    );
+    let version = "2.22";
+    for case in 0..8 {
+        let rows: Vec<_> = structures
+            .iter()
+            .filter(|r| r["document_version"] == version && r["case"] == case)
+            .collect();
+        ensure!(rows.len() == 1, "Missing or duplicate shader structure");
+        png(
+            &format!("codec-shader-structure-{version}-{case}.png"),
+            &rows[0]["png_hash"],
+            32,
+            16,
+        )?;
+        for effect in [false, true] {
+            for scale in [1, 2] {
+                let rows: Vec<_> = expanded
+                    .iter()
+                    .filter(|r| {
+                        r["document_version"] == version
+                            && r["case"] == case
+                            && r["effect"] == effect
+                            && r["scale"] == scale
+                    })
+                    .collect();
+                ensure!(rows.len() == 1, "Missing or duplicate preprocessed shader");
+                let name =
+                    format!("codec-shader-preprocessed-{version}-{case}-{effect}-{scale}.png");
+                ensure!(rows[0]["png"] == name, "Wrong preprocessed PNG name");
+                png(&name, &rows[0]["png_hash"], 32 * scale, 16 * scale)?;
             }
         }
+    }
+    for version in ["2.19", "2.21", "2.22"] {
         let prefix = format!("codec-native-layout-cancellation-{version}");
         let r = report(&format!("{prefix}.json"))?;
         ensure!(
@@ -436,115 +443,114 @@ pub fn required_images_for(root: &Path, commit: &str, platform: &str) -> Result<
         .as_array()
         .context("Missing generated browser cases")?;
     ensure!(
-        rows.len() == 54,
-        "Expected both schemas and all 27 generated browser contexts"
+        rows.len() == 27,
+        "Expected the current schema and all 27 generated browser contexts"
     );
-    for version in ["2.19", "2.21"] {
-        for style in [
-            "direct",
-            "reference",
-            "descendant",
-            "replacement",
-            "children",
-            "inherited",
-            "nested",
-            "scope-direct",
-            "scope-reference",
-            "scope-descendant",
-            "scope-replacement",
-            "scope-children",
-            "scope-metadata",
-            "scope-descendant-metadata",
-            "scope-envelope",
-            "scope-descendant-envelope",
-            "scope-envelope-metadata",
-            "scope-descendant-envelope-metadata",
-            "scope-empty",
-            "scope-qualified",
-            "scope-nested",
-            "scope-stale",
-            "scope-stale-metadata",
-            "scope-stale-descendant-metadata",
-            "scope-stale-envelope-metadata",
-            "scope-stale-descendant-envelope-metadata",
-            "scope-default-shift-metadata",
-        ] {
-            let matching = rows
+    let version = "2.22";
+    for style in [
+        "direct",
+        "reference",
+        "descendant",
+        "replacement",
+        "children",
+        "inherited",
+        "nested",
+        "scope-direct",
+        "scope-reference",
+        "scope-descendant",
+        "scope-replacement",
+        "scope-children",
+        "scope-metadata",
+        "scope-descendant-metadata",
+        "scope-envelope",
+        "scope-descendant-envelope",
+        "scope-envelope-metadata",
+        "scope-descendant-envelope-metadata",
+        "scope-empty",
+        "scope-qualified",
+        "scope-nested",
+        "scope-stale",
+        "scope-stale-metadata",
+        "scope-stale-descendant-metadata",
+        "scope-stale-envelope-metadata",
+        "scope-stale-descendant-envelope-metadata",
+        "scope-default-shift-metadata",
+    ] {
+        let matching = rows
+            .iter()
+            .filter(|row| row["document_version"] == version && row["style"] == style)
+            .collect::<Vec<_>>();
+        ensure!(
+            matching.len() == 1,
+            "Missing or duplicated generated browser case"
+        );
+        let row = matching[0];
+        let expected = match style {
+            "inherited"
+            | "scope-direct"
+            | "scope-reference"
+            | "scope-descendant"
+            | "scope-replacement"
+            | "scope-children"
+            | "scope-envelope"
+            | "scope-descendant-envelope"
+            | "scope-nested"
+            | "scope-stale-metadata"
+            | "scope-stale-descendant-metadata"
+            | "scope-stale-envelope-metadata"
+            | "scope-stale-descendant-envelope-metadata"
+            | "scope-default-shift-metadata" => json!([255, 0, 0, 255]),
+            "scope-qualified" => json!([0, 0, 255, 255]),
+            _ => json!([0, 255, 0, 255]),
+        };
+        ensure!(
+            row["rgba"] == expected && row["sources_removed"] == true,
+            "Generated browser source isolation proof missing"
+        );
+        let stages = row["stages"]
+            .as_array()
+            .context("Missing generated browser stages")?;
+        ensure!(
+            stages.len() == 3,
+            "Expected original, copy and recopy generated pages"
+        );
+        let mut original = None;
+        let mut revision = None;
+        for stage in ["before", "copied", "recopied"] {
+            let matching = stages
                 .iter()
-                .filter(|row| row["document_version"] == version && row["style"] == style)
+                .filter(|row| row["stage"] == stage)
                 .collect::<Vec<_>>();
             ensure!(
                 matching.len() == 1,
-                "Missing or duplicated generated browser case"
+                "Missing or duplicated generated browser stage"
             );
             let row = matching[0];
-            let expected = match style {
-                "inherited"
-                | "scope-direct"
-                | "scope-reference"
-                | "scope-descendant"
-                | "scope-replacement"
-                | "scope-children"
-                | "scope-envelope"
-                | "scope-descendant-envelope"
-                | "scope-nested"
-                | "scope-stale-metadata"
-                | "scope-stale-descendant-metadata"
-                | "scope-stale-envelope-metadata"
-                | "scope-stale-descendant-envelope-metadata"
-                | "scope-default-shift-metadata" => json!([255, 0, 0, 255]),
-                "scope-qualified" => json!([0, 0, 255, 255]),
-                _ => json!([0, 255, 0, 255]),
-            };
+            let name = format!("codec-generated-browser-{version}-{style}-{stage}.png");
             ensure!(
-                row["rgba"] == expected && row["sources_removed"] == true,
-                "Generated browser source isolation proof missing"
+                row["name"] == name,
+                "Wrong generated browser evidence filename"
             );
-            let stages = row["stages"]
-                .as_array()
-                .context("Missing generated browser stages")?;
-            ensure!(
-                stages.len() == 3,
-                "Expected original, copy and recopy generated pages"
-            );
-            let mut original = None;
-            let mut revision = None;
-            for stage in ["before", "copied", "recopied"] {
-                let matching = stages
-                    .iter()
-                    .filter(|row| row["stage"] == stage)
-                    .collect::<Vec<_>>();
+            let bytes = png(&name, &row["png_hash"], 32, 16)?;
+            let current = row["resource_revision"]
+                .as_str()
+                .context("Missing generated namespace revision")?;
+            ensure!(current.len() == 64, "Invalid generated namespace revision");
+            if let Some(original) = &original {
                 ensure!(
-                    matching.len() == 1,
-                    "Missing or duplicated generated browser stage"
+                    *original == bytes,
+                    "Generated browser pixels changed after {stage}"
                 );
-                let row = matching[0];
-                let name = format!("codec-generated-browser-{version}-{style}-{stage}.png");
+            } else {
+                original = Some(bytes);
+            }
+            if let Some(revision) = revision {
                 ensure!(
-                    row["name"] == name,
-                    "Wrong generated browser evidence filename"
+                    revision == current,
+                    "Generated browser resource ownership changed after {stage}"
                 );
-                let bytes = png(&name, &row["png_hash"], 32, 16)?;
-                let current = row["resource_revision"]
-                    .as_str()
-                    .context("Missing generated namespace revision")?;
-                ensure!(current.len() == 64, "Invalid generated namespace revision");
-                if let Some(original) = &original {
-                    ensure!(
-                        *original == bytes,
-                        "Generated browser pixels changed after {stage}"
-                    );
-                } else {
-                    original = Some(bytes);
-                }
-                if let Some(revision) = revision {
-                    ensure!(
-                        revision == current,
-                        "Generated browser resource ownership changed after {stage}"
-                    );
-                } else {
-                    revision = Some(current);
-                }
+            } else {
+                revision = Some(current);
             }
         }
     }

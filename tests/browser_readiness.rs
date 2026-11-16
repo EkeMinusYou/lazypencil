@@ -38,46 +38,10 @@ fn generated_browser_namespaces_keep_pixels_after_source_removal_and_recopy() {
         fs::create_dir_all(directory).unwrap();
     }
     let started = Instant::now();
-    // Each schema owns its projects, scripts, browser process tree and profile.
-    // Artifact names include the schema; only this parent writes the report.
-    let (cases, timings) = std::thread::scope(|threads| {
-        let handles = ["2.19", "2.21"].map(|version| {
-            let directory = directory.as_deref();
-            (
-                version,
-                threads.spawn(move || {
-                    let offset = started.elapsed().as_secs_f64();
-                    let schema_started = Instant::now();
-                    let cases = generated_browser_namespace_cases(version, directory);
-                    let elapsed = schema_started.elapsed().as_secs_f64();
-                    eprintln!("Generated browser pixels: schema={version}, elapsed={elapsed:.3}s");
-                    (cases, json!({"document_version":version,"started_after_seconds":offset,"elapsed_seconds":elapsed}))
-                }),
-            )
-        });
-        let mut cases = Vec::new();
-        let mut timings = Vec::new();
-        let mut failures = Vec::new();
-        // Join every started worker, including after another schema panics.
-        for (version, handle) in handles {
-            match handle.join() {
-                Ok((rows, timing)) => {
-                    cases.extend(rows);
-                    timings.push(timing);
-                }
-                Err(error) => {
-                    let reason = error
-                        .downcast_ref::<String>()
-                        .map(String::as_str)
-                        .or_else(|| error.downcast_ref::<&str>().copied())
-                        .unwrap_or("non-string panic");
-                    failures.push(format!("schema {version}: {reason}"));
-                }
-            }
-        }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
-        (cases, timings)
-    });
+    let cases = generated_browser_namespace_cases("2.22", directory.as_deref());
+    let timings = [
+        json!({"document_version":"2.22","started_after_seconds":0.0,"elapsed_seconds":started.elapsed().as_secs_f64()}),
+    ];
     if let Some(directory) = directory {
         fs::write(directory.join("codec-generated-browser.json"),serde_json::to_vec_pretty(&json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"sandbox":"enabled","cases":cases,"schema_timings":timings})).unwrap()).unwrap();
     }

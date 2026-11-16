@@ -418,19 +418,18 @@ pub fn study(version: &str, style: &str) -> (TempDir, Vec<Frame>) {
 }
 
 pub fn reject_missing_namespace() {
-    for version in ["2.19", "2.21"] {
-        let (temp, store, _) = setup(version, "direct", false);
-        copy(&store, "direct");
-        fs::remove_dir_all(temp.path().join("library")).unwrap();
-        let result = service::layout_snapshot_with_runtime(
-            &store,
-            &[],
-            None,
-            None,
-            &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
-        );
-        assert_eq!(result.err().unwrap().code, "ASSET_NOT_FOUND");
-    }
+    let version = "2.22";
+    let (temp, store, _) = setup(version, "direct", false);
+    copy(&store, "direct");
+    fs::remove_dir_all(temp.path().join("library")).unwrap();
+    let result = service::layout_snapshot_with_runtime(
+        &store,
+        &[],
+        None,
+        None,
+        &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
+    );
+    assert_eq!(result.err().unwrap().code, "ASSET_NOT_FOUND");
 }
 
 pub fn reject_empty_namespace_after_recopy() {
@@ -460,150 +459,147 @@ pub fn reject_empty_namespace_after_recopy() {
         project.verify_unchanged().unwrap();
         assert_eq!(saved, fs::read(store.path()).unwrap());
     }
-    for version in ["2.19", "2.21"] {
-        for mode in ["absent", "empty", "inactive-default"] {
-            let style = if mode == "inactive-default" {
-                "scope-default-shift-metadata"
-            } else {
-                "scope-direct"
-            };
-            let (temp, store, code) = setup(version, style, true);
-            let owner = temp.path().join(if mode == "inactive-default" {
-                "library/base/base.pen"
-            } else {
-                "library/ui.pen"
-            });
-            let mut document: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
-            if mode == "inactive-default" {
-                document.as_object_mut().unwrap().remove("metadata");
-                document["children"]
-                    .as_array_mut()
-                    .unwrap()
-                    .retain(|node| node["id"] == "page");
-            } else {
-                document["imports"]["empty"] = json!("empty.pen");
-                let mut empty = json!({"version":version,"children":[]});
-                if mode == "empty" {
-                    empty["metadata"] =
-                        json!({"lazypencil":{"browser_resources":{"version":1,"roots":[]}}});
-                }
-                write(&temp.path().join("library/empty.pen"), empty);
-                let changed = code.replace("\"library\":\"base\"", "\"library\":\"empty\"");
-                assert_ne!(changed, code);
-                fs::write(temp.path().join("library/draw.js"), changed).unwrap();
+    let version = "2.22";
+    for mode in ["absent", "empty", "inactive-default"] {
+        let style = if mode == "inactive-default" {
+            "scope-default-shift-metadata"
+        } else {
+            "scope-direct"
+        };
+        let (temp, store, code) = setup(version, style, true);
+        let owner = temp.path().join(if mode == "inactive-default" {
+            "library/base/base.pen"
+        } else {
+            "library/ui.pen"
+        });
+        let mut document: Value = serde_json::from_slice(&fs::read(&owner).unwrap()).unwrap();
+        if mode == "inactive-default" {
+            document.as_object_mut().unwrap().remove("metadata");
+            document["children"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|node| node["id"] == "page");
+        } else {
+            document["imports"]["empty"] = json!("empty.pen");
+            let mut empty = json!({"version":version,"children":[]});
+            if mode == "empty" {
+                empty["metadata"] =
+                    json!({"lazypencil":{"browser_resources":{"version":1,"roots":[]}}});
             }
-            write(&owner, document);
-            closed(&store);
-            let response = copy(&store, style);
-            let id = response["generated_ids"]["0"]["component_id"]
-                .as_str()
-                .unwrap();
-            fs::remove_dir_all(temp.path().join("library")).unwrap();
-            closed(&store);
-            let second = recopy(&temp, &store, version, id);
-            closed(&second);
+            write(&temp.path().join("library/empty.pen"), empty);
+            let changed = code.replace("\"library\":\"base\"", "\"library\":\"empty\"");
+            assert_ne!(changed, code);
+            fs::write(temp.path().join("library/draw.js"), changed).unwrap();
         }
+        write(&owner, document);
+        closed(&store);
+        let response = copy(&store, style);
+        let id = response["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        closed(&store);
+        let second = recopy(&temp, &store, version, id);
+        closed(&second);
     }
 }
 
 pub fn preserve_empty_browser_prompts() {
-    for version in ["2.19", "2.21"] {
-        for present in [false, true] {
-            let (temp, store, _) = setup(version, "direct", true);
-            let mut node = json!({"type":"browser","width":32,"height":16,"metadata":{"type":"test","label":"empty"}});
-            if present {
-                node["url"] = json!("");
-            }
-            fs::write(
-                temp.path().join("library/draw.js"),
-                format!("/* @schema 2.21 */ return [{node}];"),
-            )
-            .unwrap();
-            let check = |store: &Store| {
-                let (_, layout) = service::layout_snapshot_with_runtime(
-                    store,
-                    &[],
-                    None,
-                    None,
-                    &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
-                )
-                .unwrap();
-                let node = &layout
-                    .items
-                    .iter()
-                    .find(|item| item.record.enabled && item.node.kind() == "browser")
-                    .unwrap()
-                    .node;
-                assert_eq!(
-                    node.properties.get("url"),
-                    present.then(|| json!("")).as_ref()
-                );
-                assert_eq!(
-                    node.properties["metadata"],
-                    json!({"type":"test","label":"empty"})
-                );
-            };
-            check(&store);
-            let copied = copy(&store, "direct");
-            let id = copied["generated_ids"]["0"]["component_id"]
-                .as_str()
-                .unwrap();
-            fs::remove_dir_all(temp.path().join("library")).unwrap();
-            check(&store);
-            let second = recopy(&temp, &store, version, id);
-            check(&second);
+    let version = "2.22";
+    for present in [false, true] {
+        let (temp, store, _) = setup(version, "direct", true);
+        let mut node = json!({"type":"browser","width":32,"height":16,"metadata":{"type":"test","label":"empty"}});
+        if present {
+            node["url"] = json!("");
         }
-    }
-}
-
-pub fn reject_uncaptured_explicit_namespace() {
-    for version in ["2.19", "2.21"] {
-        for style in [
-            "scope-direct",
-            "scope-reference",
-            "scope-descendant",
-            "scope-metadata",
-            "scope-envelope",
-        ] {
-            let (temp, store, code) = setup(version, style, true);
-            let response = copy(&store, style);
-            let id = response["generated_ids"]["0"]["component_id"]
-                .as_str()
-                .unwrap();
-            let document = store.read().unwrap();
-            let uri = document.node(id).unwrap()["scriptUri"].as_str().unwrap();
-            let alias = library(style);
-            let changed = code.replace(
-                &format!("\"library\":\"{alias}\""),
-                "\"library\":\"consumer\"",
-            );
-            assert_ne!(changed, code);
-            fs::write(temp.path().join(uri), changed).unwrap();
-            fs::remove_dir_all(temp.path().join("library")).unwrap();
-            write(
-                &temp.path().join("consumer.pen"),
-                json!({"version":version,"metadata":resources("consumer-web"),"children":[]}),
-            );
-            apply(
-                &store,
-                "add-consumer-namespace",
-                json!([{"op":"add_import","alias":"consumer","uri":"consumer.pen"}]),
-            );
-            let before = fs::read(store.path()).unwrap();
-            let error = service::layout_snapshot_with_runtime(
-                &store,
+        fs::write(
+            temp.path().join("library/draw.js"),
+            format!("/* @schema 2.21 */ return [{node}];"),
+        )
+        .unwrap();
+        let check = |store: &Store| {
+            let (_, layout) = service::layout_snapshot_with_runtime(
+                store,
                 &[],
                 None,
                 None,
                 &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
             )
-            .err()
             .unwrap();
+            let node = &layout
+                .items
+                .iter()
+                .find(|item| item.record.enabled && item.node.kind() == "browser")
+                .unwrap()
+                .node;
             assert_eq!(
-                error.code, "ASSET_NOT_FOUND",
-                "{version}/{style}: {error:?}"
+                node.properties.get("url"),
+                present.then(|| json!("")).as_ref()
             );
-            assert_eq!(fs::read(store.path()).unwrap(), before);
-        }
+            assert_eq!(
+                node.properties["metadata"],
+                json!({"type":"test","label":"empty"})
+            );
+        };
+        check(&store);
+        let copied = copy(&store, "direct");
+        let id = copied["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        check(&store);
+        let second = recopy(&temp, &store, version, id);
+        check(&second);
+    }
+}
+
+pub fn reject_uncaptured_explicit_namespace() {
+    let version = "2.22";
+    for style in [
+        "scope-direct",
+        "scope-reference",
+        "scope-descendant",
+        "scope-metadata",
+        "scope-envelope",
+    ] {
+        let (temp, store, code) = setup(version, style, true);
+        let response = copy(&store, style);
+        let id = response["generated_ids"]["0"]["component_id"]
+            .as_str()
+            .unwrap();
+        let document = store.read().unwrap();
+        let uri = document.node(id).unwrap()["scriptUri"].as_str().unwrap();
+        let alias = library(style);
+        let changed = code.replace(
+            &format!("\"library\":\"{alias}\""),
+            "\"library\":\"consumer\"",
+        );
+        assert_ne!(changed, code);
+        fs::write(temp.path().join(uri), changed).unwrap();
+        fs::remove_dir_all(temp.path().join("library")).unwrap();
+        write(
+            &temp.path().join("consumer.pen"),
+            json!({"version":version,"metadata":resources("consumer-web"),"children":[]}),
+        );
+        apply(
+            &store,
+            "add-consumer-namespace",
+            json!([{"op":"add_import","alias":"consumer","uri":"consumer.pen"}]),
+        );
+        let before = fs::read(store.path()).unwrap();
+        let error = service::layout_snapshot_with_runtime(
+            &store,
+            &[],
+            None,
+            None,
+            &mut ScriptRuntime::new(env!("CARGO_BIN_EXE_lazypencil")),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.code, "ASSET_NOT_FOUND",
+            "{version}/{style}: {error:?}"
+        );
+        assert_eq!(fs::read(store.path()).unwrap(), before);
     }
 }

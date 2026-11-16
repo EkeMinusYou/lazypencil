@@ -87,87 +87,114 @@ fn independent_script_contract(corpus: &str, filename: &str, artifact_stem: &str
         _ => panic!("Unknown independent script corpus"),
     };
     let dimensions = (expected.width, expected.height);
+    let version = "2.22";
+    let root = TempDir::new().unwrap();
+    let mut scripts = Vec::new();
+    for entry in fs::read_dir(&fixtures).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|extension| extension == "js") {
+            let destination = root.path().join(path.file_name().unwrap());
+            let bytes = fs::read(&path).unwrap();
+            fs::write(&destination, &bytes).unwrap();
+            scripts.push((destination, bytes));
+        }
+    }
+    let source = original.replacen("\"2.19\"", &format!("\"{version}\""), 1);
+    let path = root.path().join("design.pen");
+    fs::write(&path, &source).unwrap();
+    let store = Store::open(&path, Some(root.path().join("data"))).unwrap();
+    let (project, layout) = snapshot(&store);
+    assert_eq!(layout.script_executions.len(), cases);
+    let diagnostics = layout.summary()["diagnostics"].clone();
+    assert!(diagnostics.as_array().unwrap().is_empty());
+    let output = render::png(
+        &project,
+        &layout,
+        &RenderOptions {
+            scale: 2.0,
+            node: Some("root".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!((output.width, output.height), dimensions);
+    let actual = raster(&output.png);
+    let pixels = actual.peek_pixels().unwrap();
+    let mut maximum = 0u8;
+    let mut difference = 0u64;
+    for y in 0..expected.height as i32 {
+        for x in 0..expected.width as i32 {
+            let a = pixels.get_color((x, y));
+            let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+            let b = Color::from_argb(ea, er, eg, eb);
+            for delta in [
+                a.r().abs_diff(b.r()),
+                a.g().abs_diff(b.g()),
+                a.b().abs_diff(b.b()),
+                a.a().abs_diff(b.a()),
+            ] {
+                maximum = maximum.max(delta);
+                difference += u64::from(delta);
+            }
+        }
+    }
+    assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+    for (path, bytes) in scripts {
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+    assert!(store.history(10, None).unwrap().is_empty());
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        fs::create_dir_all(&directory).unwrap();
+        let stem = format!("{artifact_stem}-{version}");
+        fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+        let mut report = json!({
+            "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
+            "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
+            "png_hash":lazypencil::document::hash(&output.png),
+            "oracle_rgba_sha256":lazypencil::document::hash(expected.pixels.as_flattened()),
+            "source_sha256":lazypencil::document::hash(source.as_bytes()),
+            "oracle":"independent-script-contract-v1",
+            "verified_script_cases":cases,
+            "maximum_channel_difference":maximum,"absolute_channel_difference":difference
+        });
+        if corpus == "script-random" {
+            report["sampled_draws_per_script"] =
+                json!(render_oracles::scripts::sample_indices().len());
+        }
+        fs::write(directory.join(format!("{stem}.json")), report.to_string()).unwrap();
+    }
+    assert_eq!(
+        maximum, 0,
+        "Native script pixels differ for codec {version}: {difference}"
+    );
+}
+
+#[test]
+fn supported_document_schemas_render_the_same_small_script_without_rewriting_sources() {
     for version in ["2.19", "2.21", "2.22"] {
-        let root = TempDir::new().unwrap();
-        let mut scripts = Vec::new();
-        for entry in fs::read_dir(&fixtures).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_some_and(|extension| extension == "js") {
-                let destination = root.path().join(path.file_name().unwrap());
-                let bytes = fs::read(&path).unwrap();
-                fs::write(&destination, &bytes).unwrap();
-                scripts.push((destination, bytes));
-            }
-        }
-        let source = original.replacen("\"2.19\"", &format!("\"{version}\""), 1);
-        let path = root.path().join("design.pen");
-        fs::write(&path, &source).unwrap();
-        let store = Store::open(&path, Some(root.path().join("data"))).unwrap();
-        let (project, layout) = snapshot(&store);
-        assert_eq!(layout.script_executions.len(), cases);
-        let diagnostics = layout.summary()["diagnostics"].clone();
-        assert!(diagnostics.as_array().unwrap().is_empty());
-        let output = render::png(
-            &project,
-            &layout,
-            &RenderOptions {
-                scale: 2.0,
-                node: Some("root".into()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_eq!((output.width, output.height), dimensions);
-        let actual = raster(&output.png);
-        let pixels = actual.peek_pixels().unwrap();
-        let mut maximum = 0u8;
-        let mut difference = 0u64;
-        for y in 0..expected.height as i32 {
-            for x in 0..expected.width as i32 {
-                let a = pixels.get_color((x, y));
-                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
-                let b = Color::from_argb(ea, er, eg, eb);
-                for delta in [
-                    a.r().abs_diff(b.r()),
-                    a.g().abs_diff(b.g()),
-                    a.b().abs_diff(b.b()),
-                    a.a().abs_diff(b.a()),
-                ] {
-                    maximum = maximum.max(delta);
-                    difference += u64::from(delta);
-                }
-            }
-        }
-        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
-        for (path, bytes) in scripts {
-            assert_eq!(fs::read(path).unwrap(), bytes);
-        }
-        assert!(store.history(10, None).unwrap().is_empty());
-        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-            let directory = std::path::PathBuf::from(directory);
-            fs::create_dir_all(&directory).unwrap();
-            let stem = format!("{artifact_stem}-{version}");
-            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
-            let mut report = json!({
-                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
-                "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,
-                "png_hash":lazypencil::document::hash(&output.png),
-                "oracle_rgba_sha256":lazypencil::document::hash(expected.pixels.as_flattened()),
-                "source_sha256":lazypencil::document::hash(source.as_bytes()),
-                "oracle":"independent-script-contract-v1",
-                "verified_script_cases":cases,
-                "maximum_channel_difference":maximum,"absolute_channel_difference":difference
-            });
-            if corpus == "script-random" {
-                report["sampled_draws_per_script"] =
-                    json!(render_oracles::scripts::sample_indices().len());
-            }
-            fs::write(directory.join(format!("{stem}.json")), report.to_string()).unwrap();
-        }
-        assert_eq!(
-            maximum, 0,
-            "Native script pixels differ for codec {version}: {difference}"
+        let (temp, store) = fixture(
+            "return [{type:'rectangle',width:pencil.width,height:pencil.height,fill:'#123456'}];",
+            json!({"type":"script","id":"sample","scriptUri":"draw.js","width":4,"height":2}),
         );
+        let mut document = store.read().unwrap().value().clone();
+        document["version"] = json!(version);
+        let source = document.to_string();
+        fs::write(store.path(), &source).unwrap();
+        let script = fs::read(temp.path().join("draw.js")).unwrap();
+        let (project, layout) = snapshot(&store);
+        let output = render::png(&project, &layout, &RenderOptions::default()).unwrap();
+        assert_eq!((output.width, output.height), (4, 2));
+        let image = raster(&output.png);
+        let pixels = image.peek_pixels().unwrap();
+        for y in 0..2 {
+            for x in 0..4 {
+                assert_eq!(pixels.get_color((x, y)), Color::from_rgb(0x12, 0x34, 0x56));
+            }
+        }
+        assert_eq!(fs::read_to_string(store.path()).unwrap(), source);
+        assert_eq!(fs::read(temp.path().join("draw.js")).unwrap(), script);
+        assert!(store.history(10, None).unwrap().is_empty());
     }
 }
 

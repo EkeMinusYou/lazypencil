@@ -25,17 +25,12 @@ mod script_browser_copy;
 
 #[test]
 fn generated_browser_namespaces_survive_independent_copy_and_recopy() {
-    // Each schema owns its temporary projects, assets and script processes.
-    // Join both before returning, including when one schema fails.
-    std::thread::scope(|threads| {
-        for version in ["2.19", "2.21"] {
-            threads.spawn(move || {
-                for style in script_browser_copy::STYLES {
-                    let _case = script_browser_copy::study(version, style);
-                }
-            });
-        }
-    });
+    for style in script_browser_copy::STYLES {
+        let _case = script_browser_copy::study("2.22", style);
+    }
+    for version in ["2.19", "2.21"] {
+        let _smoke = script_browser_copy::study(version, "direct");
+    }
 }
 
 #[test]

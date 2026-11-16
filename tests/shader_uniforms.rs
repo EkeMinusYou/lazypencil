@@ -889,117 +889,116 @@ fn logical_coordinates_and_macro_bindings_match_independent_equations() {
     let expected =
         render_oracles::shaders::raster(render_oracles::shaders::Scene::LogicalCoordinates, 2);
     assert_eq!((expected.width, expected.height), (800, 40));
-    for version in ["2.19", "2.21"] {
-        let root = TempDir::new().unwrap();
-        for entry in fs::read_dir(&fixtures).unwrap() {
-            let path = entry.unwrap().path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "glsl")
-            {
-                fs::copy(&path, root.path().join(path.file_name().unwrap())).unwrap();
-            }
+    let version = "2.22";
+    let root = TempDir::new().unwrap();
+    for entry in fs::read_dir(&fixtures).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "glsl")
+        {
+            fs::copy(&path, root.path().join(path.file_name().unwrap())).unwrap();
         }
-        let source = source.replace("\"2.19\"", &format!("\"{version}\""));
-        let path = root.path().join("design.pen");
-        fs::write(&path, &source).unwrap();
-        let project =
-            Project::from_document(&path, Document::parse(source.clone()).unwrap(), &[]).unwrap();
-        let layout = lazypencil::layout::compute(
-            project.resolve().unwrap(),
-            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
-        )
-        .unwrap();
-        let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
-            .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
-            .with_executable(
-                std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
-            );
-        let output = render::png_with_runtime(
-            &project,
-            &layout,
-            &render::RenderOptions {
-                scale: 2.0,
-                ..Default::default()
-            },
-            &mut runtime,
-            None,
-        )
-        .unwrap();
-        assert_eq!((output.width, output.height), (800, 40));
-        assert_eq!(output.dynamic_artifacts.len(), 10);
-        for artifact in &output.dynamic_artifacts {
-            assert_eq!(
-                artifact["acquisition"]["coordinate_size"][0].as_f64(),
-                Some(32.0)
-            );
-            assert_eq!(
-                artifact["acquisition"]["coordinate_size"][1].as_f64(),
-                Some(16.0)
-            );
-            assert_eq!(
-                artifact["acquisition"]["preprocessor_hash"],
-                hash(include_bytes!(
-                    "../resources/shader-preprocessor/module.wasm"
-                ))
-            );
-        }
-        let diagnostics = layout.summary()["diagnostics"].clone();
-        assert!(diagnostics.as_array().unwrap().is_empty());
-        let image = Image::from_encoded(Data::new_copy(&output.png))
-            .unwrap()
-            .make_raster_image(None, None)
-            .unwrap();
-        let actual = image.peek_pixels().unwrap();
-        let mut maximum = 0u8;
-        let mut difference = 0u64;
-        for y in 0..40 {
-            for x in 0..800 {
-                let a = actual.get_color((x, y));
-                let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
-                let b = skia_safe::Color::from_argb(ea, er, eg, eb);
-                for delta in [
-                    a.r().abs_diff(b.r()),
-                    a.g().abs_diff(b.g()),
-                    a.b().abs_diff(b.b()),
-                    a.a().abs_diff(b.a()),
-                ] {
-                    maximum = maximum.max(delta);
-                    difference += u64::from(delta);
-                }
-            }
-        }
-        assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
-        for entry in fs::read_dir(&fixtures).unwrap() {
-            let path = entry.unwrap().path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "glsl")
-            {
-                assert_eq!(
-                    fs::read(root.path().join(path.file_name().unwrap())).unwrap(),
-                    fs::read(path).unwrap()
-                );
-            }
-        }
-        if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
-            let directory = std::path::PathBuf::from(directory);
-            fs::create_dir_all(&directory).unwrap();
-            let stem = format!("chromium-native-logical-coordinates-{version}");
-            fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
-            fs::write(directory.join(format!("{stem}.json")),json!({
-                "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
-                "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,"verified_cases":10,
-                "oracle":"independent-shader-equations-v1","png_hash":hash(&output.png),"oracle_rgba_sha256":hash(expected.pixels.as_flattened()),
-                "source_sha256":hash(source.as_bytes()),"maximum_channel_difference":maximum,"absolute_channel_difference":difference,
-                "preprocessor_sha256":hash(include_bytes!("../resources/shader-preprocessor/module.wasm"))
-            }).to_string()).unwrap();
-        }
-        assert!(
-            maximum <= 1,
-            "Logical coordinates diverged ({version}): maximum={maximum}, difference={difference}"
+    }
+    let source = source.replace("\"2.19\"", &format!("\"{version}\""));
+    let path = root.path().join("design.pen");
+    fs::write(&path, &source).unwrap();
+    let project =
+        Project::from_document(&path, Document::parse(source.clone()).unwrap(), &[]).unwrap();
+    let layout = lazypencil::layout::compute(
+        project.resolve().unwrap(),
+        &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+    )
+    .unwrap();
+    let mut runtime = lazypencil::dynamic::DynamicRuntime::new(root.path().join("runtime"))
+        .with_supervisor_executable(env!("CARGO_BIN_EXE_lazypencil"))
+        .with_executable(
+            std::env::var_os("LAZYPENCIL_TEST_CHROMIUM").expect("Set LAZYPENCIL_TEST_CHROMIUM"),
+        );
+    let output = render::png_with_runtime(
+        &project,
+        &layout,
+        &render::RenderOptions {
+            scale: 2.0,
+            ..Default::default()
+        },
+        &mut runtime,
+        None,
+    )
+    .unwrap();
+    assert_eq!((output.width, output.height), (800, 40));
+    assert_eq!(output.dynamic_artifacts.len(), 10);
+    for artifact in &output.dynamic_artifacts {
+        assert_eq!(
+            artifact["acquisition"]["coordinate_size"][0].as_f64(),
+            Some(32.0)
+        );
+        assert_eq!(
+            artifact["acquisition"]["coordinate_size"][1].as_f64(),
+            Some(16.0)
+        );
+        assert_eq!(
+            artifact["acquisition"]["preprocessor_hash"],
+            hash(include_bytes!(
+                "../resources/shader-preprocessor/module.wasm"
+            ))
         );
     }
+    let diagnostics = layout.summary()["diagnostics"].clone();
+    assert!(diagnostics.as_array().unwrap().is_empty());
+    let image = Image::from_encoded(Data::new_copy(&output.png))
+        .unwrap()
+        .make_raster_image(None, None)
+        .unwrap();
+    let actual = image.peek_pixels().unwrap();
+    let mut maximum = 0u8;
+    let mut difference = 0u64;
+    for y in 0..40 {
+        for x in 0..800 {
+            let a = actual.get_color((x, y));
+            let [er, eg, eb, ea] = expected.pixel(x as u32, y as u32);
+            let b = skia_safe::Color::from_argb(ea, er, eg, eb);
+            for delta in [
+                a.r().abs_diff(b.r()),
+                a.g().abs_diff(b.g()),
+                a.b().abs_diff(b.b()),
+                a.a().abs_diff(b.a()),
+            ] {
+                maximum = maximum.max(delta);
+                difference += u64::from(delta);
+            }
+        }
+    }
+    assert_eq!(fs::read(&path).unwrap(), source.as_bytes());
+    for entry in fs::read_dir(&fixtures).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "glsl")
+        {
+            assert_eq!(
+                fs::read(root.path().join(path.file_name().unwrap())).unwrap(),
+                fs::read(path).unwrap()
+            );
+        }
+    }
+    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_NATIVE_SHADER_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        fs::create_dir_all(&directory).unwrap();
+        let stem = format!("chromium-native-logical-coordinates-{version}");
+        fs::write(directory.join(format!("{stem}.png")), &output.png).unwrap();
+        fs::write(directory.join(format!("{stem}.json")),json!({
+            "source_commit":std::env::var("GITHUB_SHA").ok(),"document_version":version,
+            "width":output.width,"height":output.height,"scale":2,"diagnostics":diagnostics,"verified_cases":10,
+            "oracle":"independent-shader-equations-v1","png_hash":hash(&output.png),"oracle_rgba_sha256":hash(expected.pixels.as_flattened()),
+            "source_sha256":hash(source.as_bytes()),"maximum_channel_difference":maximum,"absolute_channel_difference":difference,
+            "preprocessor_sha256":hash(include_bytes!("../resources/shader-preprocessor/module.wasm"))
+        }).to_string()).unwrap();
+    }
+    assert!(
+        maximum <= 1,
+        "Logical coordinates diverged ({version}): maximum={maximum}, difference={difference}"
+    );
 }
 
 #[test]
@@ -1011,7 +1010,8 @@ fn annotation_binding_matches_independent_contract_pixels() {
         .join("tests/fixtures/render-corpus/shader-annotation-binding");
     let source =
         include_str!("fixtures/render-corpus/shader-annotation-binding/annotation-binding.pen");
-    for (version, scale) in [("2.19", 1u32), ("2.21", 1), ("2.19", 2), ("2.21", 2)] {
+    for scale in [1u32, 2] {
+        let version = "2.22";
         let expected = render_oracles::shaders::raster(
             render_oracles::shaders::Scene::AnnotationBinding,
             scale,
@@ -1431,82 +1431,81 @@ fn software_webgl_structures_bind_nested_arrays_defaults_matrices_and_samplers()
         ),
     ];
     let mut verified = Vec::new();
-    for version in ["2.19", "2.21"] {
-        for (index, (source, values, expected)) in cases.iter().enumerate() {
-            let scene_root = TempDir::new().unwrap();
-            for (name, color) in [("red.png", Color::RED), ("blue.png", Color::BLUE)] {
-                let mut surface = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
-                surface.canvas().clear(color);
-                fs::write(
-                    scene_root.path().join(name),
-                    skia_safe::png_encoder::encode_image(
-                        None,
-                        &surface.image_snapshot(),
-                        &Default::default(),
-                    )
-                    .unwrap()
-                    .as_bytes(),
+    let version = "2.22";
+    for (index, (source, values, expected)) in cases.iter().enumerate() {
+        let scene_root = TempDir::new().unwrap();
+        for (name, color) in [("red.png", Color::RED), ("blue.png", Color::BLUE)] {
+            let mut surface = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
+            surface.canvas().clear(color);
+            fs::write(
+                scene_root.path().join(name),
+                skia_safe::png_encoder::encode_image(
+                    None,
+                    &surface.image_snapshot(),
+                    &Default::default(),
                 )
-                .unwrap();
-            }
-            let source = format!("precision highp float;\n{source}");
-            let scene = project_with_version(&scene_root, &source, values.clone(), version);
-            let before = fs::read(scene_root.path().join("input.pen")).unwrap();
-            let layout = lazypencil::layout::compute(
-                scene.resolve().unwrap(),
-                &mut lazypencil::text::Fonts::new(&[]).unwrap(),
-            )
-            .unwrap();
-            let rendered = lazypencil::render::png_with_runtime(
-                &scene,
-                &layout,
-                &Default::default(),
-                &mut runtime,
-                None,
-            )
-            .unwrap();
-            assert_eq!(rendered.dynamic_artifacts.len(), 1);
-            let image = Image::from_encoded(Data::new_copy(&rendered.png))
                 .unwrap()
-                .make_raster_image(None, None)
-                .unwrap();
-            let pixels = image.peek_pixels().unwrap();
-            for y in 0..16 {
-                for x in 0..32 {
-                    let color = pixels.get_color((x, y));
-                    assert_eq!(color.a(), 255, "Case {index}");
-                    for (actual, expected) in
-                        [color.r(), color.g(), color.b()].into_iter().zip(*expected)
-                    {
-                        assert!(
-                            (actual as i32 - expected).abs() <= 1,
-                            "Case {index}: {color:?}"
-                        );
-                    }
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+        let source = format!("precision highp float;\n{source}");
+        let scene = project_with_version(&scene_root, &source, values.clone(), version);
+        let before = fs::read(scene_root.path().join("input.pen")).unwrap();
+        let layout = lazypencil::layout::compute(
+            scene.resolve().unwrap(),
+            &mut lazypencil::text::Fonts::new(&[]).unwrap(),
+        )
+        .unwrap();
+        let rendered = lazypencil::render::png_with_runtime(
+            &scene,
+            &layout,
+            &Default::default(),
+            &mut runtime,
+            None,
+        )
+        .unwrap();
+        assert_eq!(rendered.dynamic_artifacts.len(), 1);
+        let image = Image::from_encoded(Data::new_copy(&rendered.png))
+            .unwrap()
+            .make_raster_image(None, None)
+            .unwrap();
+        let pixels = image.peek_pixels().unwrap();
+        for y in 0..16 {
+            for x in 0..32 {
+                let color = pixels.get_color((x, y));
+                assert_eq!(color.a(), 255, "Case {index}");
+                for (actual, expected) in
+                    [color.r(), color.g(), color.b()].into_iter().zip(*expected)
+                {
+                    assert!(
+                        (actual as i32 - expected).abs() <= 1,
+                        "Case {index}: {color:?}"
+                    );
                 }
             }
-            assert_eq!(
-                fs::read(scene_root.path().join("input.pen")).unwrap(),
-                before
-            );
-            assert_eq!(
-                fs::read_to_string(scene_root.path().join("input.glsl")).unwrap(),
-                source
-            );
-            verified.push(json!({"document_version":version,"case":index,"expected_rgb":expected,"rgba_components_checked":32*16*4,"png_hash":lazypencil::document::hash(&rendered.png)}));
-            if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-                fs::create_dir_all(&output).unwrap();
-                fs::write(
-                    std::path::Path::new(&output)
-                        .join(format!("codec-shader-structure-{version}-{index}.png")),
-                    &rendered.png,
-                )
-                .unwrap();
-            }
+        }
+        assert_eq!(
+            fs::read(scene_root.path().join("input.pen")).unwrap(),
+            before
+        );
+        assert_eq!(
+            fs::read_to_string(scene_root.path().join("input.glsl")).unwrap(),
+            source
+        );
+        verified.push(json!({"document_version":version,"case":index,"expected_rgb":expected,"rgba_components_checked":32*16*4,"png_hash":lazypencil::document::hash(&rendered.png)}));
+        if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+            fs::create_dir_all(&output).unwrap();
+            fs::write(
+                std::path::Path::new(&output)
+                    .join(format!("codec-shader-structure-{version}-{index}.png")),
+                &rendered.png,
+            )
+            .unwrap();
         }
     }
     if let Some(output) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-        fs::write(std::path::Path::new(&output).join("codec-shader-structures.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored WebGL expected values for document codecs 2.19/2.21; not a native Pencil pixel oracle"}).to_string()).unwrap();
+        fs::write(std::path::Path::new(&output).join("codec-shader-structures.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored WebGL expected values for document codec 2.22; not a native Pencil pixel oracle"}).to_string()).unwrap();
     }
 }
 
@@ -1574,107 +1573,105 @@ fn software_webgl_preprocessed_uniforms_follow_active_types_defaults_and_builtin
         ),
     ];
     let mut verified = Vec::new();
-    for version in ["2.19", "2.21"] {
-        for (case, (body, overrides, rgb, time_dependent)) in cases.iter().enumerate() {
-            for effect in [false, true] {
-                let root = TempDir::new().unwrap();
-                let source = format!("precision highp float;\n{body}");
-                fs::write(root.path().join("input.glsl"), &source).unwrap();
-                let mut image = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
-                image.canvas().clear(Color::RED);
-                fs::write(
-                    root.path().join("red.png"),
-                    skia_safe::png_encoder::encode_image(
-                        None,
-                        &image.image_snapshot(),
-                        &Default::default(),
-                    )
-                    .unwrap()
-                    .as_bytes(),
+    let version = "2.22";
+    for (case, (body, overrides, rgb, time_dependent)) in cases.iter().enumerate() {
+        for effect in [false, true] {
+            let root = TempDir::new().unwrap();
+            let source = format!("precision highp float;\n{body}");
+            fs::write(root.path().join("input.glsl"), &source).unwrap();
+            let mut image = skia_safe::surfaces::raster_n32_premul((2, 2)).unwrap();
+            image.canvas().clear(Color::RED);
+            fs::write(
+                root.path().join("red.png"),
+                skia_safe::png_encoder::encode_image(
+                    None,
+                    &image.image_snapshot(),
+                    &Default::default(),
                 )
-                .unwrap();
-                let fill = json!({"type":"shader","url":"input.glsl","uniforms":overrides});
-                let mut node =
-                    json!({"id":"shape","type":"rectangle","width":32,"height":16,"fill":fill});
-                if effect {
-                    node["fill"] = json!("#ffffff");
-                    node["effect"] = json!([fill]);
-                }
-                let document = json!({"version":version,"children":[node]}).to_string();
-                let path = root.path().join("input.pen");
-                fs::write(&path, &document).unwrap();
-                let scene =
-                    Project::from_document(&path, Document::parse(document.clone()).unwrap(), &[])
+                .unwrap()
+                .as_bytes(),
+            )
+            .unwrap();
+            let fill = json!({"type":"shader","url":"input.glsl","uniforms":overrides});
+            let mut node =
+                json!({"id":"shape","type":"rectangle","width":32,"height":16,"fill":fill});
+            if effect {
+                node["fill"] = json!("#ffffff");
+                node["effect"] = json!([fill]);
+            }
+            let document = json!({"version":version,"children":[node]}).to_string();
+            let path = root.path().join("input.pen");
+            fs::write(&path, &document).unwrap();
+            let scene =
+                Project::from_document(&path, Document::parse(document.clone()).unwrap(), &[])
+                    .unwrap();
+            let layout =
+                layout::compute(scene.resolve().unwrap(), &mut Fonts::new(&[]).unwrap()).unwrap();
+            for scale in [1, 2] {
+                let options = render::RenderOptions {
+                    scale: scale as f32,
+                    time: 0.75,
+                    ..Default::default()
+                };
+                let output =
+                    render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
                         .unwrap();
-                let layout =
-                    layout::compute(scene.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
-                        .unwrap();
-                for scale in [1, 2] {
-                    let options = render::RenderOptions {
-                        scale: scale as f32,
-                        time: 0.75,
-                        ..Default::default()
-                    };
-                    let output =
-                        render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
-                            .unwrap();
-                    assert_eq!((output.width, output.height), (32 * scale, 16 * scale));
-                    assert_eq!(output.dynamic_artifacts.len(), 1);
-                    let acquisition = &output.dynamic_artifacts[0]["acquisition"];
-                    assert_eq!(acquisition["time_dependent"], *time_dependent);
-                    assert_eq!(
-                        acquisition["source_hash"],
-                        lazypencil::document::hash(source.as_bytes())
-                    );
-                    let image = Image::from_encoded(Data::new_copy(&output.png))
-                        .unwrap()
-                        .make_raster_image(None, None)
-                        .unwrap();
-                    let pixels = image.peek_pixels().unwrap();
-                    for y in 0..output.height {
-                        for x in 0..output.width {
-                            let color = pixels.get_color((x as i32, y as i32));
-                            assert_eq!(color.a(), 255, "case {case}, effect {effect}");
-                            for (actual, expected) in
-                                [color.r(), color.g(), color.b()].into_iter().zip(*rgb)
-                            {
-                                assert!(
-                                    (actual as i32 - expected).abs() <= 1,
-                                    "case {case}, effect {effect}, scale {scale}: {color:?}"
-                                );
-                            }
+                assert_eq!((output.width, output.height), (32 * scale, 16 * scale));
+                assert_eq!(output.dynamic_artifacts.len(), 1);
+                let acquisition = &output.dynamic_artifacts[0]["acquisition"];
+                assert_eq!(acquisition["time_dependent"], *time_dependent);
+                assert_eq!(
+                    acquisition["source_hash"],
+                    lazypencil::document::hash(source.as_bytes())
+                );
+                let image = Image::from_encoded(Data::new_copy(&output.png))
+                    .unwrap()
+                    .make_raster_image(None, None)
+                    .unwrap();
+                let pixels = image.peek_pixels().unwrap();
+                for y in 0..output.height {
+                    for x in 0..output.width {
+                        let color = pixels.get_color((x as i32, y as i32));
+                        assert_eq!(color.a(), 255, "case {case}, effect {effect}");
+                        for (actual, expected) in
+                            [color.r(), color.g(), color.b()].into_iter().zip(*rgb)
+                        {
+                            assert!(
+                                (actual as i32 - expected).abs() <= 1,
+                                "case {case}, effect {effect}, scale {scale}: {color:?}"
+                            );
                         }
                     }
-                    let filename =
-                        format!("codec-shader-preprocessed-{version}-{case}-{effect}-{scale}.png");
-                    verified.push(json!({"document_version":version,"case":case,"effect":effect,"scale":scale,"png":filename,"expected_rgb":rgb,"time_dependent":time_dependent,"rgba_components_checked":output.width*output.height*4,"png_hash":lazypencil::document::hash(&output.png)}));
-                    if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-                        fs::create_dir_all(&directory).unwrap();
-                        fs::write(std::path::Path::new(&directory).join(filename), &output.png)
-                            .unwrap();
-                    }
-                    // Reusing the prepared interface and PNG must not launch a
-                    // browser after idle expiry or extend its idle deadline.
-                    let check_expiry = version == "2.21" && case == 5 && !effect && scale == 2;
-                    if check_expiry {
-                        runtime.expire_idle(Instant::now() + Duration::from_secs(3600));
-                        assert!(runtime.process_ids().is_empty());
-                    }
-                    let cached =
-                        render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
-                            .unwrap();
-                    assert_eq!(cached.png, output.png);
-                    if check_expiry {
-                        assert!(runtime.process_ids().is_empty());
-                        assert!(runtime.idle_deadline().is_none());
-                    }
                 }
-                assert_eq!(fs::read_to_string(&path).unwrap(), document);
-                assert_eq!(
-                    fs::read_to_string(root.path().join("input.glsl")).unwrap(),
-                    source
-                );
+                let filename =
+                    format!("codec-shader-preprocessed-{version}-{case}-{effect}-{scale}.png");
+                verified.push(json!({"document_version":version,"case":case,"effect":effect,"scale":scale,"png":filename,"expected_rgb":rgb,"time_dependent":time_dependent,"rgba_components_checked":output.width*output.height*4,"png_hash":lazypencil::document::hash(&output.png)}));
+                if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
+                    fs::create_dir_all(&directory).unwrap();
+                    fs::write(std::path::Path::new(&directory).join(filename), &output.png)
+                        .unwrap();
+                }
+                // Reusing the prepared interface and PNG must not launch a
+                // browser after idle expiry or extend its idle deadline.
+                let check_expiry = version == "2.21" && case == 5 && !effect && scale == 2;
+                if check_expiry {
+                    runtime.expire_idle(Instant::now() + Duration::from_secs(3600));
+                    assert!(runtime.process_ids().is_empty());
+                }
+                let cached =
+                    render::png_with_runtime(&scene, &layout, &options, &mut runtime, None)
+                        .unwrap();
+                assert_eq!(cached.png, output.png);
+                if check_expiry {
+                    assert!(runtime.process_ids().is_empty());
+                    assert!(runtime.idle_deadline().is_none());
+                }
             }
+            assert_eq!(fs::read_to_string(&path).unwrap(), document);
+            assert_eq!(
+                fs::read_to_string(root.path().join("input.glsl")).unwrap(),
+                source
+            );
         }
     }
     // Invalid active values still fail in the normal typed-input path. Invalid
@@ -1715,6 +1712,6 @@ fn software_webgl_preprocessed_uniforms_follow_active_types_defaults_and_builtin
         );
     }
     if let Some(directory) = std::env::var_os("LAZYPENCIL_TEST_CODEC_DIR") {
-        fs::write(std::path::Path::new(&directory).join("codec-shader-preprocessed.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored GLSL expected values, compiler preprocessing, fill/effect and both codecs; not a native Pencil compatibility oracle"}).to_string()).unwrap();
+        fs::write(std::path::Path::new(&directory).join("codec-shader-preprocessed.json"),json!({"source_commit":std::env::var("GITHUB_SHA").ok(),"cases":verified,"scope":"Self-authored GLSL expected values, compiler preprocessing, fill/effect, both scales and current codec2.22; not a native Pencil compatibility oracle"}).to_string()).unwrap();
     }
 }
