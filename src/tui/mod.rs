@@ -306,7 +306,7 @@ struct App {
     restoring_session: bool,
     tool_calls: std::collections::HashMap<String, composer::ToolDisplay>,
     turn_sequence: u64,
-    history: Option<Paragraph<'static>>,
+    history: Option<composer::History>,
     history_metrics: (u16, u16, u16),
     scroll: u16,
     status: String,

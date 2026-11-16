@@ -135,12 +135,25 @@ pub fn completion(h: &mut Harness) -> Result {
 }
 
 pub fn steering(h: &mut Harness) -> Result {
-    h.paste("First request")?;
+    h.paste("First request\n\n- Button position\n- Part of speech\n\nReview the layout.")?;
     h.key(b"\r")?;
     h.wait("mid-turn input available", 15.0, |h| {
         let text = h.screen.text();
         text.contains("Working…") && text.contains("steer")
     })?;
+    let screen = h.screen.text();
+    for (text, marker) in [
+        ("First request", true),
+        ("Button position", false),
+        ("Part of speech", false),
+        ("Review the layout.", false),
+    ] {
+        let row = screen
+            .lines()
+            .find(|row| row.contains(text))
+            .ok_or("Missing submitted paragraph")?;
+        assert_eq!(row.contains('›'), marker, "{text}");
+    }
     h.paste("/queue Check the layout's spacing after this")?;
     h.key(b"\r")?;
     h.wait("explicit follow-up remains queued", 15.0, |h| {

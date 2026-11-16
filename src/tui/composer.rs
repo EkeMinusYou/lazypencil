@@ -34,6 +34,58 @@ pub(super) struct ToolDisplay {
     details: String,
 }
 
+pub(super) struct History {
+    paragraph: Paragraph<'static>,
+    user_starts: Vec<usize>,
+    width: u16,
+}
+
+impl History {
+    fn new((text, starts): (Text<'static>, Vec<usize>), width: u16) -> Self {
+        let mut previous = 0;
+        let mut row = 0;
+        let user_starts = starts
+            .into_iter()
+            .map(|start| {
+                row += Paragraph::new(Text::from(text.lines[previous..start].to_vec()))
+                    .wrap(Wrap { trim: false })
+                    .line_count(width);
+                previous = start;
+                row
+            })
+            .collect();
+        Self {
+            paragraph: Paragraph::new(text).wrap(Wrap { trim: false }),
+            user_starts,
+            width,
+        }
+    }
+
+    fn render(
+        mut self,
+        buffer: &mut ratatui::buffer::Buffer,
+        area: Rect,
+        text_area: Rect,
+        scroll: u16,
+    ) -> Self {
+        self.paragraph = self.paragraph.scroll((scroll, 0));
+        ratatui::widgets::Widget::render(&self.paragraph, text_area, buffer);
+        fill_user_backgrounds(buffer, area);
+        for &start in &self.user_starts {
+            if let Some(row) = start.checked_sub(usize::from(scroll))
+                && row < usize::from(area.height)
+                && area.width > 0
+                && text_area.width > 0
+            {
+                buffer[(area.x, area.y + row as u16)]
+                    .set_symbol("›")
+                    .set_fg(theme::colors().user);
+            }
+        }
+        self
+    }
+}
+
 impl Default for ToolDisplay {
     fn default() -> Self {
         Self {
@@ -246,19 +298,29 @@ impl App {
             vertical: 0,
         });
         self.pointer.add(sections[0], mouse::Target::History);
-        let paragraph = if self.log.is_empty() && self.saved_log.is_empty() {
+        let history = if self.log.is_empty() && self.saved_log.is_empty() {
             None
         } else {
-            Some(self.history.take().unwrap_or_else(|| {
-                Paragraph::new(history_text(
-                    self.saved_log.iter().chain(self.log.iter()),
-                    &self.tool_calls,
-                ))
-                .wrap(Wrap { trim: false })
-            }))
+            Some(
+                self.history
+                    .take()
+                    .filter(|history| history.width == text_area.width)
+                    .unwrap_or_else(|| {
+                        History::new(
+                            history_text(
+                                self.saved_log.iter().chain(self.log.iter()),
+                                &self.tool_calls,
+                            ),
+                            text_area.width,
+                        )
+                    }),
+            )
         };
-        let lines = paragraph.as_ref().map_or(0, |paragraph| {
-            paragraph.line_count(text_area.width).min(u16::MAX as usize) as u16
+        let lines = history.as_ref().map_or(0, |history| {
+            history
+                .paragraph
+                .line_count(text_area.width)
+                .min(u16::MAX as usize) as u16
         });
         if self.scroll > 0 && self.history_metrics.0 == text_area.width {
             self.scroll = self
@@ -269,11 +331,8 @@ impl App {
         let scroll = lines
             .saturating_sub(logarea.height)
             .saturating_sub(self.scroll);
-        if let Some(paragraph) = paragraph {
-            let paragraph = paragraph.scroll((scroll, 0));
-            frame.render_widget(&paragraph, text_area);
-            fill_user_backgrounds(frame.buffer_mut(), logarea);
-            self.history = Some(paragraph);
+        if let Some(history) = history {
+            self.history = Some(history.render(frame.buffer_mut(), logarea, text_area, scroll));
         }
         if count > 0 {
             let attachments = self
@@ -478,7 +537,6 @@ fn fill_user_backgrounds(buffer: &mut ratatui::buffer::Buffer, area: Rect) {
     }
     // Paragraph applies line styles to text cells. Extend each rendered user
     // row across the viewport, including rows created by wrapping or scrolling.
-    let mut previous_user = false;
     for y in area.y..area.bottom() {
         let user =
             (area.x..area.right()).any(|x| buffer[(x, y)].bg == theme::colors().user_background);
@@ -486,21 +544,16 @@ fn fill_user_backgrounds(buffer: &mut ratatui::buffer::Buffer, area: Rect) {
             for x in area.x..area.right() {
                 buffer[(x, y)].set_bg(theme::colors().user_background);
             }
-            if !previous_user && area.width > 0 {
-                buffer[(area.x, y)]
-                    .set_symbol("›")
-                    .set_fg(theme::colors().user);
-            }
         }
-        previous_user = user;
     }
 }
 
 fn history_text<'a>(
     entries: impl IntoIterator<Item = &'a Entry>,
     tools: &std::collections::HashMap<String, ToolDisplay>,
-) -> Text<'static> {
+) -> (Text<'static>, Vec<usize>) {
     let mut lines = Vec::new();
+    let mut user_starts = Vec::new();
     let mut body = String::new();
     let mut activity = Vec::new();
     let mut role = None;
@@ -514,7 +567,13 @@ fn history_text<'a>(
                 if role != Some(&entry.kind)
                     || entry.start && matches!(entry.kind, Kind::User | Kind::Notice)
                 {
-                    flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                    flush_body(
+                        &mut body,
+                        &mut lines,
+                        &mut user_starts,
+                        true,
+                        role == Some(&Kind::User),
+                    );
                     if entry.kind == Kind::Thought {
                         body.push_str("Thinking:\n");
                     }
@@ -541,6 +600,7 @@ fn history_text<'a>(
                 flush_body(
                     &mut body,
                     &mut lines,
+                    &mut user_starts,
                     activity.is_empty(),
                     role == Some(&Kind::User),
                 );
@@ -552,7 +612,13 @@ fn history_text<'a>(
             }
             Kind::Images(count) => {
                 close_tools(&mut lines, &mut activity);
-                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                flush_body(
+                    &mut body,
+                    &mut lines,
+                    &mut user_starts,
+                    true,
+                    role == Some(&Kind::User),
+                );
                 role = None;
                 if *count > 0 {
                     lines.push(Line::styled(
@@ -564,7 +630,13 @@ fn history_text<'a>(
             }
             Kind::Failure => {
                 close_tools(&mut lines, &mut activity);
-                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                flush_body(
+                    &mut body,
+                    &mut lines,
+                    &mut user_starts,
+                    true,
+                    role == Some(&Kind::User),
+                );
                 role = None;
                 lines.extend(
                     format!("✕ Request failed: {}", entry.text)
@@ -580,17 +652,29 @@ fn history_text<'a>(
             }
             Kind::Complete => {
                 close_tools(&mut lines, &mut activity);
-                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                flush_body(
+                    &mut body,
+                    &mut lines,
+                    &mut user_starts,
+                    true,
+                    role == Some(&Kind::User),
+                );
                 role = None;
             }
         }
     }
     close_tools(&mut lines, &mut activity);
-    flush_body(&mut body, &mut lines, false, role == Some(&Kind::User));
+    flush_body(
+        &mut body,
+        &mut lines,
+        &mut user_starts,
+        false,
+        role == Some(&Kind::User),
+    );
     while lines.last().is_some_and(|line| line.spans.is_empty()) {
         lines.pop();
     }
-    Text::from(lines)
+    (Text::from(lines), user_starts)
 }
 
 fn render_activity(
@@ -681,17 +765,29 @@ fn close_tools(lines: &mut Vec<Line<'static>>, activity: &mut Vec<Line<'static>>
     lines.push(Line::default());
 }
 
-fn flush_body(body: &mut String, lines: &mut Vec<Line<'static>>, spacing: bool, user: bool) {
+fn flush_body(
+    body: &mut String,
+    lines: &mut Vec<Line<'static>>,
+    user_starts: &mut Vec<usize>,
+    spacing: bool,
+    user: bool,
+) {
     let mut rendered = markdown::render(body);
     let has_content = !rendered.is_empty();
     if user {
+        if has_content {
+            user_starts.push(lines.len());
+        }
         for line in &mut rendered {
+            // Empty Markdown rows need a cell for Paragraph to retain their background.
+            if line.spans.is_empty() {
+                line.spans.push(Span::raw(" "));
+            }
             line.style = line
                 .style
                 .fg(theme::colors().user)
                 .bg(theme::colors().user_background);
             if theme::colors().user_background == Color::Reset {
-                line.spans.insert(0, Span::raw("› "));
                 line.style = line.style.add_modifier(Modifier::BOLD);
             }
         }
@@ -716,7 +812,7 @@ mod tests {
         let tools = std::collections::HashMap::from([("real".into(), tool)]);
         for role in [Kind::User, Kind::Agent] {
             let entries = [Entry::new(role, literal)];
-            let rendered = history_text(&entries, &tools);
+            let (rendered, _) = history_text(&entries, &tools);
             let text = rendered.to_string();
             for line in literal.lines() {
                 assert!(
@@ -730,7 +826,7 @@ mod tests {
 
     #[test]
     fn restored_transcript_keeps_user_and_agent_styling_separate() {
-        let rendered = history_text(
+        let (rendered, _) = history_text(
             &[
                 Entry::new(Kind::User, "Saved request"),
                 Entry::new(Kind::Agent, "Saved response"),
@@ -760,6 +856,7 @@ mod tests {
         let log = [Entry::new(Kind::Tool("startup".into()), "")];
         assert!(
             !history_text(&log, &tools)
+                .0
                 .to_string()
                 .contains("duplicate server")
         );
@@ -767,7 +864,7 @@ mod tests {
             .get_mut("startup")
             .unwrap()
             .update(&json!({"status":"failed"}));
-        let rendered = history_text(&log, &tools).to_string();
+        let rendered = history_text(&log, &tools).0.to_string();
         assert!(rendered.contains("✕ startup"));
         assert!(rendered.contains("MCP server was not started: duplicate server name."));
     }
@@ -780,7 +877,7 @@ mod tests {
                     Entry::new(Kind::Activity("completed".into()), format!("call {index}"))
                 })
                 .collect::<Vec<_>>();
-            let rendered = history_text(&source, &Default::default()).to_string();
+            let rendered = history_text(&source, &Default::default()).0.to_string();
             if count == 0 {
                 assert!(rendered.is_empty());
                 continue;
@@ -823,7 +920,7 @@ mod tests {
                 Entry::new(Kind::Activity("completed".into()), "final"),
             ])
             .collect::<Vec<_>>();
-        let rendered = history_text(&source, &Default::default()).to_string();
+        let rendered = history_text(&source, &Default::default()).0.to_string();
         let block = "┌ Tools\n│ … 1 earlier call\n│ ✓ read\n│ ✕ edit\n│ ● render\n└";
         assert_eq!(rendered.matches(block).count(), 2);
         assert!(rendered.contains(&format!("{block}\n\nChecking the result.")));
@@ -852,7 +949,7 @@ mod tests {
             ),
             Entry::new(Kind::Complete, ""),
         ];
-        let rendered = history_text(&source, &Default::default());
+        let (rendered, _) = history_text(&source, &Default::default());
         let text = rendered.to_string();
         assert!(text.contains("どの画面を、どう変更したいか教えてください。"));
         assert!(text.contains("┌ Tools\n│ ● read nodes\n│ ✓ Tool\n└"));
@@ -887,7 +984,7 @@ mod tests {
             Entry::new(Kind::User, "Use blue."),
             Entry::new(Kind::Agent, "Understood."),
         ];
-        let rendered = history_text(&entries, &Default::default());
+        let (rendered, _) = history_text(&entries, &Default::default());
         assert_eq!(
             rendered.to_string(),
             "First request\n\nChecking.\n\nUse blue.\n\nUnderstood."
@@ -898,7 +995,7 @@ mod tests {
 
     #[test]
     fn role_colors_cover_wrapped_rows_without_taking_header_rows() {
-        let rendered = history_text(
+        let (rendered, starts) = history_text(
             &[
                 Entry::new(Kind::User, "A long user message"),
                 Entry::new(Kind::Agent, "A reply"),
@@ -907,12 +1004,12 @@ mod tests {
         );
         assert_eq!(rendered.to_string(), "A long user message\n\nA reply");
         let mut buffer = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 14, 6));
-        ratatui::widgets::Widget::render(
-            Paragraph::new(rendered).wrap(Wrap { trim: false }),
-            Rect::new(2, 0, 12, 6),
+        History::new((rendered, starts), 12).render(
             &mut buffer,
+            Rect::new(0, 0, 14, 6),
+            Rect::new(2, 0, 12, 6),
+            0,
         );
-        fill_user_backgrounds(&mut buffer, Rect::new(0, 0, 14, 6));
         for y in 0..2 {
             assert_eq!(
                 buffer[(13, y)].bg,
@@ -923,5 +1020,108 @@ mod tests {
         assert_eq!(buffer[(0, 0)].symbol(), "›");
         assert_eq!(buffer[(2, 3)].symbol(), "A");
         assert_eq!(buffer[(13, 3)].bg, ratatui::style::Color::Reset);
+    }
+
+    #[test]
+    fn multiblock_user_message_keeps_one_background_and_marker_while_scrolling() {
+        let entries = [
+            Entry::new(
+                Kind::User,
+                "iPad向けのこの画面配置はだいぶ問題がある\n\n- 音声再生ボタンの位置\n- 品詞表示の位置\n- 詳しい意味、例文の位置\n\nこれらの観点で配置とデザインを見直し",
+            ),
+            Entry::new(Kind::Agent, "Reply."),
+        ];
+        for width in [12, 24, 80] {
+            let mut history = History::new(history_text(&entries, &Default::default()), width);
+            let height = history.paragraph.line_count(width) as u16;
+            let area = Rect::new(1, 1, width + 4, height);
+            let text_area = area.inner(Margin {
+                horizontal: 2,
+                vertical: 0,
+            });
+            let mut buffer = ratatui::buffer::Buffer::empty(Rect::new(0, 0, width + 6, height + 2));
+            history = history.render(&mut buffer, area, text_area, 0);
+            assert_eq!(
+                buffer
+                    .content
+                    .iter()
+                    .filter(|cell| cell.symbol() == "›")
+                    .count(),
+                1
+            );
+            assert_eq!(buffer[(area.x, area.y)].symbol(), "›");
+            let user_rows = height - 2;
+            for y in area.y..area.y + user_rows {
+                for x in area.x..area.right() {
+                    assert_eq!(
+                        buffer[(x, y)].bg,
+                        theme::colors().user_background,
+                        "width {width}, row {y}, column {x}"
+                    );
+                }
+            }
+            for y in area.y + user_rows..area.bottom() {
+                assert_eq!(buffer[(area.x, y)].bg, Color::Reset);
+            }
+            // A viewport beginning inside the same submission must not invent a new start.
+            for scroll in 1..user_rows {
+                buffer.reset();
+                history = history.render(&mut buffer, area, text_area, scroll);
+                assert!(
+                    !buffer.content.iter().any(|cell| cell.symbol() == "›"),
+                    "width {width}, scroll {scroll}"
+                );
+                assert_eq!(buffer[(area.x, area.y)].bg, theme::colors().user_background);
+            }
+        }
+    }
+
+    #[test]
+    fn adjacent_user_submissions_keep_distinct_markers_and_backgrounds() {
+        let entries = [
+            Entry::new(
+                Kind::User,
+                "First request with several wrapped rows\n\n- Point\n\nEnding",
+            ),
+            Entry::new(Kind::User, "Second"),
+            Entry::new(Kind::User, "Third"),
+            Entry::new(Kind::Agent, "Reply."),
+        ];
+        let mut history = History::new(history_text(&entries, &Default::default()), 12);
+        let height = history.paragraph.line_count(12) as u16;
+        let area = Rect::new(0, 0, 16, height);
+        let text_area = area.inner(Margin {
+            horizontal: 2,
+            vertical: 0,
+        });
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        history = history.render(&mut buffer, area, text_area, 0);
+        assert_eq!(
+            buffer
+                .content
+                .iter()
+                .filter(|cell| cell.symbol() == "›")
+                .count(),
+            3
+        );
+        for text in ["First", "Second", "Third"] {
+            let row = (0..height)
+                .find(|&y| {
+                    (0..area.width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                        .contains(text)
+                })
+                .unwrap();
+            assert_eq!(buffer[(0, row)].symbol(), "›", "{text}");
+            if row > 0 {
+                assert_eq!(buffer[(0, row - 1)].bg, Color::Reset);
+            }
+            buffer.reset();
+            history = history.render(&mut buffer, area, text_area, row);
+            assert_eq!(buffer[(0, 0)].symbol(), "›", "{text} at viewport start");
+            buffer.reset();
+            history = history.render(&mut buffer, area, text_area, 0);
+        }
     }
 }
