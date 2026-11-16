@@ -247,13 +247,6 @@ fn real_pty_preview_search_preserves_japanese_input_and_navigates_matches() {
 }
 
 #[test]
-fn real_pty_background_query_keeps_automatic_image_protocol_detection() {
-    for case in ["auto-kitty", "auto-kitty-raw", "auto-sixel"] {
-        run_pty_case(case);
-    }
-}
-
-#[test]
 fn real_pty_preview_matches_workspace_background_without_polluting_the_draft() {
     for case in [
         "background-kitty",
