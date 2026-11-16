@@ -54,6 +54,7 @@ url = "2.5.7"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ctrlc = "3.5.2"
 pulldown-cmark = { version = "0.13.6", default-features = false, features = ["simd"], optional = true }
+ignore = "=0.4.34"
 
 [dev-dependencies]
 png = "=0.18.1"

@@ -15,9 +15,11 @@ lazypencil tui new.pen --create --agent codex
 Running without a file opens a document picker. Type to filter, use arrows or
 `j`/`k` to select, and press Enter to open. Ctrl+L switches between filtering and
 entering a file or directory path;
-Esc clears the filter and Ctrl+C exits. Discovery checks the current directory
-before its children, then continues one level at a time. If a large directory is
-only partially listed, narrow the search or enter the file's path directly.
+Esc clears the filter and Ctrl+C exits. Discovery searches paths not ignored by
+`.gitignore` first, then ignored files and directories. Each group is searched
+from shallow to deep, so dependency directories do not delay ordinary documents.
+If a large directory is only partially listed, narrow the search or enter the
+file's path directly.
 
 Use a terminal at least 50 columns by 16 rows. `--create` needs an explicit filename
 and preserves existing files. For scripted output, use the CLI or MCP rather than

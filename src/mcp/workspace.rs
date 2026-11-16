@@ -48,7 +48,7 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool::<List>(
             ToolKind::ListDocuments,
-            "Discover .pen files below directory (default server working directory), recursively by default. Does not parse documents or follow directory symlinks. Search stops after 10,000 documents, 100,000 entries or 5 seconds; complete and stop_reason identify partial results. query filters collected relative paths. Reuse the same directory, recursive and query with cursor to page this retained listing.",
+            "Discover .pen files below directory (default server working directory), recursively by default. Searches paths not ignored by .gitignore before ignored paths, shallow to deep in each group. Does not parse documents or follow directory symlinks. Search stops after 10,000 documents, 100,000 entries or 5 seconds; complete and stop_reason identify partial results. query filters collected relative paths. Reuse the same directory, recursive and query with cursor to page this retained listing.",
         ),
     ]
 }

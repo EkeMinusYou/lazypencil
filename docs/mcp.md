@@ -40,12 +40,16 @@ a path on the same connection reuses its existing ID. Use `close_document` with
 Use `query` to filter collected relative paths, `recursive` to change traversal,
 and `limit` (1–500) with `cursor` to page results. Repeat the same directory,
 recursive and query values on later pages.
-Discovery checks the requested directory first, then continues one level at a time.
+Discovery searches paths not ignored by `.gitignore` first, starting with the
+requested directory and continuing one level at a time. Ignored files and
+directories are searched afterward, also from shallow to deep. Parent and nested
+`.gitignore` files and `!` exceptions determine priority, rather than excluding
+documents from discovery.
 
 Discovery stops at 10,000 documents, 100,000 entries or five seconds. Check
 `complete`, `stop_reason`, `entries_scanned` and `unreadable_directories` before
-treating a result as a complete listing. Symlinks are skipped; `.gitignore` is not
-applied. Listings are retained for five minutes, up to four at a time.
+treating a result as a complete listing. Symlinks are skipped.
+Listings are retained for five minutes, up to four at a time.
 After `SNAPSHOT_UNAVAILABLE`, restart without a cursor.
 
 Relative paths resolve from the server's working directory, which is reported
