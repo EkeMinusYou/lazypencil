@@ -242,14 +242,10 @@ impl Paths<'_> {
                     .ok_or_else(|| invalid("Missing generated override ancestry"))?
             };
         }
-        if self
+        Ok(self
             .removed
             .get("")
-            .is_some_and(|generation| address.generation < *generation)
-        {
-            return Ok(true);
-        }
-        Ok(false)
+            .is_some_and(|generation| address.generation < *generation))
     }
 
     fn address(&mut self, path: &str) -> Result<Address> {
