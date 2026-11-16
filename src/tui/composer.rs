@@ -1,4 +1,5 @@
 //! Conversation history and its attached prompt share one visual surface.
+use super::transcript::{Entry, Kind};
 use super::*;
 use ratatui::{
     layout::Margin,
@@ -49,7 +50,7 @@ impl ToolDisplay {
             self.title = clean(title).replace(['\n', '\t'], " ");
         }
         if let Some(status) = update["status"].as_str() {
-            self.status = status.into();
+            self.status = clean(status).replace(['\n', '\t'], " ");
         }
         if let Some(content) = update["content"].as_array() {
             self.details = clean(
@@ -249,8 +250,11 @@ impl App {
             None
         } else {
             Some(self.history.take().unwrap_or_else(|| {
-                let log = format!("{}{}", self.saved_log, self.log);
-                Paragraph::new(history_text(&log, &self.tool_calls)).wrap(Wrap { trim: false })
+                Paragraph::new(history_text(
+                    self.saved_log.iter().chain(self.log.iter()),
+                    &self.tool_calls,
+                ))
+                .wrap(Wrap { trim: false })
             }))
         };
         let lines = paragraph.as_ref().map_or(0, |paragraph| {
@@ -492,137 +496,158 @@ fn fill_user_backgrounds(buffer: &mut ratatui::buffer::Buffer, area: Rect) {
     }
 }
 
-fn history_text(
-    log: &str,
+fn history_text<'a>(
+    entries: impl IntoIterator<Item = &'a Entry>,
     tools: &std::collections::HashMap<String, ToolDisplay>,
 ) -> Text<'static> {
     let mut lines = Vec::new();
     let mut body = String::new();
-    let ranges = markdown::code_ranges(log);
-    let mut ranges = ranges.iter().peekable();
-    let mut offset = 0;
     let mut activity = Vec::new();
-    let mut user = false;
-    for raw in log.split_inclusive('\n') {
-        let line = raw.strip_suffix('\n').unwrap_or(raw);
-        while ranges.peek().is_some_and(|range| range.end <= offset) {
-            ranges.next();
-        }
-        let code = ranges.peek().is_some_and(|range| range.contains(&offset));
-        offset += raw.len();
-        if code {
-            close_tools(&mut lines, &mut activity);
-            body.push_str(raw);
-            continue;
-        }
-        let tool = line
-            .strip_prefix("[tool_call] ")
-            .and_then(|id| serde_json::from_str::<String>(id).ok())
-            .and_then(|id| tools.get(&id));
-        if let Some((status, title)) = tool
-            .map(|tool| (tool.status.as_str(), tool.title.as_str()))
-            .or_else(|| {
-                line.strip_prefix('[')
-                    .and_then(|line| line.split_once("] "))
-            })
-            && let Some((icon, color)) = match status {
-                "running" | "in_progress" => Some(("●", theme::colors().working)),
-                "pending" => Some(("○", theme::colors().key)),
-                "completed" => Some(("✓", theme::colors().success)),
-                "failed" => Some(("✕", theme::colors().error)),
-                "cancelled" | "canceled" => Some(("−", theme::colors().muted)),
-                _ => None,
-            }
-        {
-            flush_body(&mut body, &mut lines, activity.is_empty(), user);
-            let title = if let Some(name) = title.strip_prefix("mcp.lazypencil.") {
-                name.replace('_', " ")
-            } else if let Some((_, name)) = title
-                .strip_prefix("mcp__lazypencil_bound_")
-                .and_then(|name| name.split_once("__"))
-                .or_else(|| {
-                    title
-                        .strip_prefix("mcp.lazypencil_bound_")
-                        .and_then(|name| name.split_once('.'))
-                })
-            {
-                name.replace('_', " ")
-            } else {
-                title.to_owned()
-            };
-            activity.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(theme::colors().muted)),
-                Span::styled(
-                    format!("{icon} "),
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    title,
-                    Style::default().fg(if status == "failed" {
-                        theme::colors().error
-                    } else {
-                        theme::colors().secondary
-                    }),
-                ),
-            ]));
-            if status == "failed"
-                && let Some(tool) = tool
-                && !tool.details.trim().is_empty()
-            {
+    let mut role = None;
+    for entry in entries {
+        match &entry.kind {
+            Kind::User | Kind::Agent | Kind::Thought | Kind::Notice => {
+                if !activity.is_empty() && entry.text.trim().is_empty() {
+                    continue;
+                }
                 close_tools(&mut lines, &mut activity);
-                lines.extend(tool.details.trim().lines().map(|line| {
-                    Line::styled(line.to_owned(), Style::default().fg(theme::colors().error))
-                }));
+                if role != Some(&entry.kind)
+                    || entry.start && matches!(entry.kind, Kind::User | Kind::Notice)
+                {
+                    flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                    if entry.kind == Kind::Thought {
+                        body.push_str("Thinking:\n");
+                    }
+                }
+                role = Some(&entry.kind);
+                body.push_str(&entry.text);
+            }
+            Kind::Tool(_) | Kind::Activity(_) => {
+                let tool = match &entry.kind {
+                    Kind::Tool(id) => tools.get(id),
+                    _ => None,
+                };
+                let (status, title, details) = if let Some(tool) = tool {
+                    (
+                        tool.status.as_str(),
+                        tool.title.as_str(),
+                        tool.details.as_str(),
+                    )
+                } else if let Kind::Activity(status) = &entry.kind {
+                    (status.as_str(), entry.text.as_str(), "")
+                } else {
+                    ("running", "Tool", "")
+                };
+                flush_body(
+                    &mut body,
+                    &mut lines,
+                    activity.is_empty(),
+                    role == Some(&Kind::User),
+                );
+                role = None;
+                if !render_activity(&mut lines, &mut activity, status, title, details) {
+                    close_tools(&mut lines, &mut activity);
+                    lines.push(Line::raw(format!("[{status}] {title}")));
+                }
+            }
+            Kind::Images(count) => {
+                close_tools(&mut lines, &mut activity);
+                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                role = None;
+                if *count > 0 {
+                    lines.push(Line::styled(
+                        format!("▧ {count} images"),
+                        Style::default().fg(theme::colors().key),
+                    ));
+                    lines.push(Line::default());
+                }
+            }
+            Kind::Failure => {
+                close_tools(&mut lines, &mut activity);
+                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                role = None;
+                lines.extend(
+                    format!("✕ Request failed: {}", entry.text)
+                        .lines()
+                        .map(|line| {
+                            Line::styled(
+                                line.to_owned(),
+                                Style::default().fg(theme::colors().error),
+                            )
+                        }),
+                );
                 lines.push(Line::default());
             }
-            continue;
-        }
-        if matches!(line, "[0 images]" | "Request complete") {
-            continue;
-        }
-        if !activity.is_empty() && line.trim().is_empty() {
-            continue;
-        }
-        close_tools(&mut lines, &mut activity);
-        let styled = if let Some(message) = line
-            .strip_prefix("You:")
-            .or_else(|| line.strip_prefix("You (mid-turn):"))
-        {
-            flush_body(&mut body, &mut lines, true, user);
-            if lines.last().is_some_and(|line| !line.spans.is_empty()) {
-                lines.push(Line::default());
+            Kind::Complete => {
+                close_tools(&mut lines, &mut activity);
+                flush_body(&mut body, &mut lines, true, role == Some(&Kind::User));
+                role = None;
             }
-            user = true;
-            body.push_str(message.trim_start());
-            body.push('\n');
-            continue;
-        } else if matches!(line, "Codex:" | "Claude:" | "Agent:") {
-            flush_body(&mut body, &mut lines, true, user);
-            user = false;
-            continue;
-        } else if line.starts_with("Request failed:") {
-            Line::styled(
-                format!("✕ {line}"),
-                Style::default().fg(theme::colors().error),
-            )
-        } else if line.starts_with('[') && line.ends_with(" images]") {
-            Line::styled(
-                format!("▧ {}", line.trim_matches(['[', ']'])),
-                Style::default().fg(theme::colors().key),
-            )
-        } else {
-            body.push_str(raw);
-            continue;
-        };
-        flush_body(&mut body, &mut lines, true, user);
-        lines.push(styled);
+        }
     }
     close_tools(&mut lines, &mut activity);
-    flush_body(&mut body, &mut lines, false, user);
+    flush_body(&mut body, &mut lines, false, role == Some(&Kind::User));
     while lines.last().is_some_and(|line| line.spans.is_empty()) {
         lines.pop();
     }
     Text::from(lines)
+}
+
+fn render_activity(
+    lines: &mut Vec<Line<'static>>,
+    activity: &mut Vec<Line<'static>>,
+    status: &str,
+    title: &str,
+    details: &str,
+) -> bool {
+    let (icon, color) = match status {
+        "running" | "in_progress" => ("●", theme::colors().working),
+        "pending" => ("○", theme::colors().key),
+        "completed" => ("✓", theme::colors().success),
+        "failed" => ("✕", theme::colors().error),
+        "cancelled" | "canceled" => ("−", theme::colors().muted),
+        _ => return false,
+    };
+    let title = if let Some(name) = title.strip_prefix("mcp.lazypencil.") {
+        name.replace('_', " ")
+    } else if let Some((_, name)) = title
+        .strip_prefix("mcp__lazypencil_bound_")
+        .and_then(|name| name.split_once("__"))
+        .or_else(|| {
+            title
+                .strip_prefix("mcp.lazypencil_bound_")
+                .and_then(|name| name.split_once('.'))
+        })
+    {
+        name.replace('_', " ")
+    } else {
+        title.to_owned()
+    };
+    activity.push(Line::from(vec![
+        Span::styled("│ ", Style::default().fg(theme::colors().muted)),
+        Span::styled(
+            format!("{icon} "),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            title,
+            Style::default().fg(if status == "failed" {
+                theme::colors().error
+            } else {
+                theme::colors().secondary
+            }),
+        ),
+    ]));
+    if status == "failed" && !details.trim().is_empty() {
+        close_tools(lines, activity);
+        lines.extend(
+            details.trim().lines().map(|line| {
+                Line::styled(line.to_owned(), Style::default().fg(theme::colors().error))
+            }),
+        );
+        lines.push(Line::default());
+    }
+    true
 }
 
 fn close_tools(lines: &mut Vec<Line<'static>>, activity: &mut Vec<Line<'static>>) {
@@ -684,9 +709,32 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn literal_message_lines_do_not_become_roles_statuses_or_tool_calls() {
+        let literal = "You: literal role\nYou (mid-turn): literal input\nAgent:\nCodex:\nClaude:\nRequest complete\n[0 images]\n[completed] literal activity\n[tool_call] \"real\"\nRequest failed: literal text\n";
+        let mut tool = ToolDisplay::default();
+        tool.update(&json!({"title":"Actual tool", "status":"completed"}));
+        let tools = std::collections::HashMap::from([("real".into(), tool)]);
+        for role in [Kind::User, Kind::Agent] {
+            let entries = [Entry::new(role, literal)];
+            let rendered = history_text(&entries, &tools);
+            let text = rendered.to_string();
+            for line in literal.lines() {
+                assert!(
+                    text.lines().any(|actual| actual == line),
+                    "Missing literal {line:?}:\n{text}"
+                );
+            }
+            assert!(!text.contains("Actual tool"));
+        }
+    }
+
+    #[test]
     fn restored_transcript_keeps_user_and_agent_styling_separate() {
         let rendered = history_text(
-            "You:\nSaved request\n\nAgent:\nSaved response\n",
+            &[
+                Entry::new(Kind::User, "Saved request"),
+                Entry::new(Kind::Agent, "Saved response"),
+            ],
             &Default::default(),
         );
         let request = rendered
@@ -709,9 +757,9 @@ mod tests {
         tool.update(&json!({"title":"mcp__lazypencil_bound_test__startup","status":"in_progress",
             "content":[{"type":"content","content":{"type":"text","text":"MCP server was not started: duplicate server name."}}]}));
         let mut tools = std::collections::HashMap::from([("startup".into(), tool)]);
-        let log = "[tool_call] \"startup\"\n";
+        let log = [Entry::new(Kind::Tool("startup".into()), "")];
         assert!(
-            !history_text(log, &tools)
+            !history_text(&log, &tools)
                 .to_string()
                 .contains("duplicate server")
         );
@@ -719,7 +767,7 @@ mod tests {
             .get_mut("startup")
             .unwrap()
             .update(&json!({"status":"failed"}));
-        let rendered = history_text(log, &tools).to_string();
+        let rendered = history_text(&log, &tools).to_string();
         assert!(rendered.contains("✕ startup"));
         assert!(rendered.contains("MCP server was not started: duplicate server name."));
     }
@@ -728,8 +776,10 @@ mod tests {
     fn tool_runs_show_only_the_latest_three_calls() {
         for count in 0_usize..=6 {
             let source = (0..count)
-                .map(|index| format!("[completed] call {index}\n\n"))
-                .collect::<String>();
+                .map(|index| {
+                    Entry::new(Kind::Activity("completed".into()), format!("call {index}"))
+                })
+                .collect::<Vec<_>>();
             let rendered = history_text(&source, &Default::default()).to_string();
             if count == 0 {
                 assert!(rendered.is_empty());
@@ -755,11 +805,24 @@ mod tests {
 
     #[test]
     fn tool_runs_collapse_independently_across_prose_and_code() {
-        let calls =
-            "[completed] old\n\n[completed] read\n\n[failed] edit\n\n[in_progress] render\n\n";
-        let source = format!(
-            "{calls}Checking the result.\n\n{calls}```text\n[completed] literal\n```\n\n[completed] final\n"
-        );
+        let calls = || {
+            [
+                ("completed", "old"),
+                ("completed", "read"),
+                ("failed", "edit"),
+                ("in_progress", "render"),
+            ]
+            .map(|(status, title)| Entry::new(Kind::Activity(status.into()), title))
+        };
+        let source = calls()
+            .into_iter()
+            .chain([Entry::new(Kind::Agent, "Checking the result.")])
+            .chain(calls())
+            .chain([
+                Entry::new(Kind::Agent, "```text\n[completed] literal\n```"),
+                Entry::new(Kind::Activity("completed".into()), "final"),
+            ])
+            .collect::<Vec<_>>();
         let rendered = history_text(&source, &Default::default()).to_string();
         let block = "┌ Tools\n│ … 1 earlier call\n│ ✓ read\n│ ✕ edit\n│ ● render\n└";
         assert_eq!(rendered.matches(block).count(), 2);
@@ -771,8 +834,25 @@ mod tests {
 
     #[test]
     fn transcript_formats_markdown_and_activity_but_preserves_code() {
-        let source = "You: よろしく\n[0 images]\n\nCodex:\n**どの画面を、どう変更したいか**教えてください。\n\n[in_progress] mcp.lazypencil.read_nodes\n\n[completed] Tool\n\n```text\n[completed] literal status\nYou: literal role\n[0 images]\n**literal code**\n```\n\nRequest complete\n";
-        let rendered = history_text(source, &Default::default());
+        let source = [
+            Entry::new(Kind::User, "よろしく"),
+            Entry::new(Kind::Images(0), ""),
+            Entry::new(
+                Kind::Agent,
+                "**どの画面を、どう変更したいか**教えてください。",
+            ),
+            Entry::new(
+                Kind::Activity("in_progress".into()),
+                "mcp.lazypencil.read_nodes",
+            ),
+            Entry::new(Kind::Activity("completed".into()), "Tool"),
+            Entry::new(
+                Kind::Agent,
+                "```text\n[completed] literal status\nYou: literal role\n[0 images]\n**literal code**\n```",
+            ),
+            Entry::new(Kind::Complete, ""),
+        ];
+        let rendered = history_text(&source, &Default::default());
         let text = rendered.to_string();
         assert!(text.contains("どの画面を、どう変更したいか教えてください。"));
         assert!(text.contains("┌ Tools\n│ ● read nodes\n│ ✓ Tool\n└"));
@@ -801,26 +881,28 @@ mod tests {
 
     #[test]
     fn mid_turn_messages_use_the_same_style_as_regular_prompts() {
-        for agent in ["Codex", "Claude"] {
-            let rendered = history_text(
-                &format!(
-                    "You: First request\n\n{agent}:\nChecking.\n\nYou (mid-turn): Use blue.\n\n{agent}:\nUnderstood.\n"
-                ),
-                &Default::default(),
-            );
-            assert_eq!(
-                rendered.to_string(),
-                "First request\n\nChecking.\n\nUse blue.\n\nUnderstood."
-            );
-            assert_eq!(rendered.lines[0].style, rendered.lines[4].style);
-            assert_ne!(rendered.lines[4].style.bg, rendered.lines[6].style.bg);
-        }
+        let entries = [
+            Entry::new(Kind::User, "First request"),
+            Entry::new(Kind::Agent, "Checking."),
+            Entry::new(Kind::User, "Use blue."),
+            Entry::new(Kind::Agent, "Understood."),
+        ];
+        let rendered = history_text(&entries, &Default::default());
+        assert_eq!(
+            rendered.to_string(),
+            "First request\n\nChecking.\n\nUse blue.\n\nUnderstood."
+        );
+        assert_eq!(rendered.lines[0].style, rendered.lines[4].style);
+        assert_ne!(rendered.lines[4].style.bg, rendered.lines[6].style.bg);
     }
 
     #[test]
     fn role_colors_cover_wrapped_rows_without_taking_header_rows() {
         let rendered = history_text(
-            "You: A long user message\n[0 images]\n\nClaude:\nA reply\n",
+            &[
+                Entry::new(Kind::User, "A long user message"),
+                Entry::new(Kind::Agent, "A reply"),
+            ],
             &Default::default(),
         );
         assert_eq!(rendered.to_string(), "A long user message\n\nA reply");

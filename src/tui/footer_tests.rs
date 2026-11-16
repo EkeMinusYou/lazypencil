@@ -201,7 +201,8 @@ fn fit_without_selection_reports_only_in_footer_and_preserves_conversation_and_d
         )
         .unwrap();
         app.focus = Focus::Preview;
-        app.append("\nYou: Keep this conversation\n\nCodex:\nExisting response\n");
+        app.append_user("Keep this conversation");
+        app.append_agent("Existing response");
         let conversation_log = app.log.clone();
         app.editor = editor("Keep this draft");
         let error = app

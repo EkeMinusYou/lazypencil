@@ -205,7 +205,8 @@ fn collapsed_panels_expand_preview_skip_focus_and_preserve_editor_and_tree_state
         app.navigate_node_tree(Nav::ExpandNode);
         assert_eq!(app.filtered_nodes().len(), 2);
         app.insert_text("日本語の下書き\n編集中");
-        app.append("\nYou: Earlier prompt\n\nCodex:\nEarlier response\n");
+        app.append_user("Earlier prompt");
+        app.append_agent("Earlier response");
         app.scroll = 7;
         let draft = app.editor.lines().to_vec();
         let cursor = app.editor.cursor();
@@ -836,7 +837,7 @@ fn initial_preview_loading_is_distinct_from_failure_and_explicit_retry() {
         assert!(loaded.contains("No nodes"));
         assert!(!loaded.contains("Preview unavailable"));
         assert_eq!(app.log, conversation_log, "Preview errors do not belong in Agent history");
-        assert!(!app.log.contains("Stale preview failure"));
+        assert!(!app.log.text().contains("Stale preview failure"));
         std::fs::write(app.conversation.store().path(), json!({"version":"2.21","children":[{
             "type":"rectangle","id":"ready","name":"Ready node","width":20,"height":10,"fill":"#00FF00"
         }]}).to_string()).unwrap();
@@ -939,13 +940,13 @@ fn repeated_preview_errors_are_quiet_without_blocking_repair_or_explicit_retry()
                         .message
                         .contains("supported versions are 2.19, 2.21, 2.22")
                 );
-                assert!(!app.log.contains("supported versions are 2.19, 2.21, 2.22"));
+                assert!(!app.log.text().contains("supported versions are 2.19, 2.21, 2.22"));
             }
             assert_eq!(std::fs::read_to_string(store.path()).unwrap(), document);
             assert_eq!(app.editor.lines(), &["日本語の未送信プロンプト"]);
             assert!(!app.conversation.active());
         }
-        assert!(!app.log.contains("Cannot resolve version"));
+        assert!(!app.log.text().contains("Cannot resolve version"));
         app.conversation.close().await.unwrap();
     });
 }
@@ -1519,7 +1520,8 @@ fn workspace_focus_uses_color_without_changing_borders() {
     runtime().block_on(async {
         let temp = TempDir::new().unwrap();
         let mut app = app(&temp, "echo");
-        app.append("You: Focus check\n\nCodex:\nResponse stays in the conversation\n");
+        app.append_user("Focus check");
+        app.append_agent("Response stays in the conversation");
         let area = Rect::new(0, 0, 130, 34);
         for (name, preset, background) in [
             ("light", Theme::Light, [250, 250, 250]),

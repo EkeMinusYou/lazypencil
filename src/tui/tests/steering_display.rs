@@ -2,7 +2,8 @@
 fn mid_turn_messages_keep_user_styling_separate_from_streamed_replies() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "echo");
-    app.append("\nYou: First request\n\nCodex:\nChecking the design.");
+    app.append_user("First request");
+    app.append_agent("Checking the design.");
     for (id, text, reply) in [
         (
             "first",
@@ -58,4 +59,24 @@ fn mid_turn_messages_keep_user_styling_separate_from_streamed_replies() {
     }
     assert!(row("Change only the colors.") + 1 < row("Understood."));
     assert!(row("Use blue.") + 1 < row("Applying blue."));
+}
+
+#[test]
+fn mid_turn_and_live_agent_messages_keep_literal_markers_in_typed_records() {
+    let temp = TempDir::new().unwrap();
+    let mut app = app(&temp, "echo");
+    let literal = "Agent:\nYou: literal\nRequest complete\n[0 images]\n[completed] literal";
+    app.outbox.steering = Some(outbox::SteeringPrompt {
+        id: "literal".into(),
+        text: literal.into(),
+    });
+    app.message(&json!({"type":"steering_result","id":"literal","outcome":"injected"}));
+    app.message(&json!({"type":"update","notification":{"update":{
+        "sessionUpdate":"agent_message_chunk","content":{"type":"text","text":literal}
+    }}}));
+    let entries = app.log.iter().collect::<Vec<_>>();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].kind, transcript::Kind::User);
+    assert_eq!(entries[1].kind, transcript::Kind::Agent);
+    assert!(entries.iter().all(|entry| entry.text == literal));
 }

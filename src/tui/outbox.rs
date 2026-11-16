@@ -203,11 +203,7 @@ impl App {
         }
         let input = self.outbox.steering.take().expect("pending steering");
         if value["outcome"] == "injected" {
-            self.append(&format!(
-                "\nYou (mid-turn): {}\n\n{:?}:\n",
-                input.text,
-                self.conversation.settings().agent
-            ));
+            self.append_user(&input.text);
             self.set_status("Mid-turn input delivered".into());
         } else {
             self.outbox.queued.push_front(Prompt {
@@ -219,7 +215,7 @@ impl App {
                 self.set_status("The turn could not accept input; queued for the next turn".into());
             } else {
                 self.outbox.paused = true;
-                self.append("\nMid-turn delivery was not confirmed. Input retained in the paused queue; review saved logs before resuming to avoid repeating it.\n");
+                self.append_notice("\nMid-turn delivery was not confirmed. Input retained in the paused queue; review saved logs before resuming to avoid repeating it.\n");
                 self.set_attention_status(
                     "Mid-turn delivery unconfirmed; queue paused for review".into(),
                 );
@@ -294,21 +290,23 @@ impl App {
         }
         self.turn_pending = true;
         if let Err(error) = self.conversation.remember_for_tui() {
-            self.append(&format!(
-                "\nCould not remember this conversation: {error}\n"
-            ));
+            self.append_notice(&format!("Could not remember this conversation: {error}"));
         }
         self.turn_sequence = self.turn_sequence.wrapping_add(1);
         self.turn_started = Some(Instant::now());
         self.outbox.draft = Some(self.editor.lines().join("\n"));
         self.outbox.save(self.conversation.directory())?;
-        self.append(&format!(
-            "\nYou: {}{}\n[{} images]\n\n{:?}:\n",
+        self.append_user(&format!(
+            "{}{}",
             prompt.text,
-            references::history(&prompt.references),
-            prompt.images.len(),
-            self.conversation.settings().agent
+            references::history(&prompt.references)
         ));
+        if !prompt.images.is_empty() {
+            self.append_entry(transcript::Entry::new(
+                transcript::Kind::Images(prompt.images.len()),
+                "",
+            ));
+        }
         self.scroll = 0;
         self.clear_status();
         self.dirty = true;

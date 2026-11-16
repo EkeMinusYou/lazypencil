@@ -141,7 +141,7 @@ fn permission_modal_can_answer_and_cancel_without_blocking_the_event_loop() {
 fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "echo");
-    app.append("Inspecting the document.\n");
+    app.append_agent("Inspecting the document.\n");
     for (id, title) in [
         ("read", "mcp.lazypencil.read_nodes"),
         ("render", "mcp.lazypencil.render"),
@@ -151,7 +151,7 @@ fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
     for id in ["render", "read"] {
         app.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call_update","toolCallId":id,"status":"completed"}}}));
     }
-    app.append("\nThe document is ready.\n");
+    app.append_agent("\nThe document is ready.\n");
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 36)).unwrap();
     terminal
         .draw(|frame| {
@@ -205,7 +205,7 @@ fn tool_updates_keep_names_and_share_a_separate_block_from_prose() {
 fn tool_runs_stay_compact_and_refresh_visible_statuses() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "echo");
-    app.append("Inspecting the document.\n");
+    app.append_agent("Inspecting the document.\n");
     for index in 0..20 {
         app.message(&json!({"type":"update","notification":{"update":{
             "sessionUpdate":"tool_call", "toolCallId":index.to_string(),
@@ -249,7 +249,7 @@ fn tool_runs_stay_compact_and_refresh_visible_statuses() {
     assert!(!text.contains("│ ● Call 19"));
     assert_eq!(text.matches("earlier calls").count(), 1);
     assert_eq!(app.tool_calls.len(), 20);
-    assert_eq!(app.log.matches("[tool_call]").count(), 20);
+    assert_eq!(app.log.tool_ids().count(), 20);
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
         assert!(footer[1].contains("Ctrl+C cancel") && footer[1].contains("Alt+A show Agent"));
         app.agent_collapsed = false;
         app.focus = Focus::Prompt;
-        app.append("Checking the document now.\n");
+        app.append_agent("Checking the document now.\n");
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
         terminal
@@ -320,7 +320,7 @@ fn activity_indicator_stays_above_the_prompt_when_history_scrolls() {
             "Short conversations keep the indicator near the input"
         );
         for number in 0..45 {
-            app.append(&format!("\nOutput line {number:02}\n"));
+            app.append_agent(&format!("\nOutput line {number:02}\n"));
         }
         terminal
             .draw(|frame| {

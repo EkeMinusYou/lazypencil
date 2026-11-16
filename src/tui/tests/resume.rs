@@ -133,7 +133,7 @@ fn restored_history_ignores_native_replay_until_ready_and_keeps_fresh_output() {
             resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":format!("REPLAYED_OLD_{number}\n")}}}}));
             resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"tool_call","toolCallId":number.to_string(),"title":"Replayed tool","status":"completed"}}}));
         }
-        assert!(!resumed.log.contains("REPLAYED_OLD"));
+        assert!(!resumed.log.text().contains("REPLAYED_OLD"));
         assert!(resumed.tool_calls.is_empty());
         assert_eq!(resumed.scroll, 0);
         let options = json!([{"id":"model","category":"model","currentValue":"restored-model"}]);
@@ -145,7 +145,7 @@ fn restored_history_ignores_native_replay_until_ready_and_keeps_fresh_output() {
         assert!(text.contains("LATEST_SAVED_RESPONSE"));
         resumed.message(&json!({"type":"ready","response":{"configOptions":options}}));
         resumed.message(&json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"FRESH_RESPONSE"}}}}));
-        assert!(resumed.log.contains("FRESH_RESPONSE"));
+        assert!(resumed.log.text().contains("FRESH_RESPONSE"));
         assert_eq!(resumed.editor.lines(), ["Preserved draft"]);
         assert!(resumed.permissions.is_empty());
     });
@@ -228,7 +228,7 @@ fn resumed_conversation_restores_history_draft_images_and_pauses_all_pending_del
         assert!(resumed.outbox.paused);
         assert_eq!(resumed.outbox.queued.len(), 2);
         restored_history(&mut resumed).await;
-        assert!(resumed.saved_log.contains("以前の回答です"));
+        assert!(resumed.saved_log.text().contains("以前の回答です"));
         assert!(resumed.permissions.is_empty());
         assert!(resumed.tool_calls.is_empty());
         assert!(!resumed.conversation.active());
@@ -252,9 +252,9 @@ fn conversation_history_loads_older_pages_on_scroll_and_clears_on_new_selection(
         saved_log(&app, 1, &body);
         app.restore_history();
         restored_history(&mut app).await;
-        assert!(app.saved_log.contains("LATEST"));
-        assert!(!app.saved_log.contains("OLDEST"));
-        app.append("\nLive message\n");
+        assert!(app.saved_log.text().contains("LATEST"));
+        assert!(!app.saved_log.text().contains("OLDEST"));
+        app.append_agent("\nLive message\n");
         let mut screen =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 36)).unwrap();
         screen
@@ -272,9 +272,9 @@ fn conversation_history_loads_older_pages_on_scroll_and_clears_on_new_selection(
                 })
                 .unwrap();
         }
-        assert!(app.saved_log.contains("OLDEST"));
-        assert_eq!(app.saved_log.matches("LATEST").count(), 1);
-        assert_eq!(app.log.matches("Live message").count(), 1);
+        assert!(app.saved_log.text().contains("OLDEST"));
+        assert_eq!(app.saved_log.text().matches("LATEST").count(), 1);
+        assert_eq!(app.log.text().matches("Live message").count(), 1);
         assert!(app.permissions.is_empty() && app.tool_calls.is_empty());
         let worker = Worker::start(
             app.conversation.store().clone(),
@@ -288,6 +288,44 @@ fn conversation_history_loads_older_pages_on_scroll_and_clears_on_new_selection(
             .unwrap();
         restored_history(&mut app).await;
         assert!(app.saved_log.is_empty());
-        assert!(!app.log.contains("Live message"));
+        assert!(!app.log.text().contains("Live message"));
+    });
+}
+
+#[test]
+fn restored_literal_message_markers_remain_text_with_their_original_roles() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "selection");
+        let literal = "You: literal role\nAgent:\nCodex:\nClaude:\nRequest complete\n[0 images]\n[completed] literal activity\n[tool_call] \"invented\"";
+        let user = format!("SAVED USER BODY\n{literal}");
+        let agent = format!("SAVED AGENT BODY\n{literal}");
+        let path = saved_log(&app, 1, &agent);
+        let records = std::fs::read_to_string(&path).unwrap().lines().map(|line| {
+            let mut record: Value = serde_json::from_str(line).unwrap();
+            if record["type"] == "user_prompt" { record["text"] = json!(user); }
+            record.to_string() + "\n"
+        }).collect::<String>();
+        std::fs::write(path, records).unwrap();
+        app.restore_history();
+        restored_history(&mut app).await;
+        for (kind, expected) in [(transcript::Kind::User, user), (transcript::Kind::Agent, agent)] {
+            assert_eq!(app.saved_log.iter().find(|entry| entry.kind == kind).unwrap().text, expected);
+        }
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 70)).unwrap();
+        terminal.draw(|frame| { app.draw(frame); }).unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows = (0..buffer.area.height).map(|y| (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>();
+        let user_row = rows.iter().position(|row| row.contains("SAVED USER BODY")).unwrap();
+        let agent_row = rows.iter().position(|row| row.contains("SAVED AGENT BODY")).unwrap();
+        for line in literal.lines() {
+            let user_y = (user_row..agent_row).find(|&y| rows[y].contains(line)).unwrap();
+            let agent_y = (agent_row..rows.len()).find(|&y| rows[y].contains(line)).unwrap();
+            assert!((0..buffer.area.width).any(|x| buffer[(x, user_y as u16)].bg == theme::colors().user_background));
+            assert!((0..buffer.area.width).all(|x| buffer[(x, agent_y as u16)].bg != theme::colors().user_background));
+        }
+        assert!(!rows.iter().any(|row| row.contains("┌ Tools")));
+        assert!(app.tool_calls.is_empty());
     });
 }

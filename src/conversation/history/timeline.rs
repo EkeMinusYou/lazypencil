@@ -18,7 +18,8 @@ pub(crate) struct Reader {
 }
 
 pub(crate) struct Page {
-    pub text: String,
+    pub records: Vec<DisplayRecord>,
+    pub bytes: usize,
     pub reader: Option<Reader>,
 }
 
@@ -98,9 +99,14 @@ impl Reader {
         };
         let mut page = reader.previous(cancel)?;
         if unavailable > 0 {
-            page.text.push_str(&format!(
-                "\n[{unavailable} saved turns unavailable; inspect /logs]\n"
-            ));
+            let text = format!("[{unavailable} saved turns unavailable; inspect /logs]");
+            page.bytes += text.len();
+            page.records.push(DisplayRecord {
+                kind: RecordKind::Status,
+                text,
+                start: true,
+                status: None,
+            });
         }
         Ok(page)
     }
@@ -130,7 +136,8 @@ impl Reader {
                 ));
             }
             header(&mut file, &self.store, &self.session, &turn.id)?;
-            let (text, before) = display::previous(&mut file, self.before, remaining, &budget)?;
+            let (records, bytes, before) =
+                display::previous(&mut file, self.before, remaining, &budget)?;
             if revision(&mut file, &budget)? != current {
                 return Err(Error::new(
                     "REVISION_CONFLICT",
@@ -138,15 +145,16 @@ impl Reader {
                 ));
             }
             turn.revision = Some(current);
-            remaining -= text.len();
-            chunks.push_front(text);
+            remaining -= bytes;
+            chunks.push_front(records);
             self.before = before;
             if before.is_none() {
                 self.turns.pop();
             }
         }
         Ok(Page {
-            text: chunks.into_iter().collect(),
+            records: chunks.into_iter().flatten().collect(),
+            bytes: PAGE_BYTES - remaining,
             reader: (!self.turns.is_empty()).then_some(self),
         })
     }
@@ -161,6 +169,13 @@ mod tests {
     };
     use clap::Parser;
     use tempfile::TempDir;
+
+    fn text(page: &Page) -> String {
+        page.records
+            .iter()
+            .map(|record| record.text.as_str())
+            .collect()
+    }
 
     fn fixture() -> (TempDir, Conversation) {
         let temp = TempDir::new().unwrap();
@@ -216,10 +231,10 @@ mod tests {
         turn(&conversation, older, Some(10), "Older request");
         let page = start(&conversation);
         assert!(
-            page.text.find("Older request").unwrap() < page.text.find("Newer request").unwrap()
+            text(&page).find("Older request").unwrap() < text(&page).find("Newer request").unwrap()
         );
-        assert_eq!(page.text.matches("回答です🙂").count(), 2);
-        assert!(!page.text.contains("old-permission"));
+        assert_eq!(text(&page).matches("回答です🙂").count(), 2);
+        assert!(!text(&page).contains("old-permission"));
         assert!(page.reader.is_none());
         assert!(!conversation.active());
     }
@@ -228,21 +243,42 @@ mod tests {
     fn timeline_pages_reconstruct_large_unicode_records_without_gaps_or_duplicates() {
         let (_temp, conversation) = fixture();
         let id = uuid::Uuid::new_v4().to_string();
-        let request = "長い下書き🙂\n".repeat(10_000);
+        let request = "長い下書き🙂\nYou: literal\nAgent:\nCodex:\nClaude:\n[0 images]\n[completed] literal\nRequest complete\n".repeat(2_000);
         turn(&conversation, &id, Some(10), &request);
         let mut page = start(&conversation);
         assert!(page.reader.is_some());
-        assert!(page.text.len() <= PAGE_BYTES);
-        assert!(page.text.ends_with("Request complete\n"));
-        let mut combined = page.text;
+        assert!(page.bytes <= PAGE_BYTES);
+        assert_eq!(page.records.last().unwrap().kind, RecordKind::Complete);
+        let mut combined = page.records;
         while let Some(reader) = page.reader {
             page = reader.previous(&CancellationToken::new()).unwrap();
-            assert!(page.text.len() <= PAGE_BYTES);
-            combined.insert_str(0, &page.text);
+            assert!(page.bytes <= PAGE_BYTES);
+            let mut earlier = page.records;
+            earlier.append(&mut combined);
+            combined = earlier;
         }
         assert_eq!(
-            combined,
-            format!("\nTurn {id}\n\nYou:\n{request}\n\nAgent:\n回答です🙂\nRequest complete\n")
+            combined
+                .iter()
+                .filter(|record| record.kind == RecordKind::User)
+                .map(|record| record.text.as_str())
+                .collect::<String>(),
+            request
+        );
+        assert_eq!(
+            combined
+                .iter()
+                .filter(|record| record.kind == RecordKind::User && record.start)
+                .count(),
+            1
+        );
+        assert_eq!(
+            combined
+                .iter()
+                .filter(|record| record.kind == RecordKind::Agent)
+                .map(|record| record.text.as_str())
+                .collect::<String>(),
+            "回答です🙂"
         );
     }
 
@@ -315,8 +351,8 @@ mod tests {
             &CancellationToken::new(),
         )
         .unwrap();
-        assert!(!page.text.contains("Undated request"));
-        assert!(page.text.contains("2 saved turns unavailable"));
-        assert!(!page.text.contains("New live request"));
+        assert!(!text(&page).contains("Undated request"));
+        assert!(text(&page).contains("2 saved turns unavailable"));
+        assert!(!text(&page).contains("New live request"));
     }
 }

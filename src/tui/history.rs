@@ -1,7 +1,11 @@
 //! Saved text is loaded independently of live agent events and permissions.
 
+use super::transcript::{Entry, Kind};
 use super::*;
-use crate::conversation::history::timeline::{Page, Reader};
+use crate::conversation::history::{
+    RecordKind,
+    timeline::{Page, Reader},
+};
 use tokio::sync::oneshot;
 
 pub(super) struct Task {
@@ -83,14 +87,39 @@ impl App {
                     self.history_requested = false;
                     self.history_initial = false;
                 }
-                self.saved_log.insert_str(0, &clean(&page.text));
+                if page.bytes > crate::conversation::history::MAX_PAGE_BYTES {
+                    self.error(Error::new(
+                        "AGENT_ERROR",
+                        "Saved history page exceeds its display bound",
+                    ));
+                    return;
+                }
+                self.saved_log
+                    .prepend(page.records.into_iter().map(|record| {
+                        let kind = match record.kind {
+                            RecordKind::User => Kind::User,
+                            RecordKind::Agent => Kind::Agent,
+                            RecordKind::Thought => Kind::Thought,
+                            RecordKind::Tool => {
+                                Kind::Activity(record.status.unwrap_or_else(|| "running".into()))
+                            }
+                            RecordKind::Error => Kind::Failure,
+                            RecordKind::Complete => Kind::Complete,
+                            RecordKind::Turn | RecordKind::Status | RecordKind::Record => {
+                                Kind::Notice
+                            }
+                        };
+                        let mut entry = Entry::new(kind, record.text);
+                        entry.start = record.start;
+                        entry
+                    }));
                 self.saved_history = page.reader;
                 self.history = None;
                 // Prepending does not move the viewport to the top of the new page.
                 self.history_metrics.0 = 0;
             }
             Err(error) => {
-                self.append(&format!(
+                self.append_notice(&format!(
                     "\nSaved history could not be loaded: {error} · /logs\n"
                 ));
                 self.error(error);

@@ -260,21 +260,22 @@ fn mouse_scroll_batches_match_individual_steps_and_history_stays_anchored() {
         for _ in 0..32 { app.mouse_event(event, &picker, &worker).await.unwrap(); }
         assert_eq!(app.view.zoom, batched.zoom);
         for axis in 0..2 { assert!((app.view.center[axis] - batched.center[axis]).abs() < 1e-9); }
-        app.log = (0..80).map(|n| format!("History line {n}\n")).collect();
+        app.log.clear();
+        app.append_agent(&(0..80).map(|n| format!("History line {n}\n")).collect::<String>());
         paint_mouse(&mut app, 130, 34);
         let history = app.pointer.area(mouse::Target::History).unwrap();
         app.mouse_events(mouse_input(M::ScrollUp, (history.x, history.y), KeyModifiers::NONE), 5, &picker, &worker).await.unwrap();
         paint_mouse(&mut app, 130, 34);
         let offset = app.scroll;
         let lines = app.history_metrics.1;
-        app.append("New message\nAnother line\n");
+        app.append_agent("New message\nAnother line\n");
         paint_mouse(&mut app, 130, 34);
         assert_eq!(app.scroll, offset + app.history_metrics.1 - lines);
         assert_eq!(app.focus, Focus::Prompt);
         app.mouse_events(mouse_input(M::ScrollDown, (history.x, history.y), KeyModifiers::NONE), 64, &picker, &worker).await.unwrap();
         paint_mouse(&mut app, 130, 34);
         assert_eq!(app.scroll, 0);
-        app.append("Followed message\n");
+        app.append_agent("Followed message\n");
         paint_mouse(&mut app, 130, 34);
         assert_eq!(app.scroll, 0);
         app.conversation.close().await.unwrap();

@@ -5,31 +5,12 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
-use std::ops::Range;
 
 fn parser(text: &str) -> Parser<'_> {
     Parser::new_ext(
         text,
         Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS | Options::ENABLE_TABLES,
     )
-}
-
-/// Metadata-looking lines inside code must remain literal code.
-pub(super) fn code_ranges(text: &str) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut start = None;
-    for (event, range) in parser(text).into_offset_iter() {
-        match event {
-            Event::Start(Tag::CodeBlock(_)) => start = Some(range.start),
-            Event::End(TagEnd::CodeBlock) => {
-                if let Some(start) = start.take() {
-                    ranges.push(start..range.end);
-                }
-            }
-            _ => {}
-        }
-    }
-    ranges
 }
 
 pub(super) fn render(text: &str) -> Vec<Line<'static>> {

@@ -37,6 +37,7 @@ mod test_artifacts;
 #[cfg(test)]
 mod tests;
 mod theme;
+mod transcript;
 mod viewport;
 mod workspace;
 
@@ -296,8 +297,8 @@ struct App {
     search_editor: search::Editor,
     searching: bool,
     preview_search: preview_search::Search,
-    log: String,
-    saved_log: String,
+    log: transcript::Log,
+    saved_log: transcript::Log,
     saved_history: Option<crate::conversation::history::timeline::Reader>,
     saved_history_task: Option<history::Task>,
     history_requested: bool,
@@ -402,8 +403,8 @@ impl App {
             search_editor: Default::default(),
             searching: false,
             preview_search: Default::default(),
-            log: String::new(),
-            saved_log: String::new(),
+            log: Default::default(),
+            saved_log: Default::default(),
             saved_history: None,
             saved_history_task: None,
             history_requested: false,
@@ -1036,22 +1037,25 @@ impl App {
     fn error(&mut self, error: Error) {
         self.set_error_status(clean(&error.to_string()));
     }
-    fn append(&mut self, text: &str) {
+    fn append_agent(&mut self, text: &str) {
+        self.append_entry(transcript::Entry::new(transcript::Kind::Agent, text));
+    }
+    fn append_notice(&mut self, text: &str) {
+        self.append_entry(transcript::Entry::new(transcript::Kind::Notice, text));
+    }
+    fn append_user(&mut self, text: &str) {
+        self.append_entry(transcript::Entry::new(transcript::Kind::User, text));
+    }
+    fn append_entry(&mut self, entry: transcript::Entry) {
         self.history = None;
-        self.log.push_str(&clean(text));
-        if self.log.len() > 256 * 1024 {
-            let mut index = self.log.len() - 192 * 1024;
-            while !self.log.is_char_boundary(index) {
-                index += 1;
-            }
-            self.log.drain(..index);
-            let visible: std::collections::HashSet<String> = self
+        self.log.push(entry);
+        if self.log.trim(256 * 1024, 192 * 1024) {
+            let visible = self
                 .log
-                .lines()
-                .filter_map(|line| line.strip_prefix("[tool_call] "))
-                .filter_map(|id| serde_json::from_str(id).ok())
-                .collect();
-            self.tool_calls.retain(|id, _| visible.contains(id));
+                .tool_ids()
+                .collect::<std::collections::HashSet<_>>();
+            self.tool_calls
+                .retain(|id, _| visible.contains(id.as_str()));
         }
     }
     fn restored_agent_history(&self, value: &Value) -> bool {
@@ -1087,7 +1091,7 @@ impl App {
                     }
                     Some("agent_message_chunk") => {
                         if let Some(text) = update["content"]["text"].as_str() {
-                            self.append(text);
+                            self.append_agent(text);
                         }
                     }
                     Some("tool_call" | "tool_call_update") => {
@@ -1097,9 +1101,9 @@ impl App {
                             let tool = self.tool_calls.entry(id.clone()).or_default();
                             tool.update(update);
                             if fresh {
-                                self.append(&format!(
-                                    "\n[tool_call] {}\n",
-                                    serde_json::to_string(&id).expect("tool id")
+                                self.append_entry(transcript::Entry::new(
+                                    transcript::Kind::Tool(id),
+                                    "",
                                 ));
                             } else {
                                 self.history = None;
@@ -1107,7 +1111,10 @@ impl App {
                         } else {
                             let title = update["title"].as_str().unwrap_or("Tool");
                             let status = update["status"].as_str().unwrap_or("running");
-                            self.append(&format!("\n[{status}] {title}\n"));
+                            self.append_entry(transcript::Entry::new(
+                                transcript::Kind::Activity(clean(status)),
+                                title,
+                            ));
                         }
                     }
                     _ => {}
@@ -1186,16 +1193,16 @@ impl App {
                 ));
             }
             Some("failed") => {
-                self.append(&format!(
-                    "\nRequest failed: {}\n",
+                self.append_entry(transcript::Entry::new(
+                    transcript::Kind::Failure,
                     value["error"]["message"]
                         .as_str()
-                        .unwrap_or("Unknown error")
+                        .unwrap_or("Unknown error"),
                 ));
                 self.set_error_status("Request failed; draft and attachments retained".into());
             }
             Some("complete") => {
-                self.append("\nRequest complete\n");
+                self.append_entry(transcript::Entry::new(transcript::Kind::Complete, ""));
             }
             Some("steering_result") => {
                 if let Err(error) = self.steering_result(value) {
@@ -1407,9 +1414,7 @@ impl App {
         self.scroll = 0;
         self.set_status(format!("Selected conversation {}", self.conversation.id()));
         if let Some(error) = remember_error {
-            self.append(&format!(
-                "\nCould not remember this conversation: {error}\n"
-            ));
+            self.append_notice(&format!("Could not remember this conversation: {error}"));
             self.error(error);
         }
         self.request(worker, false, false);

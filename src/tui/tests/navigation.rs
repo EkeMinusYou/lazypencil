@@ -247,8 +247,13 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
             .collect::<String>();
         assert!(empty.contains("Agent"));
         assert!(!empty.contains("Attachments"));
-        let transcript = "\nYou: Keep this message\n[0 images]\n\nCodex:\nAgent response\n\n[in_progress] mcp.lazypencil.read_nodes\n\n[completed] Tool\n\nRequest complete\n";
-        app.append(transcript);
+        app.append_user("Keep this message");
+        app.append_agent("Agent response");
+        for (status, title) in [("in_progress", "mcp.lazypencil.read_nodes"), ("completed", "Tool")] {
+            app.append_entry(transcript::Entry::new(transcript::Kind::Activity(status.into()), title));
+        }
+        app.append_entry(transcript::Entry::new(transcript::Kind::Complete, ""));
+        let transcript = app.log.clone();
         terminal.draw(|frame| { app.draw(frame); }).unwrap();
         let rendered = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();
         for content in ["Keep this message", "Codex", "Agent response", "read nodes"] {
@@ -260,7 +265,7 @@ fn conversation_region_defaults_to_prompt_and_keeps_history_and_attachments_acce
         assert_eq!(app.log, transcript);
         crate::tui::test_artifacts::artifact(terminal.backend().buffer(), "conversation");
         assert!(app.history.is_some());
-        app.append("\n**New response**\n");
+        app.append_agent("\n**New response**\n");
         assert!(app.history.is_none());
         terminal.draw(|frame| { app.draw(frame); }).unwrap();
         let updated = terminal.backend().buffer().content.iter().map(|cell| cell.symbol()).collect::<String>();

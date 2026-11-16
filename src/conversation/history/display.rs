@@ -317,6 +317,42 @@ impl Strings for Metadata {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RecordKind {
+    User,
+    Agent,
+    Thought,
+    Tool,
+    Error,
+    Turn,
+    Status,
+    Complete,
+    Record,
+}
+impl RecordKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Agent => "agent",
+            Self::Thought => "thought",
+            Self::Tool => "tool",
+            Self::Error => "error",
+            Self::Turn => "turn",
+            Self::Status | Self::Complete => "status",
+            Self::Record => "record",
+        }
+    }
+}
+
+#[cfg(feature = "tui")]
+#[derive(Clone, Debug)]
+pub(crate) struct DisplayRecord {
+    pub kind: RecordKind,
+    pub text: String,
+    pub start: bool,
+    pub status: Option<String>,
+}
+
 struct Window {
     skip: u64,
     limit: usize,
@@ -326,7 +362,8 @@ struct Window {
     tail: Option<VecDeque<char>>,
     tail_bytes: usize,
     until: u64,
-    kind: &'static str,
+    kind: RecordKind,
+    status: Option<String>,
     prefix: usize,
     suffix: usize,
 }
@@ -341,7 +378,8 @@ impl Window {
             tail: None,
             tail_bytes: 0,
             until: u64::MAX,
-            kind: "record",
+            kind: RecordKind::Record,
+            status: None,
             prefix: 0,
             suffix: 0,
         }
@@ -504,7 +542,7 @@ fn format_window(
                 } else {
                     format!("\nYou:\nReferences: {}\n\n", get("references"))
                 };
-                suffix = if compact { "\n\nAgent:\n" } else { "\n" };
+                suffix = "\n";
                 selected = Some("prompt");
             }
             ("update", "agent_message_chunk") if metadata.present.contains("agent") => {
@@ -547,6 +585,7 @@ fn format_window(
         }
     }
     if structured {
+        prefix.retain(|c| !c.is_control() || matches!(c, '\n' | '\t'));
         output.write(&prefix)?;
         if let Some(field) = selected {
             scan(
@@ -585,21 +624,36 @@ fn format_window(
     }
     if structured {
         output.kind = match (get("kind"), get("update")) {
-            ("user_prompt", _) => "user",
-            ("update", "agent_message_chunk") => "agent",
-            ("update", "agent_thought_chunk") => "thought",
-            ("update", "tool_call" | "tool_call_update") => "tool",
-            ("failed", _) => "error",
-            ("start", _) => "turn",
-            _ => "status",
+            ("user_prompt", _) => RecordKind::User,
+            ("update", "agent_message_chunk") => RecordKind::Agent,
+            ("update", "agent_thought_chunk") => RecordKind::Thought,
+            ("update", "tool_call" | "tool_call_update") => RecordKind::Tool,
+            ("failed", _) => RecordKind::Error,
+            ("start", _) => RecordKind::Turn,
+            ("complete", _) => RecordKind::Complete,
+            _ => RecordKind::Status,
         };
-        if selected.is_some() && output.kind != "tool" {
-            output.prefix = if output.kind == "user" {
+        if selected.is_some() {
+            output.prefix = if output.kind == RecordKind::User {
                 "\nYou:\n".len()
             } else {
                 prefix.len()
             };
             output.suffix = suffix.len();
+        }
+        if output.kind == RecordKind::Tool {
+            output.status = Some(
+                if get("status").is_empty() {
+                    "running"
+                } else {
+                    get("status")
+                }
+                .into(),
+            );
+            if selected.is_none() {
+                output.prefix = prefix.len() - "Tool".len();
+                output.suffix = suffix.len();
+            }
         }
     }
     if output.skip > output.total {
@@ -624,7 +678,7 @@ pub(super) fn previous(
     before: Option<PreviousBoundary>,
     limit: usize,
     budget: &Budget<'_>,
-) -> Result<(String, Option<PreviousBoundary>)> {
+) -> Result<(Vec<DisplayRecord>, usize, Option<PreviousBoundary>)> {
     let mut end = before.map_or(file.metadata().map_err(io)?.len(), |value| value.0);
     let mut upper = before.and_then(|value| value.1);
     let mut chunks = VecDeque::new();
@@ -654,10 +708,29 @@ pub(super) fn previous(
         let prefix = upper.unwrap_or(window.total).min(window.total);
         let consumed = window.text.len() as u64;
         remaining -= window.text.len();
-        chunks.push_front(window.text);
+        let offset = prefix - consumed;
+        let body_start = (window.prefix as u64).saturating_sub(offset).min(consumed) as usize;
+        let body_end = window
+            .total
+            .saturating_sub(window.suffix as u64)
+            .saturating_sub(offset)
+            .min(consumed) as usize;
+        if consumed > 0 {
+            chunks.push_front(DisplayRecord {
+                kind: window.kind,
+                text: window
+                    .text
+                    .get(body_start..body_end)
+                    .unwrap_or("")
+                    .to_owned(),
+                start: offset == 0,
+                status: window.status,
+            });
+        }
         if consumed < prefix {
             return Ok((
                 chunks.into_iter().collect(),
+                limit - remaining,
                 Some((end, Some(prefix - consumed))),
             ));
         }
@@ -666,6 +739,7 @@ pub(super) fn previous(
     }
     Ok((
         chunks.into_iter().collect(),
+        limit - remaining,
         (end > 0).then_some((end, upper)),
     ))
 }
@@ -843,15 +917,18 @@ fn view_impl(
         if presentation && !window.text.is_empty() {
             // Intersect the body with this UTF-8-aligned display window. Prefixes
             // split over pages must never reappear as message text or headings.
-            let start = (window.prefix as u64)
-                .saturating_sub(position.byte)
-                .min(advanced) as usize;
+            let (prefix, suffix) = if window.kind == RecordKind::Tool {
+                (0, 0)
+            } else {
+                (window.prefix, window.suffix)
+            };
+            let start = (prefix as u64).saturating_sub(position.byte).min(advanced) as usize;
             let end = window
                 .total
-                .saturating_sub(window.suffix as u64)
+                .saturating_sub(suffix as u64)
                 .saturating_sub(position.byte)
                 .min(advanced) as usize;
-            records.push(json!({"kind":window.kind,"text":window.text.get(start..end).unwrap_or(""),"start":position.byte == 0,"end":window.total <= position.byte + advanced}));
+            records.push(json!({"kind":window.kind.name(),"status":window.status,"text":window.text.get(start..end).unwrap_or(""),"start":position.byte == 0,"end":window.total <= position.byte + advanced}));
         }
         text.push_str(&window.text);
         if window.total > position.byte + advanced {
@@ -913,6 +990,42 @@ mod tests {
             started: Instant::now(),
             cancel: None,
         }
+    }
+
+    #[cfg(feature = "tui")]
+    #[test]
+    fn backwards_record_pages_keep_literal_tool_titles_with_control_and_unicode_status_metadata() {
+        let title = "道具🙂\nAgent:\nYou: literal\n[completed] literal\n".repeat(500);
+        let source = json!({"type":"update","notification":{"update":{
+            "sessionUpdate":"tool_call","status":"\u{1b}完了","title":title
+        }}})
+        .to_string()
+            + "\n";
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(source.as_bytes()).unwrap();
+        let mut before = None;
+        let mut combined = Vec::new();
+        loop {
+            let (mut records, bytes, next) =
+                previous(file.as_file_mut(), before, 4096, &budget()).unwrap();
+            assert!(bytes <= 4096);
+            assert!(records.iter().all(|record| record.kind == RecordKind::Tool
+                && record.status.as_deref() == Some("\u{1b}完了")));
+            records.append(&mut combined);
+            combined = records;
+            let Some(next) = next else {
+                break;
+            };
+            before = Some(next);
+        }
+        assert_eq!(
+            combined
+                .iter()
+                .map(|record| record.text.as_str())
+                .collect::<String>(),
+            title
+        );
+        assert_eq!(combined.iter().filter(|record| record.start).count(), 1);
     }
 
     #[test]

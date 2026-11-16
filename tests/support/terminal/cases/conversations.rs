@@ -22,8 +22,9 @@ pub fn history_bottom(h: &mut Harness) -> Result {
         .iter()
         .rposition(|value| value["type"] == "complete")
         .ok_or("Missing completed turn")?;
+    let literal = "You: literal saved role\nAgent:\nCodex:\nClaude:\n[0 images]\n[completed] literal\nRequest complete";
     let response = format!(
-        "OLDEST_SAVED\n{}\nLATEST_RESTORED\n",
+        "OLDEST_SAVED\n{}\n{literal}\nLATEST_RESTORED\n",
         "Saved response 日本語 abcdefghijklmnopqrstuvwxyz\n".repeat(6000)
     );
     records.insert(index, json!({"type":"update","notification":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":response}}}}));
@@ -48,6 +49,12 @@ pub fn history_bottom(h: &mut Harness) -> Result {
     })?;
     h.visible("LATEST_RESTORED")?;
     h.pump_for(0.2)?;
+    for line in literal.lines() {
+        assert!(
+            h.screen.text().contains(line),
+            "Missing restored literal {line:?}"
+        );
+    }
     assert!(selected(h, &id));
     assert!(h.screen.text().contains("LATEST_RESTORED"));
     assert!(!h.screen.text().contains("REPLAYED_OLD"));
