@@ -136,24 +136,12 @@ impl Project {
             .root
             .parent()
             .ok_or_else(|| invalid("Missing document directory"))?;
-        let base_parts = base.components().collect::<Vec<_>>();
-        let target_parts = target.components().collect::<Vec<_>>();
-        let common = base_parts
-            .iter()
-            .zip(&target_parts)
-            .take_while(|(a, b)| a == b)
-            .count();
-        let mut relative = PathBuf::new();
-        if common == 0 {
-            relative = target;
+        let relative = if base.components().next() == target.components().next() {
+            crate::paths::relative_path(base, &target).unwrap_or(target)
         } else {
-            for _ in &base_parts[common..] {
-                relative.push("..");
-            }
-            for part in &target_parts[common..] {
-                relative.push(part.as_os_str());
-            }
-        }
+            // Detached assets keep their bound path when no directory is shared.
+            target
+        };
         let uri = if relative.is_absolute() {
             relative
                 .to_str()

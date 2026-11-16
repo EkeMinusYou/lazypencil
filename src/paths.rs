@@ -1,6 +1,24 @@
 use crate::{Error, Result};
 use std::path::{Path, PathBuf};
 
+/// Compute a relative path without resolving filesystem links or changing roots.
+pub(crate) fn relative_path(base: &Path, target: &Path) -> Option<PathBuf> {
+    if base.has_root() != target.has_root() {
+        return None;
+    }
+    for ancestor in base.ancestors() {
+        if let Ok(tail) = target.strip_prefix(ancestor) {
+            let mut relative = PathBuf::new();
+            for _ in base.strip_prefix(ancestor).expect("ancestor").components() {
+                relative.push("..");
+            }
+            relative.push(tail);
+            return Some(relative);
+        }
+    }
+    None
+}
+
 /// Decode an explicit local file URL without granting access to its target.
 /// Callers must still capture canonical bindings and enforce project roots.
 pub(crate) fn local_file_url(uri: &str) -> Result<PathBuf> {
@@ -245,6 +263,40 @@ pub fn canonical(path: impl AsRef<Path>) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_paths_cover_shared_and_disjoint_directories_without_crossing_roots() {
+        for (base, target, expected) in [
+            ("", "image.png", "image.png"),
+            ("a", "a", ""),
+            ("a", "a/image.png", "image.png"),
+            ("a/b", "a/image.png", "../image.png"),
+            ("a/b", "c/画像.png", "../../c/画像.png"),
+        ] {
+            assert_eq!(
+                relative_path(Path::new(base), Path::new(target)),
+                Some(PathBuf::from(expected)),
+            );
+        }
+        let root = std::env::temp_dir();
+        assert_eq!(
+            relative_path(&root.join("a/b"), &root.join("c/画像.png")),
+            Some(PathBuf::from("../../c/画像.png")),
+        );
+        assert!(relative_path(&root, Path::new("relative.png")).is_none());
+        assert!(relative_path(Path::new("relative"), &root.join("image.png")).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn relative_paths_do_not_cross_windows_drives_or_unc_shares() {
+        for (base, target) in [
+            (r"C:\a", r"D:\image.png"),
+            (r"\\server\first\a", r"\\server\second\image.png"),
+        ] {
+            assert!(relative_path(Path::new(base), Path::new(target)).is_none());
+        }
+    }
 
     #[test]
     fn local_file_urls_decode_once_without_treating_reserved_filename_bytes_as_url_fields() {

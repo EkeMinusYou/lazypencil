@@ -884,28 +884,15 @@ pub(super) fn relative_uri(origin: &Path, target: &Path) -> Result<String> {
     let parent = origin
         .parent()
         .ok_or_else(|| copy_error("A script scope needs a bound path"))?;
-    for ancestor in parent.ancestors() {
-        if let Ok(tail) = target.strip_prefix(ancestor) {
-            let mut parts = vec![
-                "..".to_owned();
-                parent
-                    .strip_prefix(ancestor)
-                    .expect("ancestor")
-                    .components()
-                    .count()
-            ];
-            for part in tail.components() {
-                parts.push(
-                    part.as_os_str()
-                        .to_str()
-                        .ok_or_else(|| copy_error("Script asset paths must be UTF-8"))?
-                        .to_owned(),
-                );
-            }
-            return Ok(parts.join("/"));
-        }
-    }
-    Err(copy_error(
-        "A script asset cannot be made relative to its namespace",
-    ))
+    let relative = crate::paths::relative_path(parent, target)
+        .ok_or_else(|| copy_error("A script asset cannot be made relative to its namespace"))?;
+    relative
+        .components()
+        .map(|part| {
+            part.as_os_str()
+                .to_str()
+                .ok_or_else(|| copy_error("Script asset paths must be UTF-8"))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|parts| parts.join("/"))
 }
