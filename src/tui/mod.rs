@@ -9,6 +9,7 @@ mod controls;
 mod diagnostics;
 pub(crate) mod doctor;
 pub mod documents;
+mod editing;
 mod events;
 mod footer;
 mod gestures;
@@ -1025,15 +1026,10 @@ impl App {
     }
     fn insert_text(&mut self, text: &str) -> bool {
         let text = clean(text);
-        if self.editor.lines().iter().map(String::len).sum::<usize>()
-            + self.editor.lines().len()
-            + text.len()
-            > 1024 * 1024
-        {
+        if !editing::insert(&mut self.editor, &text) {
             self.set_error_status("Prompt exceeds 1 MiB".into());
             return false;
         }
-        self.editor.insert_str(text);
         self.draft_changed = true;
         true
     }

@@ -226,16 +226,17 @@ impl Input {
 
     pub fn insert(&mut self, text: &str) {
         let text = clean(text);
-        if self.editor.lines().iter().map(String::len).sum::<usize>()
-            + self.editor.lines().len()
-            + text.len()
-            > 1024 * 1024
-        {
+        if !editing::insert(&mut self.editor, &text) {
             self.error = Some("Command input exceeds 1 MiB".into());
             return;
         }
-        self.editor.insert_str(text);
         self.error = None;
+    }
+
+    pub fn key(&mut self, key: KeyEvent) {
+        self.error = editing::input(&mut self.editor, key)
+            .is_none()
+            .then(|| "Command input exceeds 1 MiB".into());
     }
 
     pub fn draw(

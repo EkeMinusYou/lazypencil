@@ -784,6 +784,48 @@ fn queued_completion_does_not_erase_the_next_draft() {
 }
 
 #[test]
+fn prompt_input_byte_budget_counts_utf8_newlines_and_exact_limit_pastes() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        app.focus = Focus::Prompt;
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 189).unwrap();
+        let limit = 1024 * 1024;
+        for (text, character) in [
+            ("x".repeat(limit - 1), '🙂'),
+            (format!("{}\n", "x".repeat(limit - 1)), 'a'),
+        ] {
+            app.editor = editor(&text);
+            let error = app.key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &Backend::halfblocks(), &worker).await.unwrap_err();
+            assert_eq!(error.code, "INVALID_ARGUMENT");
+            assert_eq!(app.editor.lines().join("\n"), text);
+        }
+        app.editor = editor("");
+        assert!(app.insert_text(&"x".repeat(limit)));
+        assert_eq!(app.editor.lines()[0].len(), limit);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
+fn command_input_byte_budget_applies_to_keyboard_input() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "echo");
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 189).unwrap();
+        let text = "x".repeat(1024 * 1024 - 1);
+        let mut input = commands::Input::new(commands::Action::Queue);
+        input.editor = editor(&text);
+        app.modal = Some(checkpoints::Modal::CommandInput(Box::new(input)));
+        press(&mut app, KeyCode::Char('あ'), KeyModifiers::NONE, &worker).await;
+        let Some(checkpoints::Modal::CommandInput(input)) = &app.modal else { panic!(); };
+        assert!(input.error.is_some());
+        assert_eq!(input.editor.lines().join("\n"), text);
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn maximum_draft_survives_restart() {
     let temp = TempDir::new().unwrap();
     let mut app = app(&temp, "echo");

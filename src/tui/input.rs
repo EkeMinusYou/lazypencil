@@ -262,9 +262,6 @@ impl App {
         self.search_nodes(selected.as_deref());
     }
     async fn prompt_input(&mut self, key: KeyEvent, worker: &Worker) -> Result<bool> {
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        let alt = key.modifiers.contains(KeyModifiers::ALT);
-
         if ((key.code == KeyCode::Enter && key.modifiers.is_empty()) || self.keys.submits(key))
             && self.editor.lines().len() == 1
             && self.editor.lines()[0].starts_with('/')
@@ -304,13 +301,8 @@ impl App {
                 _ => {}
             }
         }
-        // Bound interactive input as well as bracketed and clipboard pastes.
-        if self.editor.lines().iter().map(String::len).sum::<usize>() >= 1024 * 1024
-            && (key.code == KeyCode::Enter || matches!(key.code, KeyCode::Char(_)) && !ctrl && !alt)
-        {
-            return Err(Error::new("INVALID_ARGUMENT", "Prompt exceeds 1 MiB"));
-        }
-        self.draft_changed |= self.editor.input(key);
+        self.draft_changed |= editing::input(&mut self.editor, key)
+            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Prompt exceeds 1 MiB"))?;
         Ok(false)
     }
     fn panel_input(

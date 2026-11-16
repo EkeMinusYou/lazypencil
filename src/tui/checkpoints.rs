@@ -358,8 +358,7 @@ impl super::App {
                         input.insert("\n");
                     }
                 } else {
-                    input.editor.input(key);
-                    input.error = None;
+                    input.key(key);
                 }
             }
             Modal::Commands { selected } => {
