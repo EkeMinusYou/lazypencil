@@ -132,36 +132,6 @@ fn json_file(files: &Files, name: &str) -> Result<Value> {
     Ok(serde_json::from_slice(bytes)?)
 }
 
-fn executable_target(bytes: &[u8], target: &str) -> Result<()> {
-    let valid = match target {
-        "aarch64-apple-darwin" => {
-            bytes.len() >= 32
-                && bytes[..4] == [0xcf, 0xfa, 0xed, 0xfe]
-                && u32::from_le_bytes(bytes[4..8].try_into()?) == 0x0100000c
-                && u32::from_le_bytes(bytes[12..16].try_into()?) == 2
-        }
-        "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => {
-            bytes.len() >= 64
-                && bytes[..4] == *b"\x7fELF"
-                && bytes[4] == 2
-                && bytes[5] == 1
-                && [2, 3].contains(&u16::from_le_bytes(bytes[16..18].try_into()?))
-                && u16::from_le_bytes(bytes[18..20].try_into()?)
-                    == if target.starts_with("aarch64") {
-                        183
-                    } else {
-                        62
-                    }
-        }
-        _ => false,
-    };
-    ensure!(
-        valid,
-        "Executable format or architecture differs from the candidate target"
-    );
-    Ok(())
-}
-
 fn validate(files: &Files, package: &Package) -> Result<()> {
     ensure!(
         package.format_version == 1
@@ -290,7 +260,8 @@ fn validate(files: &Files, package: &Package) -> Result<()> {
         .get(EXECUTABLE)
         .context("Missing packaged executable")?
         .0;
-    executable_target(binary, &package.target)?;
+    crate::evidence::linkage::format(binary, &package.target)
+        .context("Executable format or architecture differs from the candidate target")?;
     ensure!(
         !binary.is_empty()
             && build["binary"]["sha256"] == util::digest(binary)

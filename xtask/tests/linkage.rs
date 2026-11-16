@@ -69,6 +69,14 @@ fn binary_headers_bind_the_observed_architecture_and_reject_deferred_or_fat_targ
         linkage::format(&header, "x86_64-unknown-linux-gnu").unwrap(),
         "elf"
     );
+    for length in [0, 7, 31, 32, 63] {
+        assert!(linkage::format(&header[..length], "x86_64-unknown-linux-gnu").is_err());
+    }
+    for version in [0, 2] {
+        let mut invalid = header;
+        invalid[6] = version;
+        assert!(linkage::format(&invalid, "x86_64-unknown-linux-gnu").is_err());
+    }
     assert!(linkage::format(&header, "aarch64-unknown-linux-gnu").is_err());
     header[18..20].copy_from_slice(&183u16.to_le_bytes());
     assert_eq!(

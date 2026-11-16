@@ -114,6 +114,7 @@ fn fixture_with_declaration(
         bytes[..4].copy_from_slice(b"\x7fELF");
         bytes[4] = 2;
         bytes[5] = 1;
+        bytes[6] = 1;
         bytes[16..18].copy_from_slice(&3u16.to_le_bytes());
         bytes[18..20].copy_from_slice(
             &if target.starts_with("aarch64") {
@@ -401,6 +402,7 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
         "source",
         "binary",
         "target",
+        "elf-ident-version",
         "map",
         "notice",
         "missing-notice",
@@ -423,6 +425,19 @@ fn candidates_reject_changed_sources_binaries_missing_notices_and_self_consisten
             }
             "target" => {
                 build["compiler"] = json!("rustc fixture\nhost: aarch64-unknown-linux-gnu\n")
+            }
+            "elf-ident-version" => {
+                let mut bytes = fs::read(&arguments.executable).unwrap();
+                bytes[6] = 0;
+                fs::write(&arguments.executable, &bytes).unwrap();
+                let hash = util::digest(&bytes);
+                build["binary"]["sha256"] = json!(hash);
+                build["dynamic_linkage"]["binary_sha256"] = json!(hash);
+                fs::write(
+                    arguments.evidence.join("linkage/linkage.json"),
+                    util::encode(&build["dynamic_linkage"]).unwrap(),
+                )
+                .unwrap();
             }
             "map" => {
                 fs::write(arguments.evidence.join("link-map.map"), "Different map").unwrap();

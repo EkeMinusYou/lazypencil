@@ -35,7 +35,8 @@ pub fn format(header: &[u8], host: &str) -> Result<&'static str> {
         "x86_64-unknown-linux-gnu" | "aarch64-unknown-linux-gnu" => {
             let machine = if host.starts_with("x86_64") { 62 } else { 183 };
             ensure!(
-                header[..7] == [0x7f, b'E', b'L', b'F', 2, 1, 1]
+                header.len() >= 64
+                    && header[..7] == [0x7f, b'E', b'L', b'F', 2, 1, 1]
                     && [2, 3].contains(&u16::from_le_bytes(header[16..18].try_into()?))
                     && u16::from_le_bytes(header[18..20].try_into()?) == machine,
                 "Expected a little-endian ELF64 executable for {host}"
