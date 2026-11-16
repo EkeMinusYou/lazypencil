@@ -27,7 +27,7 @@ fn sha(value: &str, length: usize) -> Result<()> {
     Ok(())
 }
 
-fn completed_source(run: &Value, repository: &str, revision: &str) -> Result<()> {
+fn candidate_artifact(run: &Value, repository: &str, revision: &str) -> Result<String> {
     ensure!(
         run["conclusion"] == "success"
             && run["status"] == "completed"
@@ -36,7 +36,13 @@ fn completed_source(run: &Value, repository: &str, revision: &str) -> Result<()>
             && run["path"] == ".github/workflows/ci.yml",
         "Expected a successful source-bound CI run"
     );
-    Ok(())
+    let attempt = run["run_attempt"]
+        .as_u64()
+        .filter(|attempt| *attempt > 0)
+        .context("Missing or invalid source run attempt")?;
+    Ok(format!(
+        "focus-candidate-ubuntu-24.04-{revision}-attempt-{attempt}"
+    ))
 }
 
 fn sample_count(text: &str) -> Result<usize> {
@@ -119,8 +125,7 @@ impl Arguments {
             ]),
             Duration::from_secs(60),
         )?)?;
-        completed_source(&metadata, &repository, &self.revision)?;
-        let name = format!("focus-candidate-ubuntu-24.04-{}-attempt-1", self.revision);
+        let name = candidate_artifact(&metadata, &repository, &self.revision)?;
         let artifacts: Value = serde_json::from_slice(&process::checked(
             Command::new("gh").args([
                 "api",
@@ -405,19 +410,26 @@ mod tests {
     #[test]
     fn downloaded_candidate_requires_successful_matching_source_run() {
         let revision = "a".repeat(40);
-        let good = json!({"status":"completed","conclusion":"success","head_sha":revision,"repository":{"full_name":"owner/repo"},"path":".github/workflows/ci.yml"});
-        completed_source(&good, "owner/repo", &revision).unwrap();
+        let good = json!({"status":"completed","conclusion":"success","head_sha":revision,"repository":{"full_name":"owner/repo"},"path":".github/workflows/ci.yml","run_attempt":2});
+        assert_eq!(
+            candidate_artifact(&good, "owner/repo", &revision).unwrap(),
+            format!("focus-candidate-ubuntu-24.04-{revision}-attempt-2")
+        );
         for (key, value) in [
             ("status", json!("in_progress")),
             ("conclusion", json!("failure")),
             ("head_sha", json!("b".repeat(40))),
             ("path", json!("other.yml")),
+            ("run_attempt", json!(null)),
+            ("run_attempt", json!(0)),
+            ("run_attempt", json!(-1)),
+            ("run_attempt", json!("2")),
         ] {
             let mut changed = good.clone();
             changed[key] = value;
-            assert!(completed_source(&changed, "owner/repo", &revision).is_err());
+            assert!(candidate_artifact(&changed, "owner/repo", &revision).is_err());
         }
-        assert!(completed_source(&good, "another/repo", &revision).is_err());
+        assert!(candidate_artifact(&good, "another/repo", &revision).is_err());
         assert!(sha("../invalid", 40).is_err());
     }
 }

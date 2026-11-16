@@ -4,22 +4,18 @@ on:
     inputs:
       source_run:
         description: Successful CI run containing the Linux x64 candidate
-        default: '40365442184'
         required: true
         type: string
       revision:
         description: Candidate source revision
-        default: 9c07383461d9f50200c7486a36a739837982ceb3
         required: true
         type: string
       archive_sha256:
         description: Verified candidate tar SHA-256
-        default: 998ef9cce3bc0bb6d4fc63a599154c00975125e18be5455e6a258f1115f3acd7
         required: true
         type: string
       binary_sha256:
         description: Verified executable SHA-256
-        default: 6a1c9ab3f7a1ae2bb6fb20602437f2e3ebd2e116337c69cb80579b10dfa66bbd
         required: true
         type: string
 permissions:
