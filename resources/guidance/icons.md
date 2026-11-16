@@ -8,7 +8,9 @@ Use the serialized `.pen` 2.19/2.21/2.22 icon node:
 {"type":"icon","library":"lucide","icon":"search","width":24,"height":24,"fill":"#0F172A"}
 ```
 
-Insert it through the normal editing batch and use the returned ID. `library`, `icon`, and `fill` can bind to document variables. Follow `components` when icon-bearing controls should share design changes. Keep icon size, spacing, color roles, and visual density consistent with nearby text and controls. Use real labels where a symbol alone would be ambiguous.
+Insert it through the normal editing batch and use the returned ID. `library`, `icon`, and `fill` can bind to document variables. Follow `components` when icon-bearing controls should share design changes. Keep icon size, spacing, color roles, and visual density consistent with nearby text and controls.
+
+For familiar actions such as back or close, prefer an icon alone when its context and placement make the action clear. Do not add visible labels or helper text that merely repeat what the icon, surrounding content, or layout already communicates. If the action remains ambiguous, improve the icon choice, placement, or grouping, and use a concise visible label when needed. Preserve supplied copy unless editing it is part of the task.
 
 Lucide, Feather, and Phosphor Regular have fixed outlines. Omit `weight`; do not synthesize a heavier glyph or map a number to a named Phosphor style. Phosphor includes original canonical names, PascalCase names and deprecated aliases; use discovery rather than inventing suffixes.
 
