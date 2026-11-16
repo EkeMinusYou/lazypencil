@@ -525,6 +525,49 @@ fn inherited_targets_never_silently_edit_the_instance_root() {
 }
 
 #[test]
+fn local_variable_validation_preserves_opaque_roots_and_deferred_script_override_inputs() {
+    for (children, valid) in [
+        (
+            json!([{"type":"future","id":"opaque","fill":"$opaque"}]),
+            true,
+        ),
+        (
+            json!([{"type":"future","id":"opaque","fill":"$opaque","children":[{"type":"rectangle","id":"known","fill":"$missing"}]}]),
+            false,
+        ),
+        (
+            json!([{"type":"frame","id":"known","children":[{"type":"future","id":"opaque","fill":"$missing"}]}]),
+            false,
+        ),
+        (
+            json!([{"type":"script","id":"script","scriptUri":"deferred.js","inputs":{"label":"$missing"}}]),
+            true,
+        ),
+        (
+            json!([{"type":"rectangle","id":"uniform","inputs":{"amount":"$missing"}}]),
+            false,
+        ),
+        (
+            json!([{"type":"rectangle","id":"component","reusable":true},{"type":"ref","id":"instance","ref":"component","descendants":{"partial":{"inputs":{"label":"$missing"}}}}]),
+            true,
+        ),
+        (
+            json!([{"type":"rectangle","id":"component","reusable":true},{"type":"ref","id":"instance","ref":"component","descendants":{"partial":{"fill":"$missing"}}}]),
+            false,
+        ),
+    ] {
+        let document =
+            Document::parse(json!({"version":"2.22","children":children}).to_string()).unwrap();
+        let result = operations::validate_local(&document);
+        assert_eq!(result.is_ok(), valid, "{children}: {result:?}");
+        if let Err(error) = result {
+            assert_eq!(error.code, "INVALID_OPERATION");
+            assert!(error.message.contains("Missing variable $missing"));
+        }
+    }
+}
+
+#[test]
 fn malformed_variables_and_reference_cycles_fail_validation() {
     for definition in [
         json!({"type":"number","value":"invalid"}),

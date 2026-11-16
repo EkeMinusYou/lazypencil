@@ -347,7 +347,26 @@ pub(crate) fn validate_local_with_cancellation(
                 return Err(invalid(format!("{id}.{key} has an unsupported value")));
             }
         }
-        check_variable_uses(node, variables, has_imports)?;
+    }
+    if !has_imports {
+        let mut roots: Vec<_> = document.value()["children"]
+            .as_array()
+            .expect("document children")
+            .iter()
+            .rev()
+            .collect();
+        while let Some(node) = roots.pop() {
+            check()?;
+            if NODE_TYPES.contains(&node["type"].as_str().unwrap_or_default()) {
+                // The recursive validator covers this entire subtree, including
+                // partial overrides. Do not revisit it through the node index.
+                check_variable_uses(node, variables)?;
+            } else if let Some(children) = node.get("children").and_then(Value::as_array) {
+                // Unknown roots stay opaque, but their indexed known children
+                // still require validation even without a known ancestor.
+                roots.extend(children.iter().rev());
+            }
+        }
     }
     reference_cycles::check(document, &check)
 }
@@ -1025,14 +1044,7 @@ fn node_variable_references(value: &Value) -> Vec<String> {
         .collect()
 }
 
-fn check_variable_uses(
-    value: &Value,
-    variables: Option<&Map<String, Value>>,
-    has_imports: bool,
-) -> Result<()> {
-    if has_imports {
-        return Ok(());
-    }
+fn check_variable_uses(value: &Value, variables: Option<&Map<String, Value>>) -> Result<()> {
     for name in node_variable_references(value) {
         if !variables.is_some_and(|v| v.contains_key(&name)) {
             return Err(invalid(format!("Missing variable ${name}")));
