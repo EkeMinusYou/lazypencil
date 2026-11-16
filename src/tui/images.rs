@@ -219,35 +219,13 @@ impl App {
         image: Attachment,
     ) -> Result<()> {
         let mut images = self.pending_images().to_vec();
-        let previous = images
-            .get(index)
-            .filter(|image| image.id == expected_id)
-            .ok_or_else(|| {
-                Error::new(
-                    "REVISION_CONFLICT",
-                    "The pending image changed during conversion",
-                )
-            })?;
-        if previous.original.is_none()
-            || previous.original != image.original
-            || previous.source_bytes != image.source_bytes
-        {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "A resize must retain the same captured original",
-            ));
-        }
+        image.validate_replacement(
+            &images,
+            index,
+            expected_id,
+            &self.conversation.attachment_limits()?,
+        )?;
         image.read(self.conversation.directory())?;
-        let limits = self.conversation.attachment_limits()?;
-        limits.check_request([&image])?;
-        if image.bytes > previous.bytes {
-            limits.check_request(
-                images
-                    .iter()
-                    .enumerate()
-                    .map(|(position, previous)| if position == index { &image } else { previous }),
-            )?;
-        }
         let previous = std::mem::replace(&mut images[index], image);
         self.set_pending_images(images)?;
         previous.reclaim_files(

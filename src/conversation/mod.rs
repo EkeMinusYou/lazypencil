@@ -351,38 +351,13 @@ impl Conversation {
         image: Attachment,
     ) -> Result<()> {
         self.require_idle()?;
-        let previous = self
-            .images()
-            .get(index)
-            .filter(|previous| previous.id == expected_id)
-            .ok_or_else(|| {
-                Error::new(
-                    "REVISION_CONFLICT",
-                    "The pending image changed during conversion",
-                )
-            })?;
+        image.validate_replacement(
+            self.images(),
+            index,
+            expected_id,
+            &self.attachment_limits()?,
+        )?;
         image.read(self.directory())?;
-        if previous.original.is_none()
-            || previous.original != image.original
-            || previous.source_bytes != image.source_bytes
-        {
-            return Err(Error::new(
-                "ATTACHMENT_INVALID",
-                "A resize must retain the same captured original",
-            ));
-        }
-        let limits = self.attachment_limits()?;
-        limits.check_request([&image])?;
-        if image.bytes > previous.bytes {
-            limits.check_request(
-                self.images()
-                    .iter()
-                    .enumerate()
-                    .map(|(position, previous)| if position == index { &image } else { previous }),
-            )?;
-        }
-        // A smaller replacement may repair one part of a draft whose other
-        // images exceed newly tightened limits. Submission rechecks the whole draft.
         let previous = std::mem::replace(&mut self.session.state.pending_attachments[index], image);
         if let Err(error) = self.session.save() {
             self.session.state.pending_attachments[index] = previous;

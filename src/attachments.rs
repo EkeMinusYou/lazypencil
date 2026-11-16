@@ -72,6 +72,42 @@ pub struct Attachment {
 }
 
 impl Attachment {
+    pub(crate) fn validate_replacement(
+        &self,
+        images: &[Self],
+        index: usize,
+        expected_id: &str,
+        limits: &crate::config::attachments::AttachmentSettings,
+    ) -> Result<()> {
+        let previous = images
+            .get(index)
+            .filter(|previous| previous.id == expected_id)
+            .ok_or_else(|| {
+                Error::new(
+                    "REVISION_CONFLICT",
+                    "The pending image changed during conversion",
+                )
+            })?;
+        if previous.original.is_none()
+            || previous.original != self.original
+            || previous.source_bytes != self.source_bytes
+        {
+            return Err(invalid("A resize must retain the same captured original"));
+        }
+        limits.check_request([self])?;
+        if self.bytes > previous.bytes {
+            limits.check_request(
+                images
+                    .iter()
+                    .enumerate()
+                    .map(|(position, image)| if position == index { self } else { image }),
+            )?;
+        }
+        // Smaller replacements can repair an over-budget draft incrementally.
+        // Submission still checks the entire request against the current limits.
+        Ok(())
+    }
+
     pub fn source_size(&self) -> usize {
         self.source_bytes
             .unwrap_or(self.bytes)

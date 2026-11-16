@@ -279,6 +279,46 @@ fn explicit_send_resize_preserves_the_draft_original_and_persisted_dimensions() 
 }
 
 #[test]
+fn send_resize_during_an_active_turn_changes_only_the_next_drafts_image() {
+    use crate::image_input::ImageBounds;
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut app = app(&temp, "image-inspect");
+        app.accept_input(pixel_input([255, 0, 0, 255]));
+        app.insert_text("First request");
+        app.submit().await.unwrap();
+        assert!(app.conversation.active());
+        let sent = app.outbox.in_flight.as_ref().unwrap().images[0].clone();
+        let original = crate::attachments::Attachment::from_bytes(
+            app.conversation.directory(),
+            include_bytes!("../../../examples/assets/crop-source.png"),
+            "next.png",
+        ).unwrap();
+        assert!(app.accept_prepared(Ok(images::PreparedInput::Images(vec![original.clone()]))));
+        app.insert_text("Unsent next request");
+        app.start_resize(0, Some(ImageBounds::new(80, 80).unwrap())).unwrap();
+        let prepared = tokio::time::timeout(
+            Duration::from_secs(5),
+            &mut app.input.as_mut().unwrap().receiver,
+        ).await.unwrap().unwrap();
+        app.input.take();
+        assert!(app.accept_prepared(prepared));
+        let resized = &app.pending_images()[0];
+        assert_eq!((resized.width, resized.height), (80, 40));
+        assert_eq!(resized.original, original.original);
+        assert_eq!(app.outbox.in_flight.as_ref().unwrap().images[0].id, sent.id);
+        assert_eq!(app.conversation.images()[0].id, sent.id);
+        assert_eq!(app.editor.lines(), ["Unsent next request"]);
+        let saved = outbox::Outbox::load(app.conversation.directory()).unwrap();
+        assert_eq!(saved.draft_images.unwrap()[0].id, resized.id);
+        assert_eq!(saved.in_flight.unwrap().images[0].id, sent.id);
+        sent.read(app.conversation.directory()).unwrap();
+        resized.read_original(app.conversation.directory()).unwrap();
+        app.conversation.close().await.unwrap();
+    });
+}
+
+#[test]
 fn cancelling_a_prepared_resize_reclaims_only_the_unadopted_send_variant() {
     use crate::image_input::ImageBounds;
     let temp = TempDir::new().unwrap();
