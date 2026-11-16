@@ -535,24 +535,15 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 has_error_diagnostic: item.record.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error"),
                 parent: item.parent, children: item.children.clone(),
             }).collect()).clone();
-            let protocol = if !labels.visible()
-                && let Some((dimensions, pixels)) = image.pixels.opaque_pixels()
-            {
-                picker.encode_preview_shared(pixels, dimensions, request.cells, image_id)?
-            } else {
-                let mut bitmap = image
-                    .bitmap
-                    .take()
-                    .unwrap_or_else(|| image.pixels.bitmap().into())
-                    .into_rgba8();
-                labels.paint(&mut bitmap, &nodes, view, pixels, &[])?;
-                encode(
-                    picker,
-                    image::DynamicImage::ImageRgba8(bitmap),
-                    request.cells,
-                    image_id,
-                )?
-            };
+            let protocol = encode_frame(
+                picker,
+                &mut image,
+                request.cells,
+                image_id,
+                &mut labels,
+                &nodes,
+                view,
+            )?;
             timing.mark("terminal_encode_ms");
             // Native retained scenes keep direct pixels for low-latency camera
             // updates. Other scenes retain a lossless PNG instead of a full
@@ -910,6 +901,29 @@ impl PreviewTiming {
 pub fn pixel_size(picker: &Backend, cells: Size) -> Result<[u32; 2]> {
     super::viewport::Viewport::new(picker.font_size(), cells).map(|viewport| viewport.display)
 }
+fn encode_frame(
+    picker: &Backend,
+    image: &mut crate::render::RenderedPreview,
+    cells: Size,
+    id: u32,
+    labels: &mut labels::Labels,
+    nodes: &[Node],
+    view: View,
+) -> Result<Encoded> {
+    if !labels.visible()
+        && let Some((dimensions, pixels)) = image.pixels.opaque_pixels()
+    {
+        return picker.encode_preview_shared(pixels, dimensions, cells, id);
+    }
+    let mut bitmap = image
+        .bitmap
+        .take()
+        .unwrap_or_else(|| image.pixels.bitmap().into())
+        .into_rgba8();
+    labels.paint(&mut bitmap, nodes, view, pixel_size(picker, cells)?, &[])?;
+    encode(picker, image::DynamicImage::ImageRgba8(bitmap), cells, id)
+}
+
 fn encode(picker: &Backend, image: image::DynamicImage, size: Size, id: u32) -> Result<Encoded> {
     picker.encode_preview(image, size, id)
 }

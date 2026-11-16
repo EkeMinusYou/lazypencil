@@ -71,25 +71,15 @@ impl Frame<'_> {
                 "Scene cannot retain static camera frames",
             ));
         }
-        let protocol = if !labels.visible()
-            && let Some((dimensions, pixels)) = image.pixels.opaque_pixels()
-        {
-            self.picker
-                .encode_preview_shared(pixels, dimensions, self.cells, self.image_id)?
-        } else {
-            let mut bitmap = image
-                .bitmap
-                .take()
-                .unwrap_or_else(|| image.pixels.bitmap().into())
-                .into_rgba8();
-            labels.paint(&mut bitmap, &self.nodes, view, self.pixels, &[])?;
-            encode(
-                self.picker,
-                image::DynamicImage::ImageRgba8(bitmap),
-                self.cells,
-                self.image_id,
-            )?
-        };
+        let protocol = encode_frame(
+            self.picker,
+            &mut image,
+            self.cells,
+            self.image_id,
+            labels,
+            &self.nodes,
+            view,
+        )?;
         Ok(Preview {
             protocol,
             selection: None,

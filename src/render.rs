@@ -82,7 +82,7 @@ mod preview;
 #[cfg(all(feature = "tui", test))]
 use preview::preview_with_runtime_observed;
 #[cfg(feature = "tui")]
-pub(crate) use preview::{PreviewPixels, PreviewRenderer};
+pub(crate) use preview::{PreviewPixels, PreviewRenderer, RenderedPreview};
 
 pub fn png(
     project: &Project,
