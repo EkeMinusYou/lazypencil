@@ -682,7 +682,10 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "tests/support/script_bindings.rs",
             "tests/support/script_generated_overrides.rs",
         ],
-        &["src/project/bindings/"],
+        &[
+            "src/project/bindings/",
+            "tests/support/script_generated_overrides/",
+        ],
     );
     let script_copy_changed = any(
         paths,

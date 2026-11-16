@@ -1,6 +1,10 @@
 use super::*;
 use crate::script_copy::fixture;
 
+#[path = "script_generated_overrides/cases.rs"]
+mod cases;
+use cases::{Case, Combined, Context, Inherited, Mode, NativeScope, Owner, Style};
+
 const REPLACEMENT: &str = r##"/**
  * @schema 2.21
  * @input selected: ref = "badge"
@@ -11,7 +15,9 @@ return [{type:'ref',ref:pencil.input.selected},
  {type:'ref',x:24,ref:'badge'}];
 "##;
 
-fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Store, String) {
+fn setup(version: &str, case: &Case<'_>, count: usize) -> (TempDir, Store, String) {
+    let mode = case.mode;
+    let style = case.style;
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join(".git")).unwrap();
     fs::create_dir(temp.path().join("library")).unwrap();
@@ -29,23 +35,21 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     .unwrap();
     let mut changes = json!({"scriptUri":"override.js"});
     match mode {
-        mode if mode.starts_with("binding-emitted-code-") => {
+        Mode::EmittedCode(variant) => {
             changes.as_object_mut().unwrap().remove("scriptUri");
             let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone"});
             let stale = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
-            match mode.strip_prefix("binding-emitted-code-").unwrap() {
-                "keep" => (),
-                "scope" => metadata["lazypencil"]["script_scope"] = stale,
-                "binding" => metadata["lazypencil"]["script_bindings"] = stale,
-                "carrier" => {
+            match variant {
+                Owner::Keep => (),
+                Owner::Scope => metadata["lazypencil"]["script_scope"] = stale,
+                Owner::Binding => metadata["lazypencil"]["script_bindings"] = stale,
+                Owner::Carrier => {
                     metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{"version":1,"metadata":metadata,"output":stale}}})
                 }
-                _ => panic!("Unknown emitted code-owner case"),
             }
             changes["metadata"] = metadata;
         }
-        mode if mode.starts_with("binding-inherited-state-") => {
-            let variant = mode.strip_prefix("binding-inherited-state-").unwrap();
+        Mode::InheritedState(variant) => {
             let raw = json!({"selected":"$selection","stale":"$missing"});
             let hash = lazypencil::document::hash(raw.to_string().as_bytes());
             let binding = json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}});
@@ -54,64 +58,51 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 "library":if stale {"uncaptured"} else {""},"variables":{"selection":"selection"},"components":{"badge":"alternate"}})
             };
             let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_bindings":binding}});
-            if variant.ends_with("scope") && !variant.starts_with("underlay") {
+            if matches!(variant, Inherited::Scope | Inherited::StaleScope) {
                 metadata["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"old.js","library":"uncaptured",
-                    "inputs":{"hash":if variant.starts_with("stale") {"0".repeat(64)} else {hash},"library":""}});
-            } else if variant.ends_with("context") {
-                metadata["lazypencil"]["script_input_context"] =
-                    context(variant.starts_with("stale"));
+                    "inputs":{"hash":if variant.stale() {"0".repeat(64)} else {hash},"library":""}});
+            } else if matches!(variant, Inherited::Context | Inherited::StaleContext) {
+                metadata["lazypencil"]["script_input_context"] = context(variant.stale());
             } else {
-                let input = if variant == "carrier-output" {
+                let input = if variant == Inherited::CarrierOutput {
                     None
                 } else {
-                    Some(context(variant != "carrier"))
+                    Some(context(variant != Inherited::Carrier))
                 };
-                let output = (variant == "carrier-output").then(|| json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":{"badge":"badge"}}));
+                let output = (variant == Inherited::CarrierOutput).then(|| json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":{"badge":"badge"}}));
                 metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{
                     "version":1,"metadata":{"type":"test","keep":"generated","literal":"$tone"},"input":input,"output":output
                 }}});
             }
-            if variant == "underlay-binding" {
+            if variant == Inherited::UnderlayBinding {
                 changes.as_object_mut().unwrap().remove("scriptUri");
                 fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
             }
             changes["metadata"] = metadata;
         }
-        mode if mode.starts_with("binding-code-owner-") => {
-            let variant = mode
-                .strip_prefix("binding-code-owner-")
-                .unwrap()
-                .trim_end_matches("-native");
+        Mode::CodeOwner { variant, .. } => {
             changes.as_object_mut().unwrap().remove("scriptUri");
             changes["inputs"] = json!({"selected":"badge"});
             let mut metadata = json!({"type":"test","keep":"generated","literal":"$tone"});
             match variant {
-                "scope" => {
+                Owner::Scope => {
                     metadata["lazypencil"]["script_scope"] =
                         json!({"version":1,"script_uri":"old.js","library":"uncaptured"})
                 }
-                "binding" => {
+                Owner::Binding => {
                     metadata["lazypencil"]["script_bindings"] = json!({"version":1,"script_uri":"old.js","library":"uncaptured","components":{"badge":"missing"}})
                 }
-                "carrier" => {
+                Owner::Carrier => {
                     metadata = json!({"type":"lazypencil","lazypencil":{"script_override":{
                         "version":1,"metadata":metadata,"output":{"version":1,"script_uri":"old.js","library":"uncaptured","components":{"badge":"missing"}}
                     }}})
                 }
-                "keep" => (),
-                _ => panic!("Unknown code-owner case"),
+                Owner::Keep => (),
             }
             changes["metadata"] = metadata;
         }
-        mode if mode.starts_with("binding-input-context-")
-            || mode.starts_with("binding-carrier-") =>
-        {
-            let carrier = mode.starts_with("binding-carrier-");
-            let variant = mode
-                .strip_prefix("binding-input-context-")
-                .or_else(|| mode.strip_prefix("binding-carrier-"))
-                .unwrap();
-            let variable = variant == "variable";
+        Mode::InputContext { variant, carrier } => {
+            let variable = variant == Context::Variable;
             let inputs = if variable {
                 json!({"selected":"$selection","stale":"$missing"})
             } else {
@@ -123,11 +114,11 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 context["values"]["selected"] = json!("$choice");
                 context["variables"] = json!({"selection":"choice","choice":"tone"});
             }
-            if variant == "library" {
+            if variant == Context::Library {
                 context["library"] = json!("base");
                 context["components"] = json!({"badge":"badge"});
             }
-            if variant == "stale" {
+            if variant == Context::Stale {
                 context["values"]["selected"] = json!("different");
                 context["library"] = json!("uncaptured");
                 context["variables"] = json!({"missing":"missing"});
@@ -139,33 +130,33 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 "script_scope":{"version":1,"script_uri":"override.js","library":"base","inputs":{"hash":hash,"library":"base"}},
                 "script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":{"badge":"badge"}}
             });
-            if variant == "scope" {
+            if variant == Context::Scope {
                 namespace.as_object_mut().unwrap().remove("script_bindings");
             }
-            if variant == "only" {
+            if variant == Context::Only {
                 namespace.as_object_mut().unwrap().remove("script_scope");
                 namespace.as_object_mut().unwrap().remove("script_bindings");
             }
             changes["metadata"] =
                 json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":namespace});
             if carrier {
-                if variant == "metadata-output" {
+                if variant == Context::MetadataOutput {
                     changes.as_object_mut().unwrap().remove("scriptUri");
                     fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
                 }
-                if variant == "nested" {
+                if variant == Context::Nested {
                     changes["metadata"]["lazypencil"]["script_override"] =
                         json!({"version":999,"opaque":"keep"});
                 }
                 let metadata = changes["metadata"].take();
-                let output = ["output", "both", "stale-output", "metadata-output"].contains(&variant).then(|| json!({
-                    "version":1,"script_uri":if variant == "stale-output" {"old.js"} else if variant == "metadata-output" {"base.js"} else {"override.js"},
-                    "library":if variant == "stale-output" {"uncaptured"} else {"base"},
+                let output = [Context::Output, Context::Both, Context::StaleOutput, Context::MetadataOutput].contains(&variant).then(|| json!({
+                    "version":1,"script_uri":if variant == Context::StaleOutput {"old.js"} else if variant == Context::MetadataOutput {"base.js"} else {"override.js"},
+                    "library":if variant == Context::StaleOutput {"uncaptured"} else {"base"},
                     "components":{"badge":"badge"},"variables":{"tone":"tone"}
                 }));
-                let input = ["input", "both", "stale-input"].contains(&variant).then(|| json!({
-                    "version":1,"library":if variant == "stale-input" {"uncaptured"} else {"base"},
-                    "values":{"selected":if variant == "stale-input" {"different"} else {"badge"}},
+                let input = [Context::Input, Context::Both, Context::StaleInput].contains(&variant).then(|| json!({
+                    "version":1,"library":if variant == Context::StaleInput {"uncaptured"} else {"base"},
+                    "values":{"selected":if variant == Context::StaleInput {"different"} else {"badge"}},
                     "variables":{},"components":{"badge":"badge"}
                 }));
                 changes["metadata"] = json!({"type":"lazypencil","lazypencil":{"script_override":{
@@ -173,14 +164,8 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 }}});
             }
         }
-        mode if mode.starts_with("binding-combined-")
-            || mode.starts_with("binding-native-parent-combined-") =>
-        {
-            let variant = mode
-                .strip_prefix("binding-combined-")
-                .or_else(|| mode.strip_prefix("binding-native-parent-combined-"))
-                .unwrap();
-            let inherited = variant.starts_with("inherited-");
+        Mode::Combined { variant, .. } => {
+            let inherited = variant.inherited();
             let inputs = if inherited {
                 json!({"selected":"$selection","stale":"$missing"})
             } else {
@@ -189,21 +174,24 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 inputs
             };
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
-            let stale_inputs = variant == "stale-inputs";
-            let stale_binding = variant == "stale-binding-output";
-            let stale_scope = variant == "stale-scope-output";
+            let stale_inputs = variant == Combined::StaleInputs;
+            let stale_binding = variant == Combined::StaleBindingOutput;
+            let stale_scope = variant == Combined::StaleScopeOutput;
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{
                 "script_scope":{"version":1,"script_uri":if stale_scope {"old.js"} else {"override.js"},"library":if stale_scope {"uncaptured"} else {"base"},
-                    "inputs":{"hash":if stale_inputs {"a".repeat(64)} else {hash.clone()},"library":if variant == "inherited-scope-input" {""} else {"base"}}},
+                    "inputs":{"hash":if stale_inputs {"a".repeat(64)} else {hash.clone()},"library":if variant == Combined::InheritedScopeInput {""} else {"base"}}},
                 "script_bindings":{"version":1,"script_uri":if stale_binding {"old.js"} else {"override.js"},"library":if stale_binding {"uncaptured"} else {""},
                     "components":{"badge":"badge"},"variables":{"tone":"tone"},
-                    "inputs_hash":if stale_inputs || ["scope-input","stale-scope-output","inherited-scope-input"].contains(&variant) {"b".repeat(64)} else {hash},
+                    "inputs_hash":if stale_inputs || [Combined::ScopeInput,Combined::StaleScopeOutput,Combined::InheritedScopeInput].contains(&variant) {"b".repeat(64)} else {hash},
                     "input_components":{"badge":"alternate"}}
             }});
         }
-        mode if mode.starts_with("binding-native-parent-input-") => {
-            let inherited = mode.contains("-inherited-");
-            let stale = mode.contains("-stale");
+        Mode::NativeInput {
+            inherited,
+            stale,
+            scope,
+            ..
+        } => {
             let selected = if inherited != stale {
                 "$selection"
             } else {
@@ -216,9 +204,9 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 json!({"selected":selected})
             };
             let hash = lazypencil::document::hash(guarded.to_string().as_bytes());
-            let namespace = if mode.contains("-scope") {
-                json!({"script_scope":{"version":1,"script_uri":if mode.contains("-only-") {"old.js"} else {"override.js"},"library":if mode.contains("-only-") {"uncaptured"} else {""},"inputs":{"hash":hash,"library":if inherited {""} else {"base"}}}})
-            } else if mode.contains("-default") {
+            let namespace = if matches!(scope, NativeScope::Scope | NativeScope::OnlyScope) {
+                json!({"script_scope":{"version":1,"script_uri":if scope == NativeScope::OnlyScope {"old.js"} else {"override.js"},"library":if scope == NativeScope::OnlyScope {"uncaptured"} else {""},"inputs":{"hash":hash,"library":if inherited {""} else {"base"}}}})
+            } else if scope == NativeScope::Default {
                 json!({})
             } else {
                 json!({"script_bindings":{"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"},"inputs_hash":hash,"input_components":if inherited {json!({"badge":"alternate"})} else {json!({"alternate":"badge"})}}})
@@ -226,115 +214,128 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             changes["metadata"] =
                 json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":namespace});
         }
-        "literal" => changes["inputs"] = json!({"selected":"badge","stale":"$missing"}),
-        "variable" | "themed-variable" => {
+        Mode::Literal => changes["inputs"] = json!({"selected":"badge","stale":"$missing"}),
+        Mode::Variable | Mode::ThemedVariable => {
             changes["inputs"] = json!({"selected":"$selection","stale":"$missing"})
         }
-        "bad-variable" => changes["inputs"] = json!({"selected":"$missing"}),
-        "null" => changes["inputs"] = json!({"selected":null,"stale":"$missing"}),
-        "metadata" => {
+        Mode::BadVariable => changes["inputs"] = json!({"selected":"$missing"}),
+        Mode::Null => changes["inputs"] = json!({"selected":null,"stale":"$missing"}),
+        Mode::Metadata => {
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone"})
         }
-        "explicit-context" => {
+        Mode::ExplicitContext => {
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}})
         }
-        "explicit-input-context" => {
+        Mode::ExplicitInputContext => {
             let inputs = json!({"selected":"$selection","stale":"$missing"});
             changes["inputs"] = inputs.clone();
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base","inputs":{"hash":hash,"library":""}}}});
         }
-        "unknown-context" => {
+        Mode::UnknownContext => {
             changes["metadata"] = json!({"type":"test","lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"uncaptured"}}});
         }
-        "explicit-bindings"
-        | "binding-library"
-        | "binding-mapped"
-        | "binding-catalog"
-        | "binding-inputs"
-        | "binding-stale-inputs"
-        | "binding-inherited-inputs"
-        | "binding-metadata"
-        | "binding-unknown-target"
-        | "binding-unknown-library"
-        | "binding-unmanifested-asset"
-        | "binding-combined"
-        | "binding-native-parent"
-        | "binding-native-parent-scope"
-        | "binding-native-parent-default"
-        | "binding-native-parent-library"
-        | "binding-native-parent-scope-library"
-        | "binding-native-parent-default-library" => {
+        Mode::ExplicitBindings
+        | Mode::BindingLibrary
+        | Mode::BindingMapped
+        | Mode::BindingCatalog
+        | Mode::BindingInputs
+        | Mode::BindingStaleInputs
+        | Mode::BindingInheritedInputs
+        | Mode::BindingMetadata
+        | Mode::BindingUnknownTarget
+        | Mode::BindingUnknownLibrary
+        | Mode::BindingUnmanifestedAsset
+        | Mode::BindingCombined
+        | Mode::NativeParent { .. } => {
             let mut bindings = json!({"version":1,"script_uri":"override.js","components":{"badge":"badge"},"variables":{"tone":"tone"}});
-            if ["binding-library", "binding-inputs", "binding-stale-inputs"].contains(&mode) {
+            if [
+                Mode::BindingLibrary,
+                Mode::BindingInputs,
+                Mode::BindingStaleInputs,
+            ]
+            .contains(&mode)
+            {
                 bindings["library"] = json!("base");
             }
-            if mode == "binding-mapped" {
+            if mode == Mode::BindingMapped {
                 bindings["components"]["badge"] = json!("alternate");
                 bindings["variables"]["tone"] = json!("accent");
             }
-            if ["binding-inputs", "binding-stale-inputs"].contains(&mode) {
+            if [Mode::BindingInputs, Mode::BindingStaleInputs].contains(&mode) {
                 let inputs = json!({"selected":"badge","stale":"$missing"});
                 changes["inputs"] = inputs.clone();
-                bindings["inputs_hash"] = json!(if mode == "binding-inputs" {
+                bindings["inputs_hash"] = json!(if mode == Mode::BindingInputs {
                     lazypencil::document::hash(inputs.to_string().as_bytes())
                 } else {
                     "a".repeat(64)
                 });
                 bindings["input_components"] = json!({"badge":"badge"});
             }
-            if mode == "binding-inherited-inputs" {
+            if mode == Mode::BindingInheritedInputs {
                 let inputs = json!({"selected":"$selection","stale":"$missing"});
                 bindings["inputs_hash"] =
                     json!(lazypencil::document::hash(inputs.to_string().as_bytes()));
                 bindings["input_components"] = json!({"badge":"alternate"});
             }
-            if mode == "binding-metadata" {
+            if mode == Mode::BindingMetadata {
                 changes.as_object_mut().unwrap().remove("scriptUri");
                 bindings["script_uri"] = json!("base.js");
                 fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
             }
-            if mode == "binding-catalog" {
+            if mode == Mode::BindingCatalog {
                 bindings["version"] = json!(2);
                 bindings["components"] = json!({"component-slot":"badge"});
                 bindings["variables"] = json!({"variable-slot":"tone"});
                 bindings["assets"] = json!({});
                 bindings["script_scopes"] = json!({"":{"components":{"badge":"component-slot"},"variables":{"tone":"variable-slot"},"themes":{},"assets":{},"libraries":{"":""},"browser_libraries":{}}});
             }
-            if mode == "binding-unknown-target" {
+            if mode == Mode::BindingUnknownTarget {
                 bindings["components"]["badge"] = json!("missing");
             }
-            if mode == "binding-unknown-library" {
+            if mode == Mode::BindingUnknownLibrary {
                 bindings["library"] = json!("uncaptured");
             }
-            if mode == "binding-unmanifested-asset" {
+            if mode == Mode::BindingUnmanifestedAsset {
                 bindings["assets"] = json!({"script:alias.js":"unmanifested.js"});
             }
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_bindings":bindings}});
-            if mode == "binding-combined" {
+            if mode == Mode::BindingCombined {
                 changes["metadata"]["lazypencil"]["script_scope"] =
                     json!({"version":1,"script_uri":"override.js","library":"base"});
             }
-            if mode.starts_with("binding-native-parent-scope") {
+            if matches!(
+                mode,
+                Mode::NativeParent {
+                    scope: NativeScope::Scope,
+                    ..
+                }
+            ) {
                 changes["metadata"]["lazypencil"] =
                     json!({"script_scope":{"version":1,"script_uri":"override.js","library":""}});
-            } else if mode.starts_with("binding-native-parent-default") {
+            } else if matches!(
+                mode,
+                Mode::NativeParent {
+                    scope: NativeScope::Default,
+                    ..
+                }
+            ) {
                 changes["metadata"]
                     .as_object_mut()
                     .unwrap()
                     .remove("lazypencil");
             }
         }
-        "stale-scope" | "stale-input-scope" => {
+        Mode::StaleScope | Mode::StaleInputScope => {
             let mut scope = json!({"version":1,"script_uri":"old.js","library":"uncaptured"});
-            if mode == "stale-input-scope" {
+            if mode == Mode::StaleInputScope {
                 changes["inputs"] = json!({"selected":"badge"});
                 scope["inputs"] = json!({"hash":"a".repeat(64),"library":"uncaptured"});
             }
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":scope}});
         }
-        "active-input-scope" | "inherited-input-scope" => {
-            let inputs = if mode == "active-input-scope" {
+        Mode::ActiveInputScope | Mode::InheritedInputScope => {
+            let inputs = if mode == Mode::ActiveInputScope {
                 let inputs = json!({"selected":"badge"});
                 changes["inputs"] = inputs.clone();
                 inputs
@@ -344,11 +345,11 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":""}}}});
         }
-        "stale-inherited-input-scope" | "inherited-unknown-input-scope" => {
-            if mode == "stale-inherited-input-scope" {
+        Mode::StaleInheritedInputScope | Mode::InheritedUnknownInputScope => {
+            if mode == Mode::StaleInheritedInputScope {
                 fs::write(temp.path().join("library/base.js"), "/**\n * @schema 2.21\n * @input selected: ref = \"badge\"\n */\nreturn [{type:'rectangle',width:36,height:12,fill:'#0000ff'}];").unwrap();
             }
-            let selected = if mode == "stale-inherited-input-scope" {
+            let selected = if mode == Mode::StaleInheritedInputScope {
                 "$base_selection"
             } else {
                 "$selection"
@@ -357,25 +358,27 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             let hash = lazypencil::document::hash(inputs.to_string().as_bytes());
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":{"version":1,"script_uri":"old.js","library":"base","inputs":{"hash":hash,"library":"uncaptured"}}}});
         }
-        "metadata-output" | "metadata-input" | "metadata-both" | "metadata-unknown-source" => {
+        Mode::MetadataOutput
+        | Mode::MetadataInput
+        | Mode::MetadataBoth
+        | Mode::MetadataUnknownSource => {
             changes.as_object_mut().unwrap().remove("scriptUri");
             fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
             let mut scope = json!({"version":1,"script_uri":"base.js","library":""});
-            if mode == "metadata-input" {
+            if mode == Mode::MetadataInput {
                 scope["script_uri"] = json!("old.js");
                 scope["library"] = json!("uncaptured");
             }
-            if ["metadata-input", "metadata-both"].contains(&mode) {
+            if [Mode::MetadataInput, Mode::MetadataBoth].contains(&mode) {
                 let inputs = json!({"selected":"$selection","stale":"$missing"});
                 scope["inputs"] = json!({"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":""});
             }
-            if mode == "metadata-unknown-source" {
+            if mode == Mode::MetadataUnknownSource {
                 scope["library"] = json!("uncaptured");
             }
             changes["metadata"] = json!({"type":"test","keep":"generated","literal":"$tone","lazypencil":{"script_scope":scope}});
         }
-        "inherit" | "saved-input-owner" => {}
-        _ => panic!("Unknown generated override case"),
+        Mode::Inherit | Mode::SavedInputOwner => {}
     }
     let direct = |mut changes: Value| {
         changes["type"] = json!("ref");
@@ -383,11 +386,11 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         changes
     };
     let template = match style {
-        "emitted-children" | "emitted-replacement" => {
+        Style::EmittedChildren | Style::EmittedReplacement => {
             let script = json!({"id":"emitted","type":"script","scriptUri":"override.js","width":36,"height":12,
                 "inputs":{"selected":"badge"},"metadata":{"type":"test","keep":"generated","literal":"$tone",
                 "lazypencil":{"script_scope":{"version":1,"script_uri":"override.js","library":"base"}}}});
-            if style == "emitted-children" {
+            if style == Style::EmittedChildren {
                 json!({"type":"ref","ref":"base:card","children":[script],"descendants":{"emitted":changes}})
             } else {
                 json!({"type":"ref","ref":"base:card","descendants":{
@@ -396,19 +399,18 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
                 }})
             }
         }
-        "direct" => direct(changes),
-        "descendant" => json!({"type":"ref","ref":"base:card","descendants":{"draw":changes}}),
-        "replacement" => {
+        Style::Direct => direct(changes),
+        Style::Descendant => json!({"type":"ref","ref":"base:card","descendants":{"draw":changes}}),
+        Style::Replacement => {
             json!({"type":"ref","ref":"base:card","descendants":{"draw":direct(changes)}})
         }
-        "children" => json!({"type":"ref","ref":"base:card","children":[direct(changes)]}),
-        "script" => {
+        Style::Children => json!({"type":"ref","ref":"base:card","children":[direct(changes)]}),
+        Style::Script => {
             changes["type"] = json!("script");
             changes["width"] = json!(36);
             changes["height"] = json!(12);
             changes
         }
-        _ => panic!("Unknown generated override address"),
     };
     let code = format!(
         "/* @schema 2.21 */\nconst template={template};return Array.from({{length:{count}}},(_,i)=>({{...template,id:'child-'+i}}));\n"
@@ -442,7 +444,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             {"id":"use","type":"ref","ref":"ui:generator"}
         ]}),
     );
-    if mode.starts_with("binding-code-owner-") {
+    if matches!(mode, Mode::CodeOwner { .. }) {
         fs::write(temp.path().join("library/base.js"), REPLACEMENT).unwrap();
         write(
             &temp.path().join("library/palette.pen"),
@@ -454,29 +456,43 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         let path = temp.path().join("library/base.pen");
         let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         base["imports"]["palette"] = json!("palette.pen");
-        base["children"][1]["metadata"]["lazypencil"] = if mode.ends_with("-native") {
+        base["children"][1]["metadata"]["lazypencil"] = if matches!(
+            mode,
+            Mode::CodeOwner { native: true, .. }
+        ) {
             json!({"script_bindings":{"version":1,"script_uri":"base.js","library":"palette","components":{"badge":"badge"},"variables":{"tone":"tone"}}})
         } else {
             json!({"script_scope":{"version":1,"script_uri":"base.js","library":"palette"}})
         };
         write(&path, base);
     }
-    if ["binding-mapped", "binding-inherited-inputs"].contains(&mode)
-        || mode.starts_with("binding-combined-")
-        || mode.starts_with("binding-input-context-")
-        || mode.starts_with("binding-carrier-")
-        || mode.starts_with("binding-inherited-state-")
+    if [Mode::BindingMapped, Mode::BindingInheritedInputs].contains(&mode)
+        || matches!(
+            mode,
+            Mode::Combined {
+                native_parent: false,
+                ..
+            }
+        )
+        || matches!(mode, Mode::InputContext { .. })
+        || matches!(mode, Mode::InheritedState(_))
     {
         let path = temp.path().join("library/ui.pen");
         let mut ui: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         ui["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
-        if mode == "binding-input-context-variable" {
+        if matches!(
+            mode,
+            Mode::InputContext {
+                variant: Context::Variable,
+                carrier: false
+            }
+        ) {
             ui["variables"]["choice"] = json!({"type":"string","value":"badge"});
         }
         ui["children"].as_array_mut().unwrap().push(json!({"id":"alternate","name":"UI alternate","type":"rectangle","reusable":true,"width":10,"height":10,"fill":"#00ffff"}));
         write(&path, ui);
     }
-    if mode == "themed-variable" {
+    if mode == Mode::ThemedVariable {
         let path = temp.path().join("library/base.pen");
         let mut base: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         base["themes"] = json!({"mode":["light","dark"]});
@@ -495,7 +511,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         main["themes"] = json!({"copy_mode":["light","dark"]});
         write(&path, main);
     }
-    if mode == "saved-input-owner" {
+    if mode == Mode::SavedInputOwner {
         write(
             &temp.path().join("library/inputs.pen"),
             json!({"version":version,
@@ -511,8 +527,13 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":lazypencil::document::hash(inputs.to_string().as_bytes()),"library":"inputs"}});
         write(&path, base);
     }
-    if mode == "binding-combined-inherited-nonlexical"
-        || mode.starts_with("binding-inherited-state-")
+    if matches!(
+        mode,
+        Mode::Combined {
+            variant: Combined::InheritedNonlexical,
+            native_parent: false
+        }
+    ) || matches!(mode, Mode::InheritedState(_))
     {
         write(
             &temp.path().join("library/inputs.pen"),
@@ -528,7 +549,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             "version":1,"library":"inputs","values":{"selected":"$selection","stale":"$missing"},
             "variables":{"selection":"selection"},"components":{"badge":"badge"}
         });
-        if mode.contains("underlay-") {
+        if mode.underlay() {
             write(
                 &temp.path().join("library/underlay.pen"),
                 json!({"version":version,
@@ -539,7 +560,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             base["imports"]["underlay"] = json!("underlay.pen");
             let raw = json!({"selected":"$selection","stale":"$missing"});
             let hash = lazypencil::document::hash(raw.to_string().as_bytes());
-            if mode.ends_with("underlay-scope") {
+            if mode == Mode::InheritedState(Inherited::UnderlayScope) {
                 base["children"][1]["metadata"]["lazypencil"]["script_scope"] = json!({"version":1,"script_uri":"base.js","library":"","inputs":{"hash":hash,"library":"underlay"}});
             } else {
                 base["children"][1]["metadata"]["lazypencil"]["script_bindings"] = json!({"version":1,"script_uri":"base.js","library":"underlay","variables":{"tone":"tone"},"components":{"badge":"badge"},"inputs_hash":hash,"input_components":{"badge":"badge"}});
@@ -547,8 +568,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         }
         write(&path, base);
     }
-    if mode.starts_with("binding-native-parent") {
-        let library = mode.ends_with("-library");
+    if let Some(library) = mode.native_parent_library() {
         let path = temp.path().join(if library {
             "library/base.pen"
         } else {
@@ -556,7 +576,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
         });
         let mut owner: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         owner["variables"]["accent"] = json!({"type":"color","value":"#00ffff"});
-        if mode.starts_with("binding-native-parent-input-") {
+        if matches!(mode, Mode::NativeInput { .. }) {
             owner["variables"]["native_selection"] = json!({"type":"string","value":"alternate"});
             if !library {
                 owner["variables"]["selection"]["value"] = json!("alternate");
@@ -585,7 +605,7 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
             "descendants":{"base:card":{"draw":"draw"}},
             "descendant_contexts":{"base:card":{"draw":{"parent":"","instance":true,"target_instance":true}}}
         });
-        if mode.starts_with("binding-native-parent-input-") {
+        if matches!(mode, Mode::NativeInput { .. }) {
             parent["variables"]["selection"] = json!("native_selection");
         }
         if library {
@@ -625,9 +645,10 @@ fn setup(version: &str, style: &str, mode: &str, count: usize) -> (TempDir, Stor
     (temp, store, code)
 }
 
-fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
+fn copy(store: &Store, include_source: bool, case: &Case<'_>) -> Value {
+    let mode = case.mode;
     let mut variables = serde_json::Map::new();
-    if mode.starts_with("binding-code-owner-") {
+    if matches!(mode, Mode::CodeOwner { .. }) {
         for name in ["selection", "tone"] {
             variables.insert(
                 format!("ui:base:palette:{name}"),
@@ -635,14 +656,19 @@ fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
             );
         }
     }
-    if mode == "binding-combined-inherited-nonlexical"
-        || mode.starts_with("binding-inherited-state-")
+    if matches!(
+        mode,
+        Mode::Combined {
+            variant: Combined::InheritedNonlexical,
+            native_parent: false
+        }
+    ) || matches!(mode, Mode::InheritedState(_))
     {
         variables.insert(
             "ui:base:inputs:selection".into(),
             json!({"action":"rename","name":"input_selection"}),
         );
-        if mode.contains("underlay-") {
+        if mode.underlay() {
             variables.insert(
                 "ui:base:underlay:tone".into(),
                 json!({"action":"rename","name":"underlay_tone"}),
@@ -656,8 +682,8 @@ fn copy(store: &Store, include_source: bool, mode: &str) -> Value {
                 json!({"action":"rename","name":format!("{prefix}{name}")}),
             );
         }
-        if mode.starts_with("binding-native-parent-input-")
-            && !(scope == "ui" && mode.ends_with("-library"))
+        if matches!(mode, Mode::NativeInput { .. })
+            && !(scope == "ui" && mode.native_parent_library() == Some(true))
         {
             variables.insert(
                 format!("{scope}:native_selection"),
@@ -785,56 +811,79 @@ fn independent_case(
     first: Color,
 ) -> (TempDir, Store, Vec<u8>) {
     eprintln!("Generated source: schema={version}, style={style}, mode={mode}");
-    let (temp, store, code) = setup(version, style, mode, 1);
+    let case = Case::parse(style, mode);
+    let mode = case.mode;
+    let (temp, store, code) = setup(version, &case, 1);
     let metadata = if [
-        "metadata",
-        "stale-scope",
-        "stale-input-scope",
-        "explicit-context",
-        "explicit-input-context",
-        "active-input-scope",
-        "inherited-input-scope",
-        "stale-inherited-input-scope",
-        "metadata-output",
-        "metadata-input",
-        "metadata-both",
+        Mode::Metadata,
+        Mode::StaleScope,
+        Mode::StaleInputScope,
+        Mode::ExplicitContext,
+        Mode::ExplicitInputContext,
+        Mode::ActiveInputScope,
+        Mode::InheritedInputScope,
+        Mode::StaleInheritedInputScope,
+        Mode::MetadataOutput,
+        Mode::MetadataInput,
+        Mode::MetadataBoth,
     ]
     .contains(&mode)
-        || mode == "explicit-bindings"
-        || mode.starts_with("binding-")
+        || mode == Mode::ExplicitBindings
+        || mode.is_binding()
     {
         "generated"
     } else {
         "base"
     };
-    let output = if mode == "binding-emitted-code-keep" {
+    let output = if mode == Mode::EmittedCode(Owner::Keep) {
         Color::RED
-    } else if mode == "binding-inherited-state-underlay-binding" {
+    } else if mode == Mode::InheritedState(Inherited::UnderlayBinding) {
         Color::BLUE
-    } else if mode.starts_with("binding-code-owner-") {
-        if mode.contains("-keep") {
+    } else if matches!(mode, Mode::CodeOwner { .. }) {
+        if matches!(
+            mode,
+            Mode::CodeOwner {
+                variant: Owner::Keep,
+                ..
+            }
+        ) {
             Color::CYAN
         } else {
             Color::RED
         }
-    } else if (mode.starts_with("binding-native-parent") && mode.ends_with("-library"))
+    } else if mode.native_parent_library() == Some(true)
         || [
-            "explicit-context",
-            "explicit-input-context",
-            "metadata-input",
-            "binding-library",
-            "binding-inputs",
-            "binding-stale-inputs",
-            "binding-combined-stale-binding-output",
-            "binding-input-context-scope",
-            "binding-carrier-output",
-            "binding-carrier-both",
-            "binding-carrier-metadata-output",
+            Mode::ExplicitContext,
+            Mode::ExplicitInputContext,
+            Mode::MetadataInput,
+            Mode::BindingLibrary,
+            Mode::BindingInputs,
+            Mode::BindingStaleInputs,
+            Mode::Combined {
+                variant: Combined::StaleBindingOutput,
+                native_parent: false,
+            },
+            Mode::InputContext {
+                variant: Context::Scope,
+                carrier: false,
+            },
+            Mode::InputContext {
+                variant: Context::Output,
+                carrier: true,
+            },
+            Mode::InputContext {
+                variant: Context::Both,
+                carrier: true,
+            },
+            Mode::InputContext {
+                variant: Context::MetadataOutput,
+                carrier: true,
+            },
         ]
         .contains(&mode)
     {
         Color::RED
-    } else if mode == "binding-mapped" {
+    } else if mode == Mode::BindingMapped {
         Color::CYAN
     } else {
         Color::GREEN
@@ -842,24 +891,24 @@ fn independent_case(
     let render = |store: &Store, stage: &str| {
         let png = preview_colours(store, [first, output, output], metadata);
         if ([
-            "explicit-context",
-            "explicit-input-context",
-            "active-input-scope",
-            "inherited-input-scope",
-            "stale-inherited-input-scope",
-            "metadata-output",
-            "metadata-input",
-            "metadata-both",
-            "saved-input-owner",
+            Mode::ExplicitContext,
+            Mode::ExplicitInputContext,
+            Mode::ActiveInputScope,
+            Mode::InheritedInputScope,
+            Mode::StaleInheritedInputScope,
+            Mode::MetadataOutput,
+            Mode::MetadataInput,
+            Mode::MetadataBoth,
+            Mode::SavedInputOwner,
         ]
         .contains(&mode)
-            || mode == "explicit-bindings"
-            || mode.starts_with("binding-"))
+            || mode == Mode::ExplicitBindings
+            || mode.is_binding())
             && let Some(root) = std::env::var_os("LAZYPENCIL_TEST_TUI_ARTIFACTS")
         {
             let root = std::path::PathBuf::from(root).join("generated-script-scopes");
             fs::create_dir_all(&root).unwrap();
-            let name = format!("{version}-{style}-{mode}-{stage}");
+            let name = format!("{version}-{}-{}-{stage}", case.style_label, case.label);
             fs::write(root.join(format!("{name}.png")), &png).unwrap();
             fs::write(root.join(format!("{name}.json")), serde_json::to_vec_pretty(&json!({
                 "source_commit":std::env::var("GITHUB_SHA").ok(),"png_sha256":lazypencil::document::hash(&png),
@@ -871,12 +920,12 @@ fn independent_case(
         png
     };
     let before = render(&store, "original");
-    let response = copy(&store, true, mode);
+    let response = copy(&store, true, &case);
     let component = response["generated_ids"]["0"]["component_id"]
         .as_str()
         .unwrap();
     let document = store.read().unwrap();
-    if mode.starts_with("binding-code-owner-") {
+    if matches!(mode, Mode::CodeOwner { .. }) {
         separate_code_owner(&store);
     }
     let node = document.node(component).unwrap();
@@ -896,10 +945,11 @@ fn independent_case(
     assert_eq!(
         render(&store, "copied"),
         before,
-        "{version}/{style}/{mode}/copy"
+        "{version}/{style}/{}/copy",
+        case.label
     );
     let (second, _) = fixture::recopy(&store, component, &temp.path().join("second"), "again_");
-    if mode.starts_with("binding-code-owner-") {
+    if matches!(mode, Mode::CodeOwner { .. }) {
         separate_code_owner(&second);
     }
     fs::remove_file(store.path()).unwrap();
@@ -907,7 +957,8 @@ fn independent_case(
     assert_eq!(
         render(&second, "recopied"),
         before,
-        "{version}/{style}/{mode}/recopy"
+        "{version}/{style}/{}/recopy",
+        case.label
     );
 
     (temp, second, before)
@@ -1011,13 +1062,9 @@ fn generation_panels(store: &Store, version: &str, stage: &str) -> Vec<Vec<u8>> 
 }
 
 fn different_input_generations(version: &str) {
-    let (temp, store, _) = setup(
-        version,
-        "direct",
-        "binding-inherited-state-stale-carrier",
-        1,
-    );
-    let response = copy(&store, true, "binding-inherited-state-stale-carrier");
+    let case = Case::parse("direct", "binding-inherited-state-stale-carrier");
+    let (temp, store, _) = setup(version, &case, 1);
+    let response = copy(&store, true, &case);
     let old = response["generated_ids"]["0"]["component_id"]
         .as_str()
         .unwrap()
@@ -1249,8 +1296,9 @@ fn generated_code_overrides_reject_unmanifested_sources_explicit_contexts_and_bi
         (true, "bad-variable", 1, "INVALID_DOCUMENT"),
         (true, "inherit", 600, "INVALID_DOCUMENT"),
     ] {
-        let (temp, store, _) = setup("2.21", "direct", mode, count);
-        copy(&store, include_source, mode);
+        let case = Case::parse("direct", mode);
+        let (temp, store, _) = setup("2.21", &case, count);
+        copy(&store, include_source, &case);
         fs::remove_dir_all(temp.path().join("library")).unwrap();
         let bytes = fs::read(store.path()).unwrap();
         let error = service::layout_snapshot_with_runtime(

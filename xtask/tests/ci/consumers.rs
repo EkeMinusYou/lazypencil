@@ -316,6 +316,22 @@ fn native_command_fixture_changes_reproduce_their_browser_and_script_consumers_f
 
 #[test]
 fn generated_reference_changes_reproduce_the_real_script_binding_cases_first() {
+    let owner = focus::select(
+        &util::root(),
+        &["tests/support/script_generated_overrides.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    let nested = focus::select(
+        &util::root(),
+        &["tests/support/script_generated_overrides/cases.rs".into()],
+        "auto",
+    )
+    .unwrap();
+    assert_eq!(
+        nested, owner,
+        "Typed fixture dimensions retain their real consumer"
+    );
     for path in [
         "src/project/generated_refs.rs",
         "tests/support/script_generated_overrides.rs",
