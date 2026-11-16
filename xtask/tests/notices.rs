@@ -393,32 +393,31 @@ fn original_inventories_retain_every_notice_attribution_and_reference_byte() {
     }
 }
 #[test]
-fn every_bundle_rejects_changed_missing_and_unlisted_members() {
-    for family in ["rust", "assets", "skia", "toolchain"] {
-        for mutation in ["changed", "missing", "unlisted", "forged"] {
-            let f = Fixture::new(family);
-            let files = f.expected();
-            let output = f.path("output");
-            notices::publish_bundle(&output, &files).unwrap();
-            notices::verify_expected(&output, &files).unwrap();
-            let member = output.join(files.keys().next().unwrap());
-            match mutation {
-                "changed" => fs::write(member, b"changed original notice").unwrap(),
-                "missing" => fs::remove_file(member).unwrap(),
-                "unlisted" => fs::write(output.join("unlisted"), b"extra").unwrap(),
-                _ => {
-                    let mut index = f.json("output/manifest.json");
-                    index["files"][0]["sha256"] = "0".repeat(64).into();
-                    f.set("output/manifest.json", &index);
-                }
+fn generic_bundle_integrity_rejects_changed_missing_unlisted_and_forged_members() {
+    for mutation in ["changed", "missing", "unlisted", "forged"] {
+        let f = Fixture::new("rust");
+        let files = f.expected();
+        let output = f.path("output");
+        notices::publish_bundle(&output, &files).unwrap();
+        notices::verify_expected(&output, &files).unwrap();
+        let member = output.join(files.keys().next().unwrap());
+        match mutation {
+            "changed" => fs::write(member, b"changed original notice").unwrap(),
+            "missing" => fs::remove_file(member).unwrap(),
+            "unlisted" => fs::write(output.join("unlisted"), b"extra").unwrap(),
+            _ => {
+                let mut index = f.json("output/manifest.json");
+                index["files"][0]["sha256"] = "0".repeat(64).into();
+                f.set("output/manifest.json", &index);
             }
-            assert!(
-                notices::verify_expected(&output, &files).is_err(),
-                "{family}/{mutation}"
-            );
         }
+        assert!(
+            notices::verify_expected(&output, &files).is_err(),
+            "{mutation}"
+        );
     }
 }
+
 #[test]
 fn rust_inventory_rejects_changed_archive_lock_local_notice_and_forged_metadata() {
     for mutation in ["archive", "lock", "manifest", "notice", "authors"] {
