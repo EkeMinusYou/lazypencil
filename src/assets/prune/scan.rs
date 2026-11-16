@@ -126,11 +126,7 @@ impl Scan {
             }
             match entry.kind {
                 filesystem::Kind::Directory => self.tree(&child, data, depth + 1, budget)?,
-                filesystem::Kind::File
-                    if child
-                        .extension()
-                        .is_some_and(|extension| extension == "pen") =>
-                {
+                filesystem::Kind::File if crate::documents::is_pen(&child) => {
                     let bytes = self.read(&child, crate::document::MAX_DOCUMENT_BYTES, budget)?;
                     match document(bytes) {
                         Ok(document) => self.documents.push((child, document)),

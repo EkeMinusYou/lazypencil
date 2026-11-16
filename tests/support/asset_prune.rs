@@ -135,7 +135,7 @@ fn review_and_apply_keep_sibling_disabled_theme_and_unknown_metadata_references(
     let bundle = fixture.bundle();
     fs::write(&fixture.file, json!({"version":"2.21","themes":{"Mode":["light","dark"]},"variables":{"hidden":{"type":"string","value":[{"value":"none","theme":{"Mode":"light"}},{"value":inactive,"theme":{"Mode":"dark"}}]}},"children":[{"type":"rectangle","id":"disabled","enabled":false,"width":1,"height":1,"fill":{"type":"image","url":disabled}}]}).to_string()).unwrap();
     fs::write(
-        fixture.root.join("sibling.pen"),
+        fixture.root.join("sibling.PEN"),
         json!({"version":"2.19","metadata":{"future":{"asset":sibling}},"children":[]}).to_string(),
     )
     .unwrap();
