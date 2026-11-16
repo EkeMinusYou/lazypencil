@@ -60,7 +60,6 @@ const FLAG_PREFIXES: &[&str] = &[
 pub mod artifact;
 mod build_script;
 mod compatible;
-mod migrations;
 pub mod native_snapshots;
 pub use compatible::{CacheMatches, restore_combined, restore_compatible, stage_focused};
 
@@ -203,12 +202,6 @@ impl Command {
                 let primary = report["primary"].as_str().unwrap();
                 let preferred = native_snapshots::preferred_key(primary, core_only)?;
                 let complete = native_snapshots::complete_key(primary)?;
-                let legacy = report["legacy"].as_str().unwrap();
-                let legacy_preferred = if legacy.is_empty() {
-                    String::new()
-                } else {
-                    native_snapshots::preferred_key(legacy, core_only)?
-                };
                 let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
                     checkpoint_key(
                         primary,
@@ -226,8 +219,6 @@ impl Command {
                         ("primary".into(), report["primary"].as_str().unwrap().into()),
                         ("preferred".into(), preferred),
                         ("complete".into(), complete),
-                        ("legacy".into(), report["legacy"].as_str().unwrap().into()),
-                        ("legacy_preferred".into(), legacy_preferred),
                         ("checkpoint".into(), checkpoint),
                     ]),
                 )?;
@@ -290,16 +281,6 @@ impl Command {
                 )?;
                 let value = match operation.as_str() {
                     "identify" => {
-                        let mut previous_debug_keys = Vec::new();
-                        for old in identity.previous_debug_identities()? {
-                            let (_, legacy_prefix) = old.compatible_keys(true)?;
-                            // Prefixes also match exact-source keys. Keep the
-                            // newest reviewed contexts within Actions' ten-key
-                            // limit: one primary plus four current fallbacks.
-                            previous_debug_keys.extend([old.compatible_prefix, legacy_prefix]);
-                        }
-                        previous_debug_keys.truncate(5);
-                        let (legacy_primary, legacy_prefix) = identity.compatible_keys(true)?;
                         let checkpoint = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
                         {
                             application_checkpoint(
@@ -338,7 +319,7 @@ impl Command {
                                 ("primary".into(), identity.primary.clone()),
                                 ("checkpoint".into(), checkpoint.clone()),
                                 ("checkpoint_prefix".into(), checkpoint_prefix.clone()),
-                                ("checkpoint_legacy".into(), identity.checkpoint.clone()),
+                                ("checkpoint_base".into(), identity.checkpoint.clone()),
                                 ("focused_checkpoint".into(), focused_checkpoint),
                                 ("complete_checkpoint".into(), complete_checkpoint),
                                 (
@@ -358,15 +339,9 @@ impl Command {
                                     "compatible_prefix".into(),
                                     identity.compatible_prefix.clone(),
                                 ),
-                                ("legacy_compatible_primary".into(), legacy_primary),
-                                ("legacy_compatible_prefix".into(), legacy_prefix),
-                                (
-                                    "previous_debug_keys".into(),
-                                    serde_json::to_string(&previous_debug_keys)?,
-                                ),
                             ]),
                         )?;
-                        json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_legacy":identity.checkpoint,"application_prefix":identity.application_prefix,"source_commit":identity.source_commit})
+                        json!({"primary":identity.primary,"checkpoint":checkpoint,"checkpoint_prefix":checkpoint_prefix,"checkpoint_base":identity.checkpoint,"application_prefix":identity.application_prefix,"source_commit":identity.source_commit})
                     }
                     "stage" if release_only => stage(&source, &target, &directory, &identity)?,
                     "stage" => stage_current_tests(&source, &target, &directory, &identity)?,
@@ -578,42 +553,9 @@ impl Command {
     }
 }
 
-// Preserve the deployed cache wire format. A language migration must not force
-// an otherwise identical dependency or application cache to miss.
+/// Compact JSON with sorted object keys supplies deterministic cache identities.
 pub fn stable_json(value: &Value) -> Vec<u8> {
-    fn string(s: &str) -> String {
-        let encoded = serde_json::to_string(s).unwrap();
-        let mut out = String::new();
-        for c in encoded.chars() {
-            if c.is_ascii() {
-                out.push(c);
-            } else {
-                for u in c.encode_utf16(&mut [0; 2]).iter() {
-                    out.push_str(&format!("\\u{u:04x}"));
-                }
-            }
-        }
-        out
-    }
-    fn write(value: &Value) -> String {
-        match value {
-            Value::Array(a) => format!("[{}]", a.iter().map(write).collect::<Vec<_>>().join(", ")),
-            Value::Object(o) => {
-                let sorted = o.iter().collect::<BTreeMap<_, _>>();
-                format!(
-                    "{{{}}}",
-                    sorted
-                        .into_iter()
-                        .map(|(k, v)| format!("{}: {}", string(k), write(v)))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
-            Value::String(s) => string(s),
-            v => v.to_string(),
-        }
-    }
-    write(value).into_bytes()
+    serde_json::to_vec(value).expect("JSON values always serialize")
 }
 
 pub fn compile_flags(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
@@ -687,19 +629,12 @@ pub fn native_identity(
         "Unknown native identity"
     );
     let flags = compile_flags(environment);
-    // The native-v2 fingerprint uses compact separators, unlike the older
-    // application cache payload. Keep both formats explicit and tested.
-    let hash = |tree: &str| {
-        util::digest(
-            serde_json::to_vec(&json!({"inputs":tree,"rustc":compiler,"flags":flags})).unwrap(),
-        )
-    };
-    let primary = format!("native-v2-{platform}-{image}-{}", hash(tree));
-    let legacy = migrations::previous_native_tree(tree, compiler, &flags)
-        .map(|tree| format!("native-v2-{platform}-{image}-{}", hash(tree)))
-        .unwrap_or_default();
+    let fingerprint = util::digest(stable_json(
+        &json!({"inputs":tree,"rustc":compiler,"flags":flags}),
+    ));
+    let primary = format!("native-v2-{platform}-{image}-{fingerprint}");
     Ok(
-        json!({"primary":primary,"legacy":legacy,"dependency_fingerprint":tree,"build_fingerprint":hash(tree),"compile_flag_names":flags.keys().collect::<Vec<_>>()}),
+        json!({"primary":primary,"dependency_fingerprint":tree,"build_fingerprint":fingerprint,"compile_flag_names":flags.keys().collect::<Vec<_>>()}),
     )
 }
 
@@ -827,13 +762,12 @@ impl ApplicationIdentity {
             .is_some_and(|(run, attempt)| valid_generation_id(run) && valid_generation_id(attempt))
     }
 
-    /// Legacy lookup does not change the source-bound payload identity.
-    /// Every restored candidate is still checked against its compiler inputs.
-    pub fn compatible_keys(&self, legacy: bool) -> Result<(String, String)> {
+    /// Bind candidate lookups to their current compiler recipe and source.
+    fn compatible_keys(&self) -> Result<(String, String)> {
         let prefix = format!(
             "{}-{}-full-",
             self.compatible_namespace,
-            compatible_fingerprint(&self.recipe, legacy)?
+            compatible_fingerprint(&self.recipe)?
         );
         let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
         Ok((format!("{prefix}{source_hash}"), prefix))
@@ -845,7 +779,7 @@ impl ApplicationIdentity {
         let prefix = format!(
             "{}-{}-focus-",
             self.compatible_namespace,
-            compatible_fingerprint(&self.recipe, false)?
+            compatible_fingerprint(&self.recipe)?
         );
         let source_hash = util::digest(stable_json(&self.recipe["inputs"]));
         Ok((format!("{prefix}{source_hash}"), prefix))
@@ -857,19 +791,13 @@ impl ApplicationIdentity {
     }
 }
 
-fn compatible_fingerprint(recipe: &Value, legacy: bool) -> Result<String> {
+fn compatible_fingerprint(recipe: &Value) -> Result<String> {
     let inputs: Vec<Entry> = serde_json::from_value(recipe["inputs"].clone())?;
     let mut common = recipe.clone();
     common["inputs"] = serde_json::to_value(
         inputs
             .iter()
-            .filter(|entry| {
-                !(if legacy {
-                    compatible::legacy_test_source(&entry.path)
-                } else {
-                    compatible::candidate_source(&entry.path)
-                })
-            })
+            .filter(|entry| !compatible::candidate_source(&entry.path))
             .collect::<Vec<_>>(),
     )?;
     common["scope"] = json!("integration-tests-v1");
@@ -898,9 +826,8 @@ impl ApplicationIdentity {
         );
         let inputs = scoped_inputs(&manifest, release_only);
         let target = std::path::absolute(target)?;
-        // Preserve existing all-output cache identities while separating release
-        // files from test-only inputs. Actual compiler dep-info still rejects any
-        // excluded file that becomes a compiled release input.
+        // Separate release files from test-only inputs. Compiler dep-info still
+        // rejects any excluded file that becomes a compiled release input.
         let mut recipe = json!({"version":3,"release_recipe":crate::evidence::link_map::RECIPE,"inputs":inputs,"native":native_key,"source":source.canonicalize()?,"target":target});
         if let Some(build_script) = build_script {
             recipe["build_script"] = build_script;
@@ -929,7 +856,7 @@ impl ApplicationIdentity {
         let compatible_namespace = format!("{tests_namespace}-{platform}");
         let compatible_prefix = format!(
             "{compatible_namespace}-{}-full-",
-            compatible_fingerprint(&recipe, false)?
+            compatible_fingerprint(&recipe)?
         );
         Ok(ApplicationIdentity {
             fingerprint: fingerprint.clone(),
@@ -1150,8 +1077,7 @@ struct OutputEntry {
     bytes: u64,
     mode: u32,
     // Publication metadata only: never apply these times to compiler files.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    modified: Option<(u64, u32)>,
+    modified: (u64, u32),
 }
 #[derive(Serialize, Deserialize)]
 struct ApplicationReport {
@@ -1184,7 +1110,7 @@ pub fn stage_tests(
 
 /// Refresh immutable checkpoints after Cargo rebuilds against newer dependencies.
 /// A fully warm graph needs no second copy, including when the source commit
-/// changed only documentation. Legacy manifests get one metadata-aware update.
+/// changed only documentation.
 pub fn stage_current_tests(
     source: &Path,
     target: &Path,
@@ -1223,7 +1149,7 @@ pub fn stage_current_tests(
                 .components()
                 .nth(1)
                 .is_some_and(|component| component.as_os_str() == ".fingerprint");
-            if unit_metadata && entry.modified != Some(modified) {
+            if unit_metadata && entry.modified != modified {
                 eprintln!(
                     "Application checkpoint output time changed: {name}: {:?} -> {modified:?}",
                     entry.modified
@@ -1315,7 +1241,7 @@ fn stage_filtered(
             sha256: util::file_digest(&path)?,
             bytes: fs::metadata(&path)?.len(),
             mode: util::raw_mode(&path)?,
-            modified: Some(output_modified(&path)?),
+            modified: output_modified(&path)?,
         });
     }
     let result = json!({"files":entries.len(),"bytes":entries.iter().map(|e|e.bytes).sum::<u64>()});

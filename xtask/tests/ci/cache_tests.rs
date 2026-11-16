@@ -133,10 +133,26 @@ fn release_cache_rejects_compiled_test_inputs_and_debug_entries_before_overlay()
     cache::stage(&f.source, &f.target, &f.directory, &release).unwrap();
     let path = f.directory.join("manifest.json");
     let mut report: Value = util::json(&path).unwrap();
-    report["files"].as_array_mut().unwrap().push(json!({"path":"debug/deps/liblazypencil-1234567890abcdef.rlib","sha256":"invalid","bytes":1,"mode":420}));
+    let mut debug = report["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "release/lazypencil")
+        .unwrap()
+        .clone();
+    let cached = f.directory.join("files");
+    let debug_path = "debug/deps/liblazypencil-1234567890abcdef.rlib";
+    fs::create_dir_all(cached.join("debug/deps")).unwrap();
+    fs::copy(cached.join("release/lazypencil"), cached.join(debug_path)).unwrap();
+    debug["path"] = json!(debug_path);
+    report["files"].as_array_mut().unwrap().push(debug);
     fs::write(&path, util::encode(&report).unwrap()).unwrap();
     fs::remove_dir_all(f.target.join("release")).unwrap();
-    assert!(cache::restore(&f.source, &f.target, &f.directory, &release).is_err());
+    let error = cache::restore(&f.source, &f.target, &f.directory, &release).unwrap_err();
+    assert!(
+        error.to_string().contains("Unsafe cached output"),
+        "{error:#}"
+    );
     assert!(!f.target.join("release").exists());
 }
 
@@ -615,5 +631,67 @@ fn cache_symlinks_cannot_redirect_source_or_overlay_destinations() {
         if external.is_dir() {
             assert_eq!(fs::read_dir(external).unwrap().count(), 0);
         }
+    }
+}
+
+#[test]
+fn application_reuse_requires_publication_times_before_overlay() {
+    for null in [false, true] {
+        let f = ApplicationFixture::new();
+        let identity = f.identity();
+        f.stage();
+        let path = f.directory.join("manifest.json");
+        let mut report: Value = util::json(&path).unwrap();
+        for entry in report["files"].as_array_mut().unwrap() {
+            if null {
+                entry["modified"] = Value::Null;
+            } else {
+                entry.as_object_mut().unwrap().remove("modified");
+            }
+        }
+        fs::write(path, util::encode(&report).unwrap()).unwrap();
+        fs::remove_dir_all(&f.target).unwrap();
+        assert!(cache::restore(&f.source, &f.target, &f.directory, &identity).is_err());
+        assert!(
+            cache::restore_compatible(
+                &f.source,
+                &f.target,
+                &f.directory,
+                &identity.compatible_primary,
+                &identity
+            )
+            .is_err()
+        );
+        assert!(!f.target.exists());
+    }
+}
+
+#[test]
+fn test_checkpoints_exclude_the_independently_cached_release() {
+    let f = ApplicationFixture::new();
+    f.release();
+    let identity = f.identity();
+    for focused in [false, true] {
+        if focused {
+            cache::stage_focused(
+                &f.source,
+                &f.target,
+                &f.directory,
+                &f.directory.with_extension("absent"),
+                "",
+                &identity,
+            )
+            .unwrap();
+        } else {
+            cache::stage_tests(&f.source, &f.target, &f.directory, &identity).unwrap();
+        }
+        let report: Value = util::json(&f.directory.join("manifest.json")).unwrap();
+        let files = report["files"].as_array().unwrap();
+        assert!(!files.is_empty());
+        assert!(
+            files
+                .iter()
+                .all(|entry| entry["path"].as_str().unwrap().starts_with("debug/"))
+        );
     }
 }

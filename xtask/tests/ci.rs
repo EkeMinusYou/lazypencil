@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 fn flags() -> BTreeMap<String, String> {
     [
-        ("CARGO_BUILD_JOBS", "1"),
+        ("CARGO_BUILD_JOBS", "2"),
         ("CARGO_INCREMENTAL", "0"),
         ("CARGO_PROFILE_DEV_DEBUG", "0"),
         ("CARGO_PROFILE_TEST_DEBUG", "0"),

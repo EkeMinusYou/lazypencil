@@ -618,7 +618,6 @@ fn extracted_ci_modules_keep_their_original_consumer_and_runtime_gates() {
     for (extracted, owner) in [
         ("xtask/src/ci/focus/selection.rs", "xtask/src/ci/focus.rs"),
         ("xtask/src/ci/native/stages.rs", "xtask/src/ci/native.rs"),
-        ("xtask/src/ci/cache/migrations.rs", "xtask/src/ci/cache.rs"),
     ] {
         for application in [None, Some("src/render.rs"), Some("src/runtime.rs")] {
             let mut extracted = vec![extracted.to_owned()];

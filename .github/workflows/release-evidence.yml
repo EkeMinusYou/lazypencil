@@ -97,9 +97,6 @@ jobs:
             ${{ steps.cache-key.outputs.complete }}
             ${{ steps.cache-key.outputs.primary }}
             ${{ format('checkpoint-{0}-', steps.cache-key.outputs.primary) }}
-            ${{ format('checkpoint-{0}', steps.cache-key.outputs.primary) }}
-            ${{ steps.cache-key.outputs.legacy_preferred }}
-            ${{ steps.cache-key.outputs.legacy }}
           path: |
             ${{ runner.temp }}/lazypencil-target
             ${{ runner.temp }}/lazypencil-source/vendor/skia-bindings/skia
@@ -122,7 +119,7 @@ jobs:
           key: ${{ steps.release-key.outputs.primary }}
           restore-keys: |
             ${{ steps.release-key.outputs.checkpoint_prefix }}
-            ${{ steps.release-key.outputs.checkpoint_legacy }}
+            ${{ steps.release-key.outputs.checkpoint_base }}
           path: ${{ runner.temp }}/lazypencil-release-cache
       - name: Validate release reuse or keep a fresh build
         if: steps.release-key.outcome == 'success'

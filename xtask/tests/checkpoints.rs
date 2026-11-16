@@ -593,11 +593,11 @@ fn application_retention_keeps_the_latest_generation_then_retires_it_after_full_
             })
             .filter(|list| list.contains("outputs.checkpoint_prefix"))
             .collect::<Vec<_>>();
-        assert_eq!(lists.len(), if workflow == "native.yml" { 2 } else { 1 });
+        assert_eq!(lists.len(), 1);
         for list in lists {
             assert!(
                 list.find("outputs.checkpoint_prefix").unwrap()
-                    < list.find("outputs.checkpoint_legacy").unwrap()
+                    < list.find("outputs.checkpoint_base").unwrap()
             );
         }
     }

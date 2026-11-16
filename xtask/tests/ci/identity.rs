@@ -4,8 +4,16 @@ use super::*;
 fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_scheduling() {
     let original =
         cache::native_identity("ubuntu-24.04", "20261012.334.1", TREE, COMPILER, &flags()).unwrap();
+    assert_eq!(
+        original["primary"],
+        "native-v2-ubuntu-24.04-20261012.334.1-33bc5fd17e8af901b9a82a113c4122437096fec9585cbd3890de2e25791b4f23"
+    );
+    assert_eq!(
+        original["build_fingerprint"],
+        "33bc5fd17e8af901b9a82a113c4122437096fec9585cbd3890de2e25791b4f23"
+    );
     for (name, value) in [
-        ("CARGO_BUILD_JOBS", "2"),
+        ("CARGO_BUILD_JOBS", "1"),
         ("RUSTFLAGS", "--cfg changed"),
         ("CARGO_PROFILE_RELEASE_LTO", "thin"),
         ("SKIA_SOURCE_DIR", "/changed"),
@@ -15,7 +23,7 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
         let changed =
             cache::native_identity("ubuntu-24.04", "20261012.334.1", TREE, COMPILER, &env).unwrap();
         assert_ne!(changed["primary"], original["primary"]);
-        assert_eq!(changed["legacy"], "");
+        assert!(changed.get("legacy").is_none());
     }
     let mut env = flags();
     env.insert("CARGO_TARGET_DIR".into(), "/another/temp".into());
@@ -25,82 +33,36 @@ fn native_identity_binds_compiler_image_flags_and_dependency_tree_but_not_schedu
         cache::native_identity("ubuntu-24.04", "20261012.334.1", TREE, COMPILER, &env).unwrap(),
         original
     );
-    let previous = cache::native_identity(
-        "ubuntu-24.04",
-        "20261012.334.1",
-        "c95e9172415f92d6f202a226bf3696f9f6ede08eaa66b81a612b892f8ca3bfc7",
-        COMPILER,
-        &flags(),
-    )
-    .unwrap();
-    assert_eq!(original["legacy"], previous["primary"]);
-    let compiler = COMPILER.replace("x86_64-unknown-linux-gnu", "aarch64-apple-darwin");
-    let font_tree = "11d1597cbd47f826b985b5e514b42c0ff8aa9d4a3d378264e88ac38781b0e160";
-    let baseline = cache::native_identity(
-        "macos-26",
-        "20260907.0337.1",
-        "80b3b3fc770be2245a731ad66682615c3b4979af5c410c5bf196d10c61aba68b",
-        &compiler,
-        &flags(),
-    )
-    .unwrap();
-    let migrated = cache::native_identity(
-        "macos-26",
-        "20260907.0337.1",
-        font_tree,
-        &compiler,
-        &flags(),
-    )
-    .unwrap();
-    assert_eq!(migrated["legacy"], baseline["primary"]);
-    assert_ne!(migrated["primary"], baseline["primary"]);
-    let release_tree = "9d9ec938606c1c29c9ac36d0868af4b0bf3d61be85d66449287258edbb680e1b";
-    let release_baseline = cache::native_identity(
-        "macos-26",
-        "20261028.0489.1",
-        "4cd30528eaee7f6025192ea093fe203e7c59be06b95b84c8cf0c00f66790f6fa",
-        &compiler,
-        &flags(),
-    )
-    .unwrap();
-    let release_identity = cache::native_identity(
-        "macos-26",
-        "20261028.0489.1",
-        release_tree,
-        &compiler,
-        &flags(),
-    )
-    .unwrap();
-    assert_eq!(release_identity["legacy"], release_baseline["primary"]);
-    assert_ne!(release_identity["primary"], release_baseline["primary"]);
-    for (name, value) in [
-        ("RUSTFLAGS", "--cfg changed"),
-        ("SKIA_SOURCE_DIR", "/changed"),
-    ] {
-        let mut env = flags();
-        env.insert(name.into(), value.into());
-        assert_eq!(
-            cache::native_identity("macos-26", "20261028.0489.1", release_tree, &compiler, &env)
-                .unwrap()["legacy"],
-            ""
-        );
-        assert_eq!(
-            cache::native_identity("macos-26", "20260907.0337.1", font_tree, &compiler, &env)
-                .unwrap()["legacy"],
-            ""
-        );
-    }
-    assert_eq!(
-        cache::native_identity(
+    for (platform, image, tree, compiler) in [
+        (
             "macos-26",
-            "20260907.0337.1",
-            font_tree,
-            &compiler.replace("1.94.0", "1.95.0"),
-            &flags()
-        )
-        .unwrap()["legacy"],
-        ""
-    );
+            "20261012.334.1",
+            TREE.to_owned(),
+            COMPILER.to_owned(),
+        ),
+        (
+            "ubuntu-24.04",
+            "another-image",
+            TREE.to_owned(),
+            COMPILER.to_owned(),
+        ),
+        (
+            "ubuntu-24.04",
+            "20261012.334.1",
+            "a".repeat(64),
+            COMPILER.to_owned(),
+        ),
+        (
+            "ubuntu-24.04",
+            "20261012.334.1",
+            TREE.to_owned(),
+            COMPILER.replace("1.94.0", "1.95.0"),
+        ),
+    ] {
+        let changed = cache::native_identity(platform, image, &tree, &compiler, &flags()).unwrap();
+        assert_ne!(changed["primary"], original["primary"]);
+        assert!(changed.get("legacy").is_none());
+    }
     for (platform, image, tree) in [
         ("unknown", "image", TREE),
         ("ubuntu-24.04", "unknown", TREE),
@@ -179,7 +141,7 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
         );
         let report: Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(report["primary"], identity.primary);
-        assert_eq!(report["checkpoint_legacy"], identity.checkpoint);
+        assert_eq!(report["checkpoint_base"], identity.checkpoint);
         assert_eq!(report["application_prefix"], "application-v2-ubuntu-24.04-");
         assert_eq!(
             report["checkpoint_prefix"],
@@ -190,44 +152,34 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
             format!("{}-402-{attempt}", identity.checkpoint)
         );
         let outputs = fs::read_to_string(output).unwrap();
-        let previous_keys: Vec<String> = serde_json::from_str(
-            outputs
-                .lines()
-                .find_map(|line| line.strip_prefix("previous_debug_keys="))
-                .unwrap(),
-        )
-        .unwrap();
-        let previous = identity.previous_debug_identities().unwrap();
-        assert_eq!(previous.len(), 2);
         let workflow =
             fs::read_to_string(util::root().join(".github/workflows/native.yml")).unwrap();
-        let current_keys = workflow
-            .split("id: compatible-cache\n")
-            .nth(1)
-            .unwrap()
-            .split("restore-keys: |\n")
-            .nth(1)
-            .unwrap()
-            .split("          path:")
-            .next()
-            .unwrap()
-            .lines()
-            .filter(|line| !line.trim().is_empty() && !line.contains("join("))
-            .count();
-        assert!(
-            1 + current_keys + previous_keys.len() <= 10,
-            "Actions rejects the entire cache lookup when its key budget is exceeded"
-        );
-        for old in &previous {
-            let (legacy_primary, _) = old.compatible_keys(true).unwrap();
-            for primary in [&old.compatible_primary, &legacy_primary] {
-                assert!(
-                    previous_keys
-                        .iter()
-                        .any(|prefix| primary.starts_with(prefix)),
-                    "Lost a reviewed older compiler context: {primary}"
-                );
-            }
+        for retired in [
+            "legacy_compatible_primary",
+            "legacy_compatible_prefix",
+            "previous_debug_keys",
+        ] {
+            assert!(
+                !outputs
+                    .lines()
+                    .any(|line| line.starts_with(&format!("{retired}=")))
+            );
+            assert!(!workflow.contains(retired));
+        }
+        for (key, expected) in [
+            ("compatible_primary", identity.compatible_primary.clone()),
+            ("compatible_prefix", identity.compatible_prefix.clone()),
+            (
+                "complete_checkpoint",
+                format!("{}-402-{attempt}", identity.compatible_primary),
+            ),
+        ] {
+            assert!(
+                outputs
+                    .lines()
+                    .any(|line| line == format!("{key}={expected}"))
+            );
+            assert!(workflow.contains(&format!("steps.application-key.outputs.{key}")));
         }
         let (focused, focused_prefix) = identity.focused_keys().unwrap();
         for (key, expected) in [
@@ -246,7 +198,7 @@ fn application_identify_cli_emits_unique_generation_keys_and_ordered_compatible_
             "primary",
             "checkpoint",
             "checkpoint_prefix",
-            "checkpoint_legacy",
+            "checkpoint_base",
             "application_prefix",
         ] {
             assert!(
@@ -343,10 +295,10 @@ fn verified_tool_replacement_retires_only_the_restored_sdk_and_cache_format() {
 }
 
 #[test]
-fn cache_wire_format_stays_compatible_including_unicode_and_separators() {
+fn cache_identities_use_compact_sorted_json_and_utf8() {
     assert_eq!(
         cache::stable_json(&json!({"b":[1,true,null],"a":"日本語"})),
-        br#"{"a": "\u65e5\u672c\u8a9e", "b": [1, true, null]}"#
+        r#"{"a":"日本語","b":[1,true,null]}"#.as_bytes()
     );
 }
 

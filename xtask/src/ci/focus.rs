@@ -265,7 +265,6 @@ fn source_owner(path: &str) -> &str {
     match path {
         "xtask/src/ci/focus/selection.rs" => "xtask/src/ci/focus.rs",
         "xtask/src/ci/native/stages.rs" => "xtask/src/ci/native.rs",
-        "xtask/src/ci/cache/migrations.rs" => "xtask/src/ci/cache.rs",
         _ => path,
     }
 }

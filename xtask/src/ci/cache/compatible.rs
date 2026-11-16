@@ -1,17 +1,12 @@
 use super::*;
 
 pub(super) fn candidate_source(name: &str) -> bool {
-    legacy_test_source(name)
-        || (name.starts_with("src/") && name.ends_with(".rs") && util::safe_path(name).is_ok())
-}
-
-pub(super) fn legacy_test_source(name: &str) -> bool {
     name.ends_with(".rs")
-        && !name.contains('\\')
-        && name.split('/').all(|part| !matches!(part, "" | "." | ".."))
-        && (name
-            .strip_prefix("tests/")
-            .is_some_and(|name| !name.contains('/'))
+        && util::safe_path(name).is_ok()
+        && (name.starts_with("src/")
+            || name
+                .strip_prefix("tests/")
+                .is_some_and(|name| !name.contains('/'))
             || name.starts_with("tests/support/")
             || name.starts_with("xtask/src/test_support/"))
 }
@@ -31,7 +26,7 @@ pub fn restore_compatible(
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
     let directory = directory.canonicalize()?;
-    let (report, old, changed, debug_only) = compatible_inputs(&directory, matched_key, identity)?;
+    let (report, old, changed) = compatible_inputs(&directory, matched_key, identity)?;
     let names = report
         .files
         .iter()
@@ -54,18 +49,7 @@ pub fn restore_compatible(
             );
         }
     }
-    let (mut invalid, covered) =
-        affected_outputs(source, &directory.join("files"), &names, &changed)?;
-    if debug_only {
-        // The old release used different compiler settings. Keep none of its
-        // binary, library, fingerprint or map files, even when source matches.
-        invalid.extend(
-            names
-                .iter()
-                .filter(|name| name.starts_with("release/"))
-                .cloned(),
-        );
-    }
+    let (invalid, covered) = affected_outputs(source, &directory.join("files"), &names, &changed)?;
     // Runtime-only helpers (for example the external ACP fixture) need no
     // application rebuild when no cached compiler unit consumes their source.
     // Missing unit dep-info was rejected above; production consumers still
@@ -75,7 +59,6 @@ pub fn restore_compatible(
     result["invalidated_files"] = json!(invalid.len());
     result["changed_tests"] = json!(changed);
     result["uncompiled_helpers"] = json!(uncompiled);
-    result["release_recipe_changed"] = json!(debug_only);
     Ok(result)
 }
 
@@ -83,12 +66,7 @@ fn compatible_inputs(
     directory: &Path,
     matched_key: &str,
     identity: &ApplicationIdentity,
-) -> Result<(
-    ApplicationReport,
-    ApplicationIdentity,
-    BTreeSet<String>,
-    bool,
-)> {
+) -> Result<(ApplicationReport, ApplicationIdentity, BTreeSet<String>)> {
     ensure!(
         !identity.release_only,
         "Test reuse requires all-output identity"
@@ -107,28 +85,18 @@ fn compatible_inputs(
             && cached.keys().eq(identity.tracked.keys()),
         "Cached source set changed"
     );
-    let mut accepted = None;
-    for (mut old, debug_only) in std::iter::once((identity.clone(), false)).chain(
-        identity
-            .previous_debug_identities()?
-            .into_iter()
-            .map(|old| (old, true)),
-    ) {
-        old.recipe["inputs"] = serde_json::to_value(inputs)?;
-        old.fingerprint = util::digest(stable_json(&old.recipe));
-        if old.fingerprint == report.fingerprint
+    let mut old = identity.clone();
+    old.recipe["inputs"] = serde_json::to_value(inputs)?;
+    old.fingerprint = util::digest(stable_json(&old.recipe));
+    ensure!(
+        old.fingerprint == report.fingerprint
             && (old.matches_source_key(matched_key)
                 || old.matches_focused_key(matched_key)
-                || [false, true].into_iter().any(|legacy| {
-                    old.compatible_keys(legacy)
-                        .is_ok_and(|(primary, _)| matches_checkpoint(&primary, matched_key))
-                }))
-        {
-            accepted = Some((old, debug_only));
-            break;
-        }
-    }
-    let (old, debug_only) = accepted.context("Compatible cache key or build recipe changed")?;
+                || old
+                    .compatible_keys()
+                    .is_ok_and(|(primary, _)| matches_checkpoint(&primary, matched_key))),
+        "Compatible cache key or build recipe changed"
+    );
     let mut changed = BTreeSet::new();
     for (name, entry) in &cached {
         util::safe_path(name)?;
@@ -141,7 +109,7 @@ fn compatible_inputs(
             changed.insert(name.clone());
         }
     }
-    Ok((report, old, changed, debug_only))
+    Ok((report, old, changed))
 }
 
 fn affected_outputs(
@@ -219,7 +187,7 @@ pub fn stage_focused(
     matched_key: &str,
     identity: &ApplicationIdentity,
 ) -> Result<Value> {
-    let (_, _, changed, _) = match compatible_inputs(compatible, matched_key, identity) {
+    let (_, _, changed) = match compatible_inputs(compatible, matched_key, identity) {
         Ok(inputs) => inputs,
         Err(_) => return stage_tests(source, target, directory, identity),
     };
