@@ -18,8 +18,8 @@ fn name(agent: AgentName) -> &'static str {
 
 fn install(agent: AgentName) -> String {
     format!(
-        "Run npm install -g @agentclientprotocol/{}-acp@latest, then ensure {} is on PATH (check npm prefix -g and your PATH order).",
-        name(agent),
+        "Run npm install -g @agentclientprotocol/{}@latest, then ensure {} is on PATH (check npm prefix -g and your PATH order).",
+        agent.command(),
         agent.command()
     )
 }

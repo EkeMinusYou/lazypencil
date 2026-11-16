@@ -61,12 +61,16 @@ fn doctor_missing_adapters_explain_installation_and_strict_mode_without_creating
     let (output, value) = doctor(root.path(), &[]);
     assert!(output.status.success());
     assert_eq!(check(&value, "agents.codex.executable")["status"], "error");
-    assert!(
-        check(&value, "agents.codex.executable")["remediation"]
-            .as_str()
-            .unwrap()
-            .contains("npm install -g @agentclientprotocol/codex-acp@latest")
-    );
+    for (agent, package) in [("codex", "codex-acp"), ("claude", "claude-agent-acp")] {
+        assert!(
+            check(&value, &format!("agents.{agent}.executable"))["remediation"]
+                .as_str()
+                .unwrap()
+                .contains(&format!(
+                    "npm install -g @agentclientprotocol/{package}@latest"
+                ))
+        );
+    }
     assert_eq!(
         check(&value, "agents.claude.executable")["status"],
         "not_checked"
