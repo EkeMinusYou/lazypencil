@@ -1,4 +1,5 @@
 use super::*;
+use sha2::{Digest, Sha256};
 use std::{
     ffi::CString,
     fs::File,
@@ -95,7 +96,8 @@ impl Directory {
             return Err(changed());
         }
         let limit = MAX_FILE.min(MAX_BYTES.saturating_sub(budget.bytes));
-        let mut bytes = Vec::new();
+        let mut digest = Sha256::new();
+        let mut bytes = 0usize;
         let mut buffer = [0; 64 * 1024];
         loop {
             budget.check()?;
@@ -106,16 +108,20 @@ impl Directory {
             if count == 0 {
                 break;
             }
-            if bytes.len().saturating_add(count) > limit {
+            if bytes.saturating_add(count) > limit {
                 return Err(Error::new(
                     "RESOURCE_LIMIT",
                     "Asset cleanup exceeds its byte budget",
                 ));
             }
-            bytes.extend_from_slice(&buffer[..count]);
+            digest.update(&buffer[..count]);
+            bytes += count;
         }
-        budget.bytes += bytes.len();
-        Ok(Some(Content::of(&bytes)))
+        budget.bytes += bytes;
+        Ok(Some(Content {
+            sha256: crate::document::digest_hex(digest.finalize()),
+            bytes: bytes as u64,
+        }))
     }
     fn unlink(&self, child: &str, directory: bool) -> Result<()> {
         let key = name(child.as_ref())?;
@@ -384,4 +390,38 @@ pub(super) fn restore(journal: &Journal, budget: &mut Budget<'_>) -> Result<()> 
     }
     scan::verify_candidate(&journal.asset, false, budget)?;
     finish_journal(journal, &trash, budget)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn descriptor_hashes_cover_chunk_boundaries_and_enforce_remaining_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        for length in [0, 65536, 65537, 131079] {
+            let bytes: Vec<_> = (0..length).map(|index| (index % 251) as u8).collect();
+            std::fs::write(root.join("payload"), &bytes).unwrap();
+            let mut budget = Budget {
+                started: Instant::now(),
+                cancel: None,
+                entries: 0,
+                bytes: MAX_BYTES - length,
+            };
+            let directory = Directory::open(&root, &budget).unwrap();
+            assert_eq!(
+                directory.content("payload", &mut budget).unwrap(),
+                Some(Content::of(&bytes))
+            );
+            assert_eq!(budget.bytes, MAX_BYTES);
+            if length > 0 {
+                budget.bytes = MAX_BYTES - length + 1;
+                assert_eq!(
+                    directory.content("payload", &mut budget).unwrap_err().code,
+                    "RESOURCE_LIMIT"
+                );
+            }
+        }
+    }
 }
