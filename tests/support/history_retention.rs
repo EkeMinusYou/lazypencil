@@ -1,4 +1,4 @@
-//! Public history compatibility, bounded reads and reviewed retention contracts.
+//! Indexed history recovery, bounded reads and reviewed retention contracts.
 use super::*;
 use lazypencil::store::PruneRequest;
 
@@ -13,12 +13,73 @@ fn prune(store: &Store, keep: usize, expected: Option<&str>) -> lazypencil::Resu
 }
 
 #[test]
-fn legacy_history_migrates_once_and_keeps_replay_pagination_and_restoration() {
+fn missing_history_index_is_not_reconstructed_from_checkpoints() {
+    let (_temp, store) = setup();
+    let result = edit(&store, "saved", "saved");
+    let index = store.document_data_dir().join("history-index");
+    fs::remove_dir_all(&index).unwrap();
+    let metadata = store
+        .document_data_dir()
+        .join("history")
+        .join(result["checkpoint_id"].as_str().unwrap())
+        .join("metadata.json");
+    let retained = fs::read(&metadata).unwrap();
+    let document = fs::read(store.path()).unwrap();
+    let reopened = Store::open(store.path(), Some(store.data_dir().into())).unwrap();
+    assert_eq!(
+        reopened.history(10, None).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
+    assert!(!index.exists());
+    assert_eq!(fs::read(metadata).unwrap(), retained);
+    assert_eq!(fs::read(store.path()).unwrap(), document);
+}
+
+#[test]
+fn a_missing_sequence_record_is_corruption_rather_than_a_numeric_cursor_gap() {
+    let (_temp, store) = setup();
+    edit(&store, "first", "first");
+    edit(&store, "second", "second");
+    edit(&store, "third", "third");
+    fs::remove_file(
+        store
+            .document_data_dir()
+            .join("history-index/sequence/00000000000000000002.json"),
+    )
+    .unwrap();
+    assert_eq!(
+        store.history(1, Some(2)).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
+}
+
+#[test]
+fn prepared_indexed_tail_without_pending_is_rejected_instead_of_reinterpreted() {
+    let (_temp, store) = setup();
+    let result = edit(&store, "saved", "saved");
+    let path = store
+        .document_data_dir()
+        .join("history")
+        .join(result["checkpoint_id"].as_str().unwrap())
+        .join("metadata.json");
+    let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    metadata["state"] = json!("prepared");
+    fs::write(&path, metadata.to_string()).unwrap();
+    let document = fs::read(store.path()).unwrap();
+    assert_eq!(
+        store.history(10, None).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
+    assert_eq!(fs::read(&path).unwrap(), metadata.to_string().as_bytes());
+    assert_eq!(fs::read(store.path()).unwrap(), document);
+}
+
+#[test]
+fn indexed_history_keeps_replay_pagination_and_restoration_after_reopening() {
     let (_temp, store) = setup();
     let first = edit(&store, "first", "one");
     let second = edit(&store, "second", "two");
     let third = edit(&store, "third", "three");
-    fs::remove_dir_all(store.document_data_dir().join("history-index")).unwrap();
     fs::write(store.document_data_dir().join("history/README"), "keep me").unwrap();
     let reopened = Store::open(store.path(), Some(store.data_dir().into())).unwrap();
     let latest = reopened.history(1, None).unwrap();
@@ -36,7 +97,7 @@ fn legacy_history_migrates_once_and_keeps_replay_pagination_and_restoration() {
     assert_eq!(replay["current_revision"], third["revision"]);
     reopened
         .restore(
-            "restore-migrated",
+            "restore-indexed",
             &reopened.read().unwrap().revision(),
             oldest[0].id.as_str(),
         )
@@ -77,46 +138,85 @@ fn indexed_pages_replays_and_new_saves_do_not_deserialize_unselected_old_results
 }
 
 #[test]
-fn older_cooperating_writers_are_discovered_without_rebuilding_old_results() {
-    let (_temp, store) = setup();
-    edit(&store, "indexed", "indexed");
-    let before = store.read().unwrap();
-    let mut after = before.clone();
-    after
-        .set_property("", "name", &json!("legacy writer"))
+fn recovery_discovers_current_metadata_before_pending_and_resumes_resolved_orphans() {
+    for (state, saved) in [
+        (TransactionState::Prepared, false),
+        (TransactionState::Prepared, true),
+        (TransactionState::Committed, true),
+        (TransactionState::Aborted, false),
+    ] {
+        let (_temp, store) = setup();
+        let indexed = edit(&store, "indexed", "indexed");
+        let before = store.read().unwrap();
+        let mut after = before.clone();
+        after
+            .set_property("", "name", &json!("prepared edit"))
+            .unwrap();
+        let id = format!("{:020}-{}", 2, uuid::Uuid::new_v4().simple());
+        let path = store.document_data_dir().join("history").join(&id);
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("before.pen"), before.text()).unwrap();
+        fs::write(path.join("after.pen"), after.text()).unwrap();
+        let prepared = state == TransactionState::Prepared;
+        let entry = lazypencil::store::HistoryEntry {
+            id: id.clone(),
+            sequence: 2,
+            created_at: "2026-11-16T00:00:00Z".into(),
+            request_id: "interrupted".into(),
+            fingerprint: hash(b"interrupted"),
+            state,
+            before_revision: before.revision(),
+            after_revision: after.revision(),
+            result: json!({"revision":after.revision()}),
+            document_path: store.path().into(),
+        };
+        fs::write(
+            path.join("metadata.json"),
+            serde_json::to_vec(&entry).unwrap(),
+        )
         .unwrap();
-    let id = format!("{:020}-{}", 2, uuid::Uuid::new_v4().simple());
-    let path = store.document_data_dir().join("history").join(&id);
-    fs::create_dir(&path).unwrap();
-    fs::write(path.join("before.pen"), before.text()).unwrap();
-    fs::write(path.join("after.pen"), after.text()).unwrap();
-    let entry = lazypencil::store::HistoryEntry {
-        id: id.clone(),
-        sequence: 2,
-        created_at: "2026-11-08T00:00:00Z".into(),
-        request_id: "legacy".into(),
-        fingerprint: hash(b"legacy"),
-        state: TransactionState::Committed,
-        before_revision: before.revision(),
-        after_revision: after.revision(),
-        result: json!({"revision":after.revision()}),
-        document_path: Some(store.path().into()),
-    };
-    fs::write(
-        path.join("metadata.json"),
-        serde_json::to_vec(&entry).unwrap(),
-    )
-    .unwrap();
-    fs::write(store.path(), after.text()).unwrap();
-    assert_eq!(store.history(1, None).unwrap()[0].id, id);
-    assert!(
-        store
-            .replay_result_with_cancellation("legacy", &hash(b"legacy"), None)
-            .unwrap()
-            .is_some()
-    );
-    edit(&store, "following", "following");
-    assert_eq!(store.history(1, None).unwrap()[0].sequence, 3);
+        if saved {
+            fs::write(store.path(), after.text()).unwrap();
+        }
+        let document = fs::read(store.path()).unwrap();
+        assert!(
+            !store
+                .document_data_dir()
+                .join("history-index/pending.json")
+                .exists()
+        );
+        let recovered = store.recover().unwrap();
+        assert_eq!(recovered, if prepared { vec![id.clone()] } else { vec![] });
+        let resolved: lazypencil::store::HistoryEntry =
+            serde_json::from_slice(&fs::read(path.join("metadata.json")).unwrap()).unwrap();
+        assert_eq!(
+            resolved.state,
+            if saved {
+                TransactionState::Committed
+            } else {
+                TransactionState::Aborted
+            }
+        );
+        assert_eq!(
+            store.history(1, None).unwrap()[0].id,
+            if saved {
+                id
+            } else {
+                indexed["checkpoint_id"].as_str().unwrap().into()
+            }
+        );
+        assert_eq!(
+            store
+                .replay_result_with_cancellation("interrupted", &hash(b"interrupted"), None)
+                .unwrap()
+                .is_some(),
+            saved
+        );
+        assert!(store.recover().unwrap().is_empty());
+        assert_eq!(fs::read(store.path()).unwrap(), document);
+        edit(&store, "following", "following");
+        assert_eq!(store.history(1, None).unwrap()[0].sequence, 3);
+    }
 }
 
 #[test]

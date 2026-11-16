@@ -42,9 +42,8 @@ pub struct HistoryEntry {
     pub before_revision: String,
     pub after_revision: String,
     pub result: Value,
-    /// Canonical owner of new checkpoints; absent in older retained history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub document_path: Option<PathBuf>,
+    /// Canonical document owner of this checkpoint.
+    pub document_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -301,7 +300,7 @@ impl Store {
             before_revision: before.revision(),
             after_revision: after.revision(),
             result: Value::Null,
-            document_path: Some(self.path.clone()),
+            document_path: self.path.clone(),
         };
         result["revision"] = json!(entry.after_revision);
         result["request_id"] = json!(request_id);

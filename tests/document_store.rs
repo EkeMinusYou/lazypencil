@@ -290,6 +290,20 @@ fn mark_prepared(store: &Store, checkpoint: &str) -> std::path::PathBuf {
     let mut value: Value = serde_json::from_slice(&fs::read(&meta).unwrap()).unwrap();
     value["state"] = json!("prepared");
     fs::write(meta, serde_json::to_vec(&value).unwrap()).unwrap();
+    let index = store.document_data_dir().join("history-index");
+    let sequence = value["sequence"].as_u64().unwrap();
+    let mut record: Value = serde_json::from_slice(
+        &fs::read(index.join(format!("sequence/{sequence:020}.json"))).unwrap(),
+    )
+    .unwrap();
+    record["state"] = json!("prepared");
+    fs::write(index.join("pending.json"), record.to_string()).unwrap();
+    let state_path = index.join("state.json");
+    let mut state: Value = serde_json::from_slice(&fs::read(&state_path).unwrap()).unwrap();
+    state["last_sequence"] = json!(sequence - 1);
+    state["tail"] = record["previous"].clone();
+    state["generation"] = json!(state["generation"].as_u64().unwrap() - 1);
+    fs::write(state_path, state.to_string()).unwrap();
     path
 }
 
@@ -587,7 +601,7 @@ fn unrecognized_wire_versions_remain_read_only_without_running_the_edit() {
 }
 
 #[test]
-fn history_records_its_owner_accepts_legacy_records_and_rejects_a_foreign_owner() {
+fn history_requires_its_canonical_owner() {
     let (_temp, store) = setup();
     let revision = store.read().unwrap().revision();
     let result = store
@@ -605,9 +619,22 @@ fn history_records_its_owner_accepts_legacy_records_and_rejects_a_foreign_owner(
         .join("metadata.json");
     let mut entry: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(entry["document_path"], json!(store.path()));
+    assert_eq!(
+        store.history(10, None).unwrap()[0].document_path,
+        store.path()
+    );
     entry.as_object_mut().unwrap().remove("document_path");
     fs::write(&path, entry.to_string()).unwrap();
-    assert!(store.history(10, None).unwrap()[0].document_path.is_none());
+    assert_eq!(
+        store.history(10, None).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
+    entry["document_path"] = Value::Null;
+    fs::write(&path, entry.to_string()).unwrap();
+    assert_eq!(
+        store.history(10, None).unwrap_err().code,
+        "RECOVERY_REQUIRED"
+    );
     entry["document_path"] = json!(store.path().with_file_name("foreign.pen"));
     fs::write(path, entry.to_string()).unwrap();
     assert_eq!(

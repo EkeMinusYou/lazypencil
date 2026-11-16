@@ -24,7 +24,6 @@ pub(super) struct Scan {
     pub paths: BTreeSet<PathBuf>,
     projects: Vec<Project>,
     documents: Vec<(PathBuf, Document)>,
-    owners: BTreeMap<String, PathBuf>,
 }
 
 impl Scan {
@@ -254,8 +253,6 @@ impl Scan {
                 .insert(format!("{}: {}", path.display(), diagnostic.code));
         }
         self.raw_references(path, document.value(), budget)?;
-        self.owners
-            .insert(hash(path.as_os_str().as_encoded_bytes()), path.into());
         budget.entries(1)?;
         if self.projects.len() >= 256 {
             return Err(Error::new(
@@ -272,8 +269,6 @@ impl Scan {
                 self.identities.insert(project.read_identity()?);
                 for (owner, document) in project.retention_documents() {
                     self.raw_references(owner, document.value(), budget)?;
-                    self.owners
-                        .insert(hash(owner.as_os_str().as_encoded_bytes()), owner.clone());
                     // The supplied root may be a historical snapshot. Its
                     // bytes are already bound through the checkpoint file.
                     if owner != path {
@@ -342,20 +337,16 @@ impl Scan {
                     Error::new("RECOVERY_REQUIRED", "Cannot verify checkpoint metadata")
                 })?;
                 if entry.id != checkpoint.file_name().unwrap().to_string_lossy()
-                    || (!crate::store::valid_checkpoint_id(&entry.id)
-                        && uuid::Uuid::parse_str(&entry.id).is_err())
+                    || !crate::store::valid_checkpoint_id(&entry.id)
                 {
                     return Err(Error::new(
                         "RECOVERY_REQUIRED",
                         "Checkpoint identity mismatch",
                     ));
                 }
-                let owner = entry
-                    .document_path
-                    .or_else(|| self.owners.get(&namespace.name).cloned());
-                if let Some(owner) = &owner
-                    && (!owner.is_absolute()
-                        || hash(owner.as_os_str().as_encoded_bytes()) != namespace.name)
+                let owner = entry.document_path;
+                if !owner.is_absolute()
+                    || hash(owner.as_os_str().as_encoded_bytes()) != namespace.name
                 {
                     return Err(Error::new("RECOVERY_REQUIRED", "Checkpoint owner mismatch"));
                 }
@@ -372,16 +363,7 @@ impl Scan {
                         ));
                     }
                     let document = document(bytes)?;
-                    match &owner {
-                        Some(owner) => self.capture(store, owner, document, budget)?,
-                        None => {
-                            self.raw_references(&path, document.value(), budget)?;
-                            self.uncertain.insert(format!(
-                                "{}: legacy checkpoint owner is unknown",
-                                checkpoint.display()
-                            ));
-                        }
-                    }
+                    self.capture(store, &owner, document, budget)?;
                 }
             }
         }

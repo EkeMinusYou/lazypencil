@@ -1,4 +1,4 @@
-//! Durable history lookup and recovery state. Existing checkpoints stay readable.
+//! Durable indexed history lookup and recovery for the current checkpoint format.
 use super::*;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -176,12 +176,7 @@ fn read_checkpoint(store: &Store, pointer: &Pointer, cancel: Cancel<'_>) -> Resu
     let path = root.join(&pointer.id);
     require_directory(&path)?;
     let entry: HistoryEntry = read_json(&path.join("metadata.json"), MAX_DOCUMENT_BYTES, cancel)?;
-    if Pointer::of(&entry) != *pointer
-        || entry
-            .document_path
-            .as_ref()
-            .is_some_and(|path| path != store.path())
-    {
+    if Pointer::of(&entry) != *pointer || entry.document_path != store.path() {
         return Err(corrupt(
             "History identity does not match its document or directory",
         ));
@@ -431,36 +426,10 @@ impl Index {
         let mut next = self.tail.clone();
         if let Some(before) = before.filter(|before| *before <= self.last_sequence) {
             let path = Self::record_path(store, before);
-            if exists(&path)? {
-                next = Self::record(store, before, cancel)?.previous;
-            } else {
-                // Arbitrary numeric cutoffs can fall in gaps in legacy history.
-                // Normal page cursors address their sequence record directly.
-                let root = directory(store).join("sequence");
-                let mut nearest = None;
-                for child in fs::read_dir(&root).map_err(|error| Error::io(&root, error))? {
-                    crate::cancel::check(cancel)?;
-                    let name = child.map_err(|error| Error::io(&root, error))?.file_name();
-                    if let Some(sequence) = name
-                        .to_str()
-                        .and_then(|name| name.strip_suffix(".json"))
-                        .and_then(|name| name.parse::<u64>().ok())
-                        .filter(|sequence| *sequence < before)
-                    {
-                        nearest = Some(nearest.map_or(sequence, |old: u64| old.max(sequence)));
-                    }
-                }
-                next = if let Some(sequence) = nearest {
-                    let record = Self::record(store, sequence, cancel)?;
-                    if record.state == TransactionState::Committed {
-                        Some(record.checkpoint)
-                    } else {
-                        record.previous
-                    }
-                } else {
-                    None
-                };
+            if !exists(&path)? {
+                return Err(corrupt("Missing history sequence index"));
             }
+            next = Self::record(store, before, cancel)?.previous;
         }
         let mut entries = Vec::new();
         let mut remaining = crate::query::MAX_RESPONSE_BYTES - 1026;
@@ -528,127 +497,54 @@ fn resolve_prepared(store: &Store, entry: &mut HistoryEntry, cancel: Cancel<'_>)
     store.write_entry(&store.history_directory().join(&entry.id), entry)
 }
 
-fn migrate(store: &Store, cancel: Cancel<'_>) -> Result<(Index, Vec<String>)> {
-    create_private_directory(&store.document_data_dir())?;
-    let staging = tempfile::tempdir_in(store.document_data_dir())
-        .map_err(|error| Error::io(&store.document_data_dir(), error))?;
-    create_private_directory(&staging.path().join("sequence"))?;
-    create_private_directory(&staging.path().join("requests"))?;
-    let mut index = Index {
-        version: INDEX_VERSION,
-        document: store.path().into(),
-        last_sequence: 0,
-        tail: None,
-        floor: 0,
-        generation: 0,
-        namespace: None,
-    };
-    let mut pointers = Vec::new();
+fn initialize(store: &Store, cancel: Cancel<'_>) -> Result<Index> {
     let history = store.history_directory();
     if exists(&history)? {
         require_directory(&history)?;
         for child in fs::read_dir(&history).map_err(|error| Error::io(&history, error))? {
             crate::cancel::check(cancel)?;
             let child = child.map_err(|error| Error::io(&history, error))?;
-            let name = child.file_name().to_string_lossy().into_owned();
-            if !child
-                .file_type()
-                .map_err(|error| Error::io(&child.path(), error))?
-                .is_dir()
-            {
-                if valid_checkpoint_id(&name) {
-                    return Err(corrupt(
-                        "Checkpoint directories must be regular directories",
-                    ));
-                }
-                continue;
+            if child.file_name().to_str().is_some_and(valid_checkpoint_id) {
+                return Err(corrupt("Existing checkpoints require their history index"));
             }
-            if !exists(&child.path().join("metadata.json"))? {
-                continue;
-            }
-            if !valid_checkpoint_id(&name) {
-                return Err(corrupt("Invalid legacy checkpoint identity"));
-            }
-            let pointer = Pointer {
-                sequence: name[..20]
-                    .parse()
-                    .map_err(|_| corrupt("Invalid checkpoint sequence"))?,
-                id: name,
-            };
-            pointer.validate()?;
-            pointers.push(pointer);
         }
     }
-    pointers.sort_by_key(|pointer| pointer.sequence);
-    let mut recovered = Vec::new();
-    for pointer in pointers {
-        crate::cancel::check(cancel)?;
-        if pointer.sequence <= index.last_sequence {
-            return Err(corrupt("Duplicate checkpoint sequence"));
-        }
-        let mut entry = read_checkpoint(store, &pointer, cancel)?;
-        if entry.state == TransactionState::Prepared {
-            resolve_prepared(store, &mut entry, cancel)?;
-            recovered.push(entry.id.clone());
-        }
-        let record = Record {
-            checkpoint: pointer.clone(),
-            previous: index.tail.clone(),
-            request_id: entry.request_id,
-            fingerprint: entry.fingerprint,
-            state: entry.state.clone(),
-            pruned: false,
-        };
-        record.validate()?;
-        write_json(
-            &staging
-                .path()
-                .join("sequence")
-                .join(format!("{:020}.json", pointer.sequence)),
-            &record,
-        )?;
-        write_json(
-            &staging
-                .path()
-                .join("requests")
-                .join(format!("{}.json", hash(record.request_id.as_bytes()))),
-            &pointer,
-        )?;
-        index.last_sequence = pointer.sequence;
-        if entry.state == TransactionState::Committed {
-            index.tail = Some(pointer);
-        }
-    }
-    index.namespace = namespace(store)?;
+    create_private_directory(&store.document_data_dir())?;
+    let staging = tempfile::tempdir_in(store.document_data_dir())
+        .map_err(|error| Error::io(&store.document_data_dir(), error))?;
+    create_private_directory(&staging.path().join("sequence"))?;
+    create_private_directory(&staging.path().join("requests"))?;
+    let index = Index {
+        version: INDEX_VERSION,
+        document: store.path().into(),
+        last_sequence: 0,
+        tail: None,
+        floor: 0,
+        generation: 0,
+        namespace: namespace(store)?,
+    };
     write_json(&staging.path().join("state.json"), &index)?;
     sync_directory(staging.path())?;
     crate::cancel::check(cancel)?;
     fs::rename(staging.path(), directory(store))
         .map_err(|error| Error::io(&directory(store), error))?;
     sync_directory(&store.document_data_dir())?;
-    Ok((index, recovered))
+    Ok(index)
 }
 
 pub(super) fn recover(store: &Store, cancel: Cancel<'_>) -> Result<Vec<String>> {
-    let (mut index, mut recovered) = if exists(&directory(store))? {
-        (Index::load(store, cancel)?, Vec::new())
+    let mut index = if exists(&directory(store))? {
+        Index::load(store, cancel)?
     } else {
-        migrate(store, cancel)?
+        initialize(store, cancel)?
     };
+    let mut recovered = Vec::new();
     prune::recover(store, &mut index, cancel)?;
     let pending = directory(store).join("pending.json");
     let record = if exists(&pending)? {
         let record: Record = read_json(&pending, MAX_DOCUMENT_BYTES, cancel)?;
         record.validate()?;
         Some(record)
-    } else if let Some(tail) = &index.tail {
-        // Also recognize the previous on-disk recovery representation at the tail.
-        let entry = read_checkpoint(store, tail, cancel)?;
-        if entry.state == TransactionState::Prepared {
-            Some(Index::record(store, tail.sequence, cancel)?)
-        } else {
-            None
-        }
     } else {
         None
     };
@@ -672,8 +568,9 @@ pub(super) fn recover(store: &Store, cancel: Cancel<'_>) -> Result<Vec<String>> 
         }
     }
     if index.namespace != namespace(store)? {
-        // Older cooperating executables do not update the side index. Discover
-        // their new checkpoint directories once, without rereading old payloads.
+        // Checkpoint metadata can be durable before pending.json is published.
+        // Recovery can also stop after resolving that metadata but before
+        // publishing its index record. Discover both without rereading old rows.
         let root = store.history_directory();
         let mut added = Vec::new();
         if exists(&root)? {

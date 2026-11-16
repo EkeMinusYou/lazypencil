@@ -94,7 +94,7 @@ impl Fixture {
         );
         value
     }
-    fn checkpoint(&self, owner: &Path, before: Value, state: &str, legacy: bool) {
+    fn checkpoint(&self, owner: &Path, before: Value, state: &str, missing_owner: bool) {
         let id = format!("{:020}-{}", 1, uuid::Uuid::new_v4().simple());
         let namespace = lazypencil::document::hash(owner.as_os_str().as_encoded_bytes());
         let path = self
@@ -107,7 +107,7 @@ impl Fixture {
         let before = before.to_string();
         let after = r#"{"version":"2.21","children":[]}"#;
         let mut metadata = json!({"id":id,"sequence":1,"created_at":"2026-10-30T00:00:00Z","request_id":"test","fingerprint":"fixture","state":state,"before_revision":lazypencil::document::hash(before.as_bytes()),"after_revision":lazypencil::document::hash(after.as_bytes()),"result":{},"document_path":owner});
-        if legacy {
+        if missing_owner {
             metadata.as_object_mut().unwrap().remove("document_path");
         }
         fs::write(path.join("before.pen"), before).unwrap();
@@ -218,7 +218,7 @@ fn real_checkpoint_retention_protects_assets_until_the_referencing_history_is_pr
 }
 
 #[test]
-fn every_checkpoint_state_and_legacy_owner_protect_assets_across_document_namespaces() {
+fn every_current_checkpoint_state_protects_assets_across_document_namespaces() {
     let fixture = Fixture::new();
     let (_, orphan) = fixture.asset(b"unreferenced", "glsl");
     let mut retained = Vec::new();
@@ -230,7 +230,7 @@ fn every_checkpoint_state_and_legacy_owner_protect_assets_across_document_namesp
             &owner,
             json!({"version":"2.21","children":[],"metadata":{"previous_asset":uri}}),
             state,
-            index == 1,
+            false,
         );
         retained.push(path);
     }
@@ -270,8 +270,29 @@ fn changed_sources_new_documents_and_modified_asset_bytes_reject_a_reviewed_revi
 }
 
 #[test]
-fn dynamic_scripts_unknown_legacy_owners_and_symbolic_links_retain_uncertain_assets() {
-    for condition in 0..3 {
+fn ownerless_checkpoints_block_asset_deletion_even_when_the_document_is_known() {
+    for present in [false, true] {
+        let fixture = Fixture::new();
+        let (_, orphan) = fixture.asset(b"retain when metadata is unsupported", "glsl");
+        let owner = fixture.root.join("owner.pen");
+        if present {
+            fs::write(&owner, r#"{"version":"2.21","children":[]}"#).unwrap();
+        }
+        fixture.checkpoint(
+            &owner,
+            json!({"version":"2.21","children":[]}),
+            "committed",
+            true,
+        );
+        let review = fixture.command(None);
+        assert_eq!(review["error"]["code"], "RECOVERY_REQUIRED", "{review}");
+        assert!(orphan.exists());
+    }
+}
+
+#[test]
+fn dynamic_scripts_and_symbolic_links_retain_uncertain_assets() {
+    for condition in 0..2 {
         let fixture = Fixture::new();
         let (_, orphan) = fixture.asset(b"retain when uncertain", "glsl");
         match condition {
@@ -279,12 +300,6 @@ fn dynamic_scripts_unknown_legacy_owners_and_symbolic_links_retain_uncertain_ass
                 fs::write(fixture.root.join("generator.js"), "return [];").unwrap();
                 fs::write(&fixture.file, json!({"version":"2.21","children":[{"id":"dynamic","type":"script","scriptUri":"generator.js","width":1,"height":1}]}).to_string()).unwrap();
             }
-            1 => fixture.checkpoint(
-                &fixture.root.join("removed.pen"),
-                json!({"version":"2.21","children":[]}),
-                "committed",
-                true,
-            ),
             _ => std::os::unix::fs::symlink(fixture.temp.path(), fixture.root.join("redirected"))
                 .unwrap(),
         }
