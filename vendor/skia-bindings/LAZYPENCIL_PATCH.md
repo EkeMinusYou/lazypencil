@@ -10,4 +10,8 @@ Dependency source extraction also defers directory entries until descendants are
 
 The native Ninja invocation forwards Cargo's `NUM_JOBS` through its job limit, so native compilation follows the same parallelism as Cargo instead of using every CPU.
 
-The original MIT license is included in LICENSE. Remove each patch when an upstream crates.io release includes its fix.
+`C_Lazypencil_installRasterBitmap` installs host-owned pixels into a `SkBitmap` without copying them. It checks the Rust wrapper's size and alignment before accessing it and transfers the release callback to Skia, including failure cleanup. The macOS renderer uses this bridge to retain its native raster storage. macOS builds bypass upstream binary archives because those archives do not export this local binding.
+
+On macOS, the `embed-freetype` feature also enables the FreeType build used for explicitly supplied file fonts through `SkFontMgr_New_Custom_Empty`. CoreText remains the system font manager.
+
+The original MIT license is included in LICENSE. Remove upstream-fix patches when a crates.io release includes them; retain the application-specific ownership bridge and its build requirements while the renderer uses it.

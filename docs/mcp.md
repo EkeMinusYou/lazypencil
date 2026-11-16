@@ -87,8 +87,9 @@ local trust decisions.
 | `list_fonts` | Each bundled/configured face, collection index, source/face hashes, styles, axes, and default fallback chain |
 
 Use the tools and input schemas advertised by the connected server. Unknown
-arguments are rejected. Success responses include an `outputSchema`; domain
-failures use `isError: true` with a structured error code and readable text.
+arguments are rejected. Tool definitions advertise an `outputSchema` for their
+successful results; domain failures use `isError: true` with a structured error
+code and readable text.
 `render` returns metadata plus a separate MCP image block containing the PNG.
 
 Guidance/style tools can omit `document_id` only when requesting built-in resources.
@@ -253,8 +254,9 @@ Use stored/expanded reads for unused library definitions.
 
 `search_nodes` accepts a case-insensitive `name` substring, exact `type`, and an
 optional `root: {node_id, instance_path}`. Filters combine with AND and include
-the root and its descendants. An absent root is an error; zero matches is a valid
-search result.
+the specified root and its descendants. Omitting `root` searches the whole tree;
+a specified root that does not exist is an error. Zero matches is a valid search
+result.
 
 Stored nodes are the default. `expand_instances: true` includes inherited nodes;
 `library_alias` searches declared definitions. `calculated: true` evaluates scripts
