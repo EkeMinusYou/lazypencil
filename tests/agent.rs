@@ -728,6 +728,38 @@ fn fast_mode_rejects_unsupported_ambiguous_and_unconfirmed_settings_before_promp
 }
 
 #[test]
+fn config_option_updates_reject_unconfirmed_and_ambiguous_model_fast_and_permission_modes() {
+    for (mode, args) in [
+        (
+            "settings-model-unconfirmed",
+            vec!["--model", "fixture-model-2"],
+        ),
+        (
+            "settings-model-duplicate-confirmation",
+            vec!["--model", "fixture-model-2"],
+        ),
+        ("settings-fast-duplicate-confirmation", vec!["--fast"]),
+        (
+            "settings-permissions-duplicate-confirmation",
+            vec!["--mode", "workspace-write"],
+        ),
+    ] {
+        let directory = TempDir::new().unwrap();
+        let args = [vec!["--create"], args].concat();
+        let output = cli(&directory, mode, &args);
+        assert!(!output.status.success(), "{mode}");
+        assert!(
+            events(&output)
+                .iter()
+                .any(|event| event["error"]["code"] == "AGENT_ERROR"),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(!directory.path().join("sent-turn.txt").exists(), "{mode}");
+    }
+}
+
+#[test]
 fn model_and_mode_selection_are_validated_and_confirmed() {
     let directory = TempDir::new().unwrap();
     let output = cli(

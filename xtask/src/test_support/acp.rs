@@ -517,10 +517,12 @@ impl<'a> Peer<'a> {
                         }
                     }
                     Some("model") => {
-                        self.model = params["value"]
-                            .as_str()
-                            .ok_or("Missing selected model")?
-                            .into();
+                        if mode != "settings-model-unconfirmed" {
+                            self.model = params["value"]
+                                .as_str()
+                                .ok_or("Missing selected model")?
+                                .into();
+                        }
                     }
                     Some("fast-mode") => {
                         assert!(mode.starts_with("settings-fast"));
@@ -530,7 +532,24 @@ impl<'a> Peer<'a> {
                     }
                     _ => return Err("Unexpected configuration selector".into()),
                 }
-                self.response(&message, json!({"configOptions":self.config()}))?;
+                let mut options = self.config();
+                if [
+                    "settings-model-duplicate-confirmation",
+                    "settings-fast-duplicate-confirmation",
+                    "settings-permissions-duplicate-confirmation",
+                ]
+                .contains(&mode)
+                {
+                    let duplicate = options
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|option| option["id"] == params["configId"])
+                        .ok_or("Missing selected configuration option")?
+                        .clone();
+                    options.as_array_mut().unwrap().push(duplicate);
+                }
+                self.response(&message, json!({"configOptions":options}))?;
             }
             "session/cancel" => {
                 self.cancel_received = true;

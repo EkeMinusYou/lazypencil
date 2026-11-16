@@ -62,6 +62,44 @@ pub(super) fn merge_updates(
     }
 }
 
+async fn set_config_option(
+    connection: &ConnectionTo<Agent>,
+    session: &SessionId,
+    id: &str,
+    value: &str,
+    setting: &str,
+    diagnostic_directory: Option<&std::path::Path>,
+) -> Result<Value> {
+    let changed = connection
+        .send_request(SetSessionConfigOptionRequest::new(
+            session.clone(),
+            id.to_owned(),
+            SessionConfigValueId::new(value.to_owned()),
+        ))
+        .block_task()
+        .await
+        .map_err(|error| {
+            protocol_error("session/set_config_option", error, diagnostic_directory)
+        })?;
+    let configs = serde_json::to_value(changed.config_options)
+        .map_err(|error| agent_error(error.to_string()))?;
+    let mut confirmed = configs
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|option| option["id"] == id);
+    if !confirmed
+        .next()
+        .is_some_and(|option| option["currentValue"] == value)
+        || confirmed.next().is_some()
+    {
+        return Err(agent_error(format!(
+            "The adapter did not confirm the selected {setting}"
+        )));
+    }
+    Ok(configs)
+}
+
 pub(super) async fn apply(
     connection: &ConnectionTo<Agent>,
     session: &SessionId,
@@ -100,29 +138,15 @@ pub(super) async fn apply(
             )
             .details(json!({"requested_model":model,"model_options":option["options"]})));
         }
-        let changed = connection
-            .send_request(SetSessionConfigOptionRequest::new(
-                session.clone(),
-                id.clone(),
-                SessionConfigValueId::new(model.to_owned()),
-            ))
-            .block_task()
-            .await
-            .map_err(|error| {
-                protocol_error("session/set_config_option", error, diagnostic_directory)
-            })?;
-        let configs = serde_json::to_value(changed.config_options)
-            .map_err(|error| agent_error(error.to_string()))?;
-        if !configs.as_array().is_some_and(|options| {
-            options
-                .iter()
-                .any(|option| option["id"] == id && option["currentValue"] == model)
-        }) {
-            return Err(agent_error(
-                "The adapter did not confirm the selected model",
-            ));
-        }
-        response["configOptions"] = configs;
+        response["configOptions"] = set_config_option(
+            connection,
+            session,
+            &id,
+            model,
+            "model",
+            diagnostic_directory,
+        )
+        .await?;
     }
     // Model changes can replace the available speed controls, so select speed afterward.
     if let Some(fast) = fast {
@@ -142,31 +166,15 @@ pub(super) async fn apply(
                 "The adapter does not advertise the requested Fast mode setting for this model",
             ));
         }
-        let changed = connection
-            .send_request(SetSessionConfigOptionRequest::new(
-                session.clone(),
-                "fast-mode".to_owned(),
-                SessionConfigValueId::new(value.to_owned()),
-            ))
-            .block_task()
-            .await
-            .map_err(|error| {
-                protocol_error("session/set_config_option", error, diagnostic_directory)
-            })?;
-        let configs = serde_json::to_value(changed.config_options)
-            .map_err(|error| agent_error(error.to_string()))?;
-        let confirmed: Vec<_> = configs
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|option| option["id"] == "fast-mode")
-            .collect();
-        if confirmed.len() != 1 || confirmed[0]["currentValue"] != value {
-            return Err(agent_error(
-                "The adapter did not confirm the selected Fast mode",
-            ));
-        }
-        response["configOptions"] = configs;
+        response["configOptions"] = set_config_option(
+            connection,
+            session,
+            "fast-mode",
+            value,
+            "Fast mode",
+            diagnostic_directory,
+        )
+        .await?;
     }
     normalize_modes(response);
     if let Some(mode) = mode {
@@ -182,35 +190,16 @@ pub(super) async fn apply(
             .and_then(|item| item["id"].as_str())
             .map(str::to_owned);
         if let Some(selector_id) = selector_id {
-            let changed = connection
-                .send_request(SetSessionConfigOptionRequest::new(
-                    session.clone(),
-                    selector_id.clone(),
-                    SessionConfigValueId::new(mode.to_owned()),
-                ))
-                .block_task()
-                .await
-                .map_err(|error| {
-                    protocol_error("session/set_config_option", error, diagnostic_directory)
-                })?;
-            let configs = serde_json::to_value(changed.config_options)
-                .map_err(|error| agent_error(error.to_string()))?;
-            response["configOptions"] = configs.clone();
-            response["modes"]["currentModeId"] = configs
-                .as_array()
-                .and_then(|items| items.iter().find(|item| item["id"] == selector_id))
-                .map(|item| item["currentValue"].clone())
-                .unwrap_or(Value::Null);
-            if !configs.as_array().is_some_and(|items| {
-                items
-                    .iter()
-                    .any(|item| item["id"] == selector_id && item["currentValue"] == mode)
-            }) {
-                return Err(agent_error(
-                    "The adapter did not confirm the selected permission mode",
-                ));
-            }
-            response["configOptions"] = configs;
+            response["configOptions"] = set_config_option(
+                connection,
+                session,
+                &selector_id,
+                mode,
+                "permission mode",
+                diagnostic_directory,
+            )
+            .await?;
+            normalize_modes(response);
         } else {
             // ACP set_mode's successful response acknowledges the selected mode.
             connection
