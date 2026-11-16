@@ -139,6 +139,8 @@ pub fn select(
     };
     let mut filter = std::mem::take(&mut startup.startup_text);
     let mut filtering = !filter.is_empty();
+    let mut filter_editor = super::search::Editor::default();
+    let mut path_editor = super::search::Editor::default();
     let mut path_input: Option<String> = None;
     let mut selected = 0usize;
     let mut navigated = false;
@@ -213,6 +215,11 @@ pub fn select(
                 paths: &visible,
                 selected,
                 filter: &filter,
+                editor: if path_input.is_some() {
+                    &path_editor
+                } else {
+                    &filter_editor
+                },
                 path: path_input.as_deref(),
                 notice: &notice,
                 done,
@@ -253,6 +260,7 @@ pub fn select(
                 };
                 path_input = None;
                 filter.clear();
+                filter_editor = super::search::Editor::default();
                 filtering = false;
                 notice.clear();
                 done = false;
@@ -321,6 +329,7 @@ pub fn select(
                         navigated = false;
                     }
                     Some(Target::Button(Action::DocumentPath)) => {
+                        path_editor = super::search::Editor::default();
                         path_input = if path_input.is_some() {
                             None
                         } else {
@@ -348,34 +357,24 @@ pub fn select(
             continue;
         }
         dirty = true;
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('c') => return Ok(None),
-                KeyCode::Char('l') => {
-                    path_input = if path_input.is_some() {
-                        None
-                    } else {
-                        Some(String::new())
-                    };
-                    notice.clear();
-                }
-                KeyCode::Char('u') => {
-                    if let Some(path) = &mut path_input {
-                        path.clear();
-                    } else {
-                        filter.clear();
-                        selected = 0;
-                        navigated = false;
-                    }
-                }
-                _ => {}
-            }
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Ok(None);
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('l') {
+            path_input = if path_input.is_some() {
+                None
+            } else {
+                path_editor = super::search::Editor::default();
+                Some(String::new())
+            };
+            notice.clear();
             continue;
         }
         match key.code {
             KeyCode::Esc => {
                 path_input = None;
                 filter.clear();
+                filter_editor = super::search::Editor::default();
                 filtering = false;
                 notice.clear();
                 selected = 0;
@@ -389,42 +388,36 @@ pub fn select(
                 selected = (selected + 1).min(visible.len().saturating_sub(1));
                 navigated |= !visible.is_empty();
             }
-            KeyCode::Char('j') if path_input.is_none() && !filtering => {
+            KeyCode::Char('j')
+                if path_input.is_none() && !filtering && key.modifiers.is_empty() =>
+            {
                 selected = (selected + 1).min(visible.len().saturating_sub(1));
                 navigated |= !visible.is_empty();
             }
-            KeyCode::Char('k') if path_input.is_none() && !filtering => {
+            KeyCode::Char('k')
+                if path_input.is_none() && !filtering && key.modifiers.is_empty() =>
+            {
                 selected = selected.saturating_sub(1);
                 navigated |= !visible.is_empty();
             }
-            KeyCode::Backspace => {
-                if let Some(path) = &mut path_input {
-                    path.pop();
-                } else {
-                    filter.pop();
-                }
-                selected = 0;
-                navigated = false;
-            }
-            KeyCode::Char('/') if path_input.is_none() && !filtering => {
+            KeyCode::Char('/')
+                if path_input.is_none() && !filtering && key.modifiers.is_empty() =>
+            {
                 filtering = true;
             }
-            KeyCode::Char(c)
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::ALT | KeyModifiers::SUPER) =>
-            {
-                if let Some(path) = &mut path_input {
-                    path.push(c);
-                } else {
-                    filtering = true;
-                    filter.push(c);
-                }
-                selected = 0;
-                navigated = false;
-            }
             KeyCode::Enter => open_requested = true,
-            _ => {}
+            _ => {
+                let changed = if let Some(path) = &mut path_input {
+                    path_editor.edit(path, key)
+                } else {
+                    filter_editor.edit(&mut filter, key)
+                };
+                if matches!(changed, super::search::Edit::Changed) {
+                    filtering |= path_input.is_none();
+                    selected = 0;
+                    navigated = false;
+                }
+            }
         }
     }
 }

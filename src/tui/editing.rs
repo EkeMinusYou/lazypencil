@@ -39,6 +39,25 @@ pub(super) fn insert(editor: &mut TextArea<'_>, text: &str) -> bool {
 /// None rejects a growing edit without touching the editor's undo history.
 pub(super) fn input(editor: &mut TextArea<'_>, key: KeyEvent) -> Option<bool> {
     let input = Input::from(key);
+    match input {
+        Input {
+            key: Key::Char('u'),
+            ctrl: true,
+            alt: false,
+            ..
+        } => {
+            return Some(editor.delete_line_by_head());
+        }
+        Input {
+            key: Key::Char('_' | '/'),
+            ctrl: true,
+            alt: false,
+            ..
+        } => {
+            return Some(editor.undo());
+        }
+        _ => {}
+    }
     let incoming = match input {
         Input {
             key: Key::Enter, ..

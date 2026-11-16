@@ -102,12 +102,7 @@ fn details(command: &Command, unavailable: Option<&str>, compact: bool) -> Text<
 
 impl App {
     pub(in crate::tui) fn paste_command_filter(&mut self, text: &str) {
-        for c in text.chars().filter(|c| !c.is_control()) {
-            if self.command_filter.len() + c.len_utf8() > 4096 {
-                break;
-            }
-            self.command_filter.push(c);
-        }
+        self.command_editor.paste(&mut self.command_filter, text);
         if let Some(checkpoints::Modal::Commands { selected }) = &mut self.modal
             && let Some(index) = matching(&self.command_filter).first()
         {
@@ -129,7 +124,13 @@ impl App {
         let popup = area(frame.area());
         let shell = modal::Shell::draw(frame, popup, "Commands", "Search commands…", 1);
         shell.close(frame, &mut self.pointer);
-        shell.query(frame, "Commands", &self.command_filter, "Search commands…");
+        shell.query(
+            frame,
+            "Commands",
+            &self.command_filter,
+            "Search commands…",
+            &self.command_editor,
+        );
         let body = shell.body;
         let wide = body.width >= 96 && body.height >= 16;
         let (list, detail) = if wide {

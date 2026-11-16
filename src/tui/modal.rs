@@ -147,13 +147,17 @@ impl Shell {
         input
     }
 
-    pub fn query(&self, frame: &mut Frame, mode: &str, value: &str, placeholder: &str) -> Rect {
+    pub fn query(
+        &self,
+        frame: &mut Frame,
+        mode: &str,
+        value: &str,
+        placeholder: &str,
+        editor: &super::search::Editor,
+    ) -> Rect {
         let input = self.heading(frame, mode, "", false);
         let width = usize::from(input.width.saturating_sub(1));
-        let tail = value
-            .char_indices()
-            .find_map(|(i, _)| (Line::raw(&value[i..]).width() <= width).then_some(&value[i..]))
-            .unwrap_or("");
+        let (tail, cursor) = editor.viewport(value, width);
         self.heading(
             frame,
             mode,
@@ -161,7 +165,7 @@ impl Shell {
             value.is_empty(),
         );
         if input.width > 0 && input.height > 0 {
-            frame.set_cursor_position((input.x + Line::raw(tail).width() as u16, input.y));
+            frame.set_cursor_position((input.x + cursor as u16, input.y));
         }
         input
     }

@@ -686,3 +686,53 @@ fn workspace_command_palette_search_selects_the_filtered_action_and_preserves_dr
         worker.cancel();
     });
 }
+
+#[test]
+fn emacs_keys_edit_command_filters_and_arguments_at_the_cursor() {
+    runtime().block_on(async {
+        let temp = TempDir::new().unwrap();
+        let mut app = app(&temp, "echo");
+        app.insert_text("Keep this draft");
+        let worker = Worker::start(app.conversation.store().clone(), vec![], Backend::halfblocks(), 230).unwrap();
+        for arguments in [false, true] {
+            app.modal = Some(if arguments {
+                checkpoints::Modal::CommandInput(Box::new(commands::Input::new(commands::Action::Queue)))
+            } else {
+                checkpoints::Modal::commands()
+            });
+            let text = |app: &App| match &app.modal {
+                Some(checkpoints::Modal::CommandInput(input)) => input.editor.lines().join("\n"),
+                _ => app.command_filter.clone(),
+            };
+            for c in "日本語 abc suffix".chars() {
+                press(&mut app, KeyCode::Char(c), KeyModifiers::NONE, &worker).await;
+            }
+            press(&mut app, KeyCode::Char('a'), KeyModifiers::CONTROL, &worker).await;
+            let start = preview_search_screen(&mut app).1.unwrap();
+            for _ in 0..3 {
+                press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL, &worker).await;
+            }
+            assert_eq!(preview_search_screen(&mut app).1.unwrap().x, start.x + 6);
+            press(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), "日本 abc suffix");
+            press(&mut app, KeyCode::Char('_'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), "日本語 abc suffix");
+            press(&mut app, KeyCode::Char('u'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), " abc suffix");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), "日本語 abc suffix");
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), "日本語abc suffix");
+            press(&mut app, KeyCode::Char('/'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL, &worker).await;
+            assert_eq!(text(&app), "日本語 abc ");
+            press(&mut app, KeyCode::Char('y'), KeyModifiers::CONTROL, &worker).await;
+            press(&mut app, KeyCode::Char('b'), KeyModifiers::ALT, &worker).await;
+            press(&mut app, KeyCode::Char('d'), KeyModifiers::ALT, &worker).await;
+            assert_eq!(text(&app), "日本語 abc ");
+            assert_eq!(app.editor.lines(), ["Keep this draft"]);
+        }
+        app.conversation.close().await.unwrap();
+    });
+}

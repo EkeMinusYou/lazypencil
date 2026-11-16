@@ -32,6 +32,7 @@ pub struct Page {
     pub data: Value,
     pub selected: usize,
     filter: String,
+    filter_editor: super::search::Editor,
     searching: bool,
     pub scroll: u16,
     pub maximum_scroll: u16,
@@ -77,12 +78,7 @@ impl Page {
         if !self.editing_filter() {
             return;
         }
-        for c in text.chars().filter(|c| !c.is_control()) {
-            if self.filter.len() + c.len_utf8() > 4096 {
-                break;
-            }
-            self.filter.push(c);
-        }
+        self.filter_editor.paste(&mut self.filter, text);
         self.selected = 0;
     }
 
@@ -117,6 +113,7 @@ impl Page {
             data: Value::Null,
             selected: 0,
             filter: String::new(),
+            filter_editor: super::search::Editor::with_limit(4096),
             searching: false,
             scroll: 0,
             maximum_scroll: 0,
@@ -353,13 +350,15 @@ impl Page {
         };
     }
     pub fn key(&mut self, key: KeyEvent) -> Result<Action> {
-        if key.modifiers.intersects(
-            KeyModifiers::CONTROL
-                | KeyModifiers::ALT
-                | KeyModifiers::SUPER
-                | KeyModifiers::HYPER
-                | KeyModifiers::META,
-        ) {
+        if !self.editing_filter()
+            && key.modifiers.intersects(
+                KeyModifiers::CONTROL
+                    | KeyModifiers::ALT
+                    | KeyModifiers::SUPER
+                    | KeyModifiers::HYPER
+                    | KeyModifiers::META,
+            )
+        {
             return Ok(Action::Keep);
         }
         if self.deletion_review.is_some() {
@@ -419,17 +418,14 @@ impl Page {
                 KeyCode::Down => {
                     self.selected = (self.selected + 1).min(self.entries().len().saturating_sub(1))
                 }
-                KeyCode::Backspace => {
-                    self.filter.pop();
-                    self.selected = 0;
-                }
-                KeyCode::Char(c) if !c.is_control() => {
-                    if self.filter.len() + c.len_utf8() <= 4096 {
-                        self.filter.push(c);
+                _ => {
+                    if matches!(
+                        self.filter_editor.edit(&mut self.filter, key),
+                        super::search::Edit::Changed
+                    ) {
+                        self.selected = 0;
                     }
-                    self.selected = 0;
                 }
-                _ => {}
             }
             return Ok(Action::Keep);
         }
@@ -700,7 +696,7 @@ pub fn draw(
             "Find a saved turn…"
         };
         if page.searching {
-            shell.query(frame, mode, &page.filter, placeholder);
+            shell.query(frame, mode, &page.filter, placeholder, &page.filter_editor);
         } else {
             shell.heading(
                 frame,
@@ -1056,5 +1052,53 @@ impl super::App {
             message: "Reviewing/deleting local conversation… · Esc cancels before commit",
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emacs_saved_search_edits_unicode_without_running_actions() {
+        let mut page = Page::sessions("current".into());
+        page.key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE))
+            .unwrap();
+        page.paste_filter("日本語 abc suffix");
+        let edit = |page: &mut Page, c, modifiers| {
+            assert!(matches!(
+                page.key(KeyEvent::new(KeyCode::Char(c), modifiers))
+                    .unwrap(),
+                Action::Keep
+            ));
+        };
+        edit(&mut page, 'a', KeyModifiers::CONTROL);
+        for _ in 0..3 {
+            edit(&mut page, 'f', KeyModifiers::CONTROL);
+        }
+        edit(&mut page, 'h', KeyModifiers::CONTROL);
+        assert_eq!(page.filter, "日本 abc suffix");
+        edit(&mut page, '_', KeyModifiers::CONTROL);
+        edit(&mut page, 'u', KeyModifiers::CONTROL);
+        assert_eq!(page.filter, " abc suffix");
+        edit(&mut page, 'y', KeyModifiers::CONTROL);
+        assert_eq!(page.filter, "日本語 abc suffix");
+        edit(&mut page, 'd', KeyModifiers::CONTROL);
+        assert_eq!(page.filter, "日本語abc suffix");
+        edit(&mut page, '/', KeyModifiers::CONTROL);
+        edit(&mut page, 'e', KeyModifiers::CONTROL);
+        edit(&mut page, 'w', KeyModifiers::CONTROL);
+        assert_eq!(page.filter, "日本語 abc ");
+        edit(&mut page, 'y', KeyModifiers::CONTROL);
+        edit(&mut page, 'b', KeyModifiers::ALT);
+        edit(&mut page, 'd', KeyModifiers::ALT);
+        assert_eq!(page.filter, "日本語 abc ");
+        page.paste_filter("置換\n\t");
+        assert_eq!(page.filter, "日本語 abc 置換");
+        edit(&mut page, 'e', KeyModifiers::ALT);
+        edit(&mut page, 'x', KeyModifiers::SUPER);
+        assert_eq!(page.filter, "日本語 abc 置換");
+        assert!(page.editing_filter());
+        assert!(page.deletion_review.is_none());
     }
 }

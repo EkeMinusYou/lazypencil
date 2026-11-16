@@ -376,22 +376,10 @@ impl super::App {
                     KeyCode::End => Some(matches.len().saturating_sub(1)),
                     KeyCode::PageDown => Some((position + 8).min(matches.len().saturating_sub(1))),
                     KeyCode::PageUp => Some(position.saturating_sub(8)),
-                    KeyCode::Backspace => {
-                        self.command_filter.pop();
-                        None
-                    }
-                    KeyCode::Char(c)
-                        if !key.modifiers.intersects(
-                            crossterm::event::KeyModifiers::CONTROL
-                                | crossterm::event::KeyModifiers::ALT,
-                        ) =>
-                    {
-                        if self.command_filter.len() + c.len_utf8() <= 4096 && !c.is_control() {
-                            self.command_filter.push(c);
-                        }
-                        None
-                    }
-                    _ => Some(position),
+                    _ => match self.command_editor.edit(&mut self.command_filter, key) {
+                        super::search::Edit::Changed => None,
+                        _ => Some(position),
+                    },
                 };
                 let matches = super::commands::palette::matching(&self.command_filter);
                 if let Some(index) = matches.get(next.unwrap_or(0)) {

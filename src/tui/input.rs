@@ -284,22 +284,9 @@ impl App {
             self.insert_text("\n");
             return Ok(false);
         }
-        if key.modifiers == KeyModifiers::CONTROL {
-            match key.code {
-                KeyCode::Char('u') => {
-                    self.draft_changed |= self.editor.delete_line_by_head();
-                    return Ok(false);
-                }
-                KeyCode::Char('_' | '/') => {
-                    self.draft_changed |= self.editor.undo();
-                    return Ok(false);
-                }
-                KeyCode::Char('y') => {
-                    self.insert_text(&self.editor.yank_text());
-                    return Ok(false);
-                }
-                _ => {}
-            }
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('y') {
+            self.insert_text(&self.editor.yank_text());
+            return Ok(false);
         }
         self.draft_changed |= editing::input(&mut self.editor, key)
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Prompt exceeds 1 MiB"))?;

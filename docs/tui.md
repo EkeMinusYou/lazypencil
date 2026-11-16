@@ -250,18 +250,19 @@ command palette.
 | Prompt: `Enter`, `Ctrl+Enter`, `Ctrl+S` | Submit text and pending images; during work, steer a compatible agent or queue a follow-up |
 | Prompt: `Alt+Enter`, `Shift+Enter` | Insert a newline (Shift+Enter requires terminal support) |
 | Prompt: `Ctrl+V` / `Alt+V` | Explicitly read this host's image, copied image files, or text clipboard |
-| Prompt: `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Move to line start/end or one character backward/forward |
-| Prompt: `Ctrl+P` / `Ctrl+N`, `Alt+B` / `Alt+F` | Move to the previous/next line or backward/forward by word |
-| Prompt: `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D` | Kill to line start/end or the previous/next word; line-boundary kills join lines |
-| Prompt: `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Yank killed text within the prompt size limit, or undo an edit |
+| Prompt / command arguments: `Ctrl+H` / `Ctrl+D` | Delete the previous / next character |
+| Prompt / command arguments: `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Move to line start/end or one character backward/forward |
+| Prompt / command arguments: `Ctrl+P` / `Ctrl+N`, `Alt+B` / `Alt+F` | Move to the previous/next line or backward/forward by word |
+| Prompt / command arguments: `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D` | Kill to line start/end or the previous/next word; line-boundary kills join lines |
+| Prompt / command arguments: `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Yank killed text within the prompt size limit, or undo an edit |
 | Prompt: `/attach <quoted path> [WIDTHxHEIGHT\|original]` then Enter | Attach a static PNG, JPEG, or WebP file with an optional explicit send size |
 | Prompt: `/paste-image [WIDTHxHEIGHT\|original]` then Enter | Invoke clipboard input with an optional explicit send size |
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
 | Preview: `/` | Search text, names and IDs (case-insensitive); select and fit the first matching element while typing |
 | Nodes / Preview search: Enter / Esc | Keep the filter and return to navigation / clear the search. Both panes show the query in their title; Preview uses `n` / `N` to select and fit the next / previous result after Enter |
-| Nodes / Preview search: `Ctrl+H` / `Ctrl+D`, `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Delete backward/forward, move to the start/end, or move one character backward/forward. Left/Right, Home/End and Backspace/Delete also edit the query |
-| Nodes / Preview search: `Alt+B` / `Alt+F`, `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D`, `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Move by word, kill to the start/end, kill the previous/next word, yank, or undo; pasted text inserts at the cursor |
+| All search fields / file paths: `Ctrl+H` / `Ctrl+D`, `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Delete backward/forward, move to the start/end, or move one character backward/forward. Left/Right and Backspace/Delete also edit the query; Home/End edit queries except in the command palette, where they select the first/last result |
+| All search fields / file paths: `Alt+B` / `Alt+F`, `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D`, `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Move by word, kill to the start/end, kill the previous/next word, yank, or undo; pasted text inserts at the cursor |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |
 | Preview: `[` / `]` | Select and fit the first enabled child / parent; when unselected, select the first visible node in Preview |
 | Preview: `Alt+[` / `Alt+]` | Pause and step shader evaluation time backward/forward by 0.1 seconds |

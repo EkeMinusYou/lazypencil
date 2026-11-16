@@ -446,8 +446,18 @@ pub fn run(
             }
             drop(blocked);
         } else if case == "picker-direct" {
+            h.key(b"/selectedXY")?;
+            h.visible("No matching .pen files")?;
+            // Legacy Ctrl+H and the enhanced keyboard form must both delete.
+            h.key(b"\x08\x1b[104;5u")?;
+            h.wait("Emacs file filter deletion", 5.0, |h| {
+                let text = h.screen.text();
+                text.contains("selected.pen") && !text.contains("No matching .pen files")
+            })?;
             h.key(b"\x0c")?;
-            h.key(b"nested/deep/selected.pen")?;
+            h.key(b"nested/deep/selectedX.pen")?;
+            // Kill/yank the path, then delete a character before its extension.
+            h.key(b"\x01\x0b\x19\x02\x02\x02\x02\x1b[104;5u")?;
             picker_open_offset = Some(h.output.len());
             h.key(b"\r")?;
         } else if case != "picker-mouse" {

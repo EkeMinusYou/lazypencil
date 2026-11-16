@@ -16,6 +16,7 @@ pub(super) struct View<'a> {
     pub paths: &'a [PathBuf],
     pub selected: usize,
     pub filter: &'a str,
+    pub editor: &'a super::super::search::Editor,
     pub path: Option<&'a str>,
     pub notice: &'a str,
     pub done: bool,
@@ -50,21 +51,16 @@ impl View<'_> {
         let inner = shell.body;
         let input = self.path.unwrap_or(self.filter);
         let label = if self.path.is_some() { "Path" } else { "Files" };
-        let input_area = shell.heading(frame, label, "", false);
-        let input = input_tail(input, usize::from(input_area.width.saturating_sub(1)));
-        shell.heading(
+        shell.query(
             frame,
             label,
-            if input.is_empty() {
-                if self.path.is_some() {
-                    "Enter a file or folder path…"
-                } else {
-                    "Find a .pen file…"
-                }
+            input,
+            if self.path.is_some() {
+                "Enter a file or folder path…"
             } else {
-                &input
+                "Find a .pen file…"
             },
-            input.is_empty(),
+            self.editor,
         );
         if inner.height < 2 || inner.width < 12 {
             frame.render_widget(
@@ -210,13 +206,6 @@ impl View<'_> {
             super::super::mouse::Action::DocumentPath,
         );
         pointer.finish();
-        if input_area.width > 0 && input_area.height > 0 {
-            let x = Line::raw(input).width();
-            frame.set_cursor_position((
-                input_area.x + x.min(usize::from(input_area.width - 1)) as u16,
-                input_area.y,
-            ));
-        }
     }
 }
 
@@ -437,6 +426,7 @@ mod tests {
             paths: &listing.documents,
             selected: 1,
             filter: "",
+            editor: &Default::default(),
             path: None,
             notice: "",
             done: true,
@@ -538,6 +528,7 @@ mod tests {
             paths: &[],
             selected: 0,
             filter: "no-match",
+            editor: &Default::default(),
             path: Some(
                 "/a/very/long/path/that/keeps/going/through/more/folders/and/ends/with/日本語の設定.pen",
             ),
