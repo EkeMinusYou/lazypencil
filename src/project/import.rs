@@ -290,45 +290,8 @@ impl Project {
     }
 
     pub(super) fn variable_key(&self, origin: &Path, name: &str) -> Result<Key> {
-        if self.documents[origin]
-            .value()
-            .get("variables")
-            .and_then(|v| v.get(name))
-            .is_some()
-        {
-            return Ok((origin.into(), name.into()));
-        }
-        if let Some((alias, member)) = name.split_once(':')
-            && let Some(path) = self
-                .imports
-                .get(origin)
-                .and_then(|imports| imports.get(alias))
-        {
-            return self.variable_key(path, member);
-        }
-        let mut found = BTreeSet::new();
-        for path in self
-            .imports
-            .get(origin)
-            .into_iter()
-            .flat_map(BTreeMap::values)
-        {
-            if self.documents[path]
-                .value()
-                .get("variables")
-                .and_then(|v| v.get(name))
-                .is_some()
-            {
-                found.insert(path.clone());
-            }
-        }
-        if found.len() != 1 {
-            return Err(copy_error("A copied variable is missing or ambiguous"));
-        }
-        Ok((
-            found.into_iter().next().expect("single source"),
-            name.into(),
-        ))
+        self.lookup_variable_identity(origin, name)
+            .map_err(|_| copy_error("A copied variable is missing or ambiguous"))
     }
 }
 

@@ -9,10 +9,18 @@ enum Member {
 }
 
 impl Member {
-    fn get<'a>(self, document: &'a Document, name: &str) -> Option<&'a Value> {
+    fn get<'a>(self, document: &'a Document, name: &str) -> Option<(&'a str, &'a Value)> {
         match self {
-            Self::Component => document.node(name).ok(),
-            Self::Variable => document.value().get("variables").and_then(|v| v.get(name)),
+            Self::Component => document
+                .node(name)
+                .ok()
+                .map(|node| (node["id"].as_str().expect("indexed component id"), node)),
+            Self::Variable => document
+                .value()
+                .get("variables")?
+                .as_object()?
+                .get_key_value(name)
+                .map(|(name, value)| (name.as_str(), value)),
         }
     }
 
@@ -46,6 +54,7 @@ impl Project {
 
     pub(super) fn lookup_node_ref(&self, origin: &Path, name: &str) -> Result<(PathBuf, &Value)> {
         self.lookup_member(origin, name, Member::Component)
+            .map(|(path, _, value)| (path, value))
     }
 
     pub(super) fn lookup_variable(&self, origin: &Path, name: &str) -> Result<(PathBuf, Value)> {
@@ -59,6 +68,16 @@ impl Project {
         name: &str,
     ) -> Result<(PathBuf, &Value)> {
         self.lookup_member(origin, name, Member::Variable)
+            .map(|(path, _, value)| (path, value))
+    }
+
+    pub(super) fn lookup_variable_identity(
+        &self,
+        origin: &Path,
+        name: &str,
+    ) -> Result<(PathBuf, String)> {
+        self.lookup_member(origin, name, Member::Variable)
+            .map(|(path, name, _)| (path, name.into()))
     }
 
     fn lookup_member(
@@ -66,14 +85,19 @@ impl Project {
         origin: &Path,
         name: &str,
         member: Member,
-    ) -> Result<(PathBuf, &Value)> {
+    ) -> Result<(PathBuf, &str, &Value)> {
         if matches!(member, Member::Component)
             && let Some((path, id)) = self.runtime_refs.get(name)
         {
-            return Ok((path.clone(), self.documents[path].node(id)?));
+            let node = self.documents[path].node(id)?;
+            return Ok((
+                path.clone(),
+                node["id"].as_str().expect("indexed component id"),
+                node,
+            ));
         }
-        if let Some(value) = member.get(&self.documents[origin], name) {
-            return Ok((origin.into(), value));
+        if let Some((name, value)) = member.get(&self.documents[origin], name) {
+            return Ok((origin.into(), name, value));
         }
         if let Some((alias, name)) = name.split_once(':')
             && let Some(path) = self.imported_path(origin, alias)?
@@ -89,11 +113,11 @@ impl Project {
             .flat_map(BTreeMap::values)
             .collect::<BTreeSet<_>>()
         {
-            if let Some(value) = member.get(&self.documents[path], name) {
+            if let Some((name, value)) = member.get(&self.documents[path], name) {
                 if found.is_some() {
                     return Err(member.ambiguous(name));
                 }
-                found = Some((path.clone(), value));
+                found = Some((path.clone(), name, value));
             }
         }
         found.ok_or_else(|| member.missing(name))
@@ -140,6 +164,10 @@ mod tests {
                 .0,
             first
         );
+        assert_eq!(
+            project.variable_key(&project.root, "tone").unwrap(),
+            (first.clone(), "tone".into())
+        );
         project
             .imports
             .get_mut(&project.root)
@@ -158,6 +186,18 @@ mod tests {
                 .unwrap_err()
                 .message
                 .contains("Ambiguous")
+        );
+        assert!(project.variable_key(&project.root, "tone").is_err());
+        project
+            .imports
+            .get_mut(&first)
+            .unwrap()
+            .insert("nested".into(), second.clone());
+        assert_eq!(
+            project
+                .variable_key(&project.root, "a:nested:tone")
+                .unwrap(),
+            (second.clone(), "tone".into())
         );
         assert_eq!(
             project.lookup_node_ref(&project.root, "b:badge").unwrap().0,
@@ -194,6 +234,10 @@ mod tests {
             .get_mut(&project.root)
             .unwrap()
             .insert("a".into(), source.clone());
+        assert_eq!(
+            project.variable_key(&project.root, "a:tone").unwrap(),
+            (project.root.clone(), "a:tone".into())
+        );
         assert_eq!(
             project.lookup_node_ref(&project.root, "a:badge").unwrap().0,
             project.root
