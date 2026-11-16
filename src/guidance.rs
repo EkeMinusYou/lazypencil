@@ -165,22 +165,6 @@ pub fn list_styles(use_case: Option<&str>, limit: usize, cursor: Option<&str>) -
             .to_string()
             .as_bytes(),
     );
-    let offset = if let Some(cursor) = cursor {
-        let (catalog, offset) = cursor
-            .rsplit_once(':')
-            .ok_or_else(|| Error::new("INVALID_ARGUMENT", "Malformed style cursor"))?;
-        if catalog != identity {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "This cursor belongs to a different style catalog or query",
-            ));
-        }
-        offset
-            .parse::<usize>()
-            .map_err(|_| Error::new("INVALID_ARGUMENT", "Malformed style offset"))?
-    } else {
-        0
-    };
     let styles = catalog["styles"]
         .as_array()
         .ok_or_else(|| Error::new("INTERNAL_ERROR", "Invalid bundled style catalog"))?;
@@ -195,20 +179,19 @@ pub fn list_styles(use_case: Option<&str>, limit: usize, cursor: Option<&str>) -
             })
         })
         .collect::<Vec<_>>();
-    if offset > styles.len() {
-        return Err(Error::new(
-            "INVALID_ARGUMENT",
-            "Style cursor is out of range",
-        ));
-    }
+    let offset = crate::query::page_offset(&identity, cursor, limit, styles.len())?;
     let total = styles.len();
     let styles=styles.into_iter().skip(offset).take(limit).map(|s| json!({"id":s["id"],"name":s["name"],"version":s["version"],
         "description":s["description"],"use_cases":s["use_cases"],"language":"en","required_fonts":["Noto Sans JP"]})).collect::<Vec<_>>();
     let next =
         (offset + styles.len() < total).then(|| format!("{identity}:{}", offset + styles.len()));
-    let mut result = json!({"version":VERSION,"language":"en","styles":styles,"total_matches":total,"next_cursor":next});
+    let mut result = style_page(styles, total, next);
     stamp(&mut result);
     Ok(result)
+}
+
+fn style_page(styles: Vec<Value>, total: usize, next: Option<String>) -> Value {
+    json!({"version":VERSION,"language":"en","styles":styles,"total_matches":total,"next_cursor":next})
 }
 
 pub(crate) fn style_document(id: &str) -> Result<crate::document::Document> {

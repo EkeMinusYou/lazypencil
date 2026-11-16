@@ -1190,6 +1190,16 @@ fn project_design_catalog_uses_an_explicit_cli_grant_and_imports_through_the_bou
     );
     let style = client.data("get_style", json!({"id":"project:brand"}));
     assert_eq!(style["example"]["components"][0]["node_id"], "button");
+    let styles = client.data("list_styles", json!({"use_case":"dashboard","limit":1}));
+    assert_eq!(styles["language"], "en");
+    assert_eq!(styles["total_matches"], 2);
+    let next = client.data(
+        "list_styles",
+        json!({"use_case":"dashboard","limit":1,"cursor":styles["next_cursor"]}),
+    );
+    assert_eq!(next["version"], styles["version"]);
+    assert_eq!(next["styles"][0]["id"], "project:brand");
+    assert!(next["next_cursor"].is_null());
     let applied=client.data("apply_operations",json!({"request_id":"mcp-project-style","expected_revision":document["revision"],"expected_dependency_revision":document["dependency_revision"],"operations":[
         {"op":"import_component","source":{"style_id":"project:brand","node_id":"button"},"mode":"copy","client_ref":"primary"}
     ]}));

@@ -106,6 +106,10 @@ fn project_instructions_require_a_grant_and_share_one_catalog_and_default_style(
     trust(&store);
     let guide = service::project_guidance(&store, None).unwrap();
     assert_eq!(guide["language"], "en");
+    assert_eq!(
+        guide["body"],
+        lazypencil::guidance::get_guidance(None).unwrap()["body"]
+    );
     assert_eq!(guide["project_guides"].as_array().unwrap().len(), 1);
     assert_eq!(guide["project_guides"][0]["language"], "ja");
     assert_eq!(

@@ -414,9 +414,6 @@ impl ProjectCatalog {
         };
         if self.configured() {
             if id == "start" {
-                let mut body = value["body"].as_str().unwrap_or_default().to_string();
-                body.push_str("\n\nFollow the user's current request first, then the trusted project_guides included with this response, then the selected style and standard guidance. Tool capabilities and save/validation rules still apply. Styles are starting points for new designs; preserve existing conventions when editing.\n");
-                value["body"] = json!(body);
                 value["project_guides"] = json!(
                     self.guides
                         .iter()
@@ -507,8 +504,9 @@ impl ProjectCatalog {
             (offset + page.len() < total).then(|| format!("{identity}:{}", offset + page.len()));
         self.verify_unchanged()?;
         self.require_trusted(data)?;
-        crate::query::response(
-            json!({"styles":page,"total_matches":total,"next_cursor":next,"project_design":self.metadata()}),
-        )
+        let mut result = super::style_page(page, total, next);
+        result["project_design"] = self.metadata();
+        super::stamp(&mut result);
+        crate::query::response(result)
     }
 }

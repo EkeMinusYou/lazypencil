@@ -69,7 +69,12 @@ fn style_pagination_binds_cursors_to_the_filter_and_catalog() {
     let dashboard = guidance::list_styles(Some("dashboard"), 100, None).unwrap();
     assert_eq!(dashboard["styles"].as_array().unwrap().len(), 1);
     assert_eq!(dashboard["styles"][0]["id"], "dense-workspace");
-    assert!(guidance::list_styles(Some("dashboard"), 1, first["next_cursor"].as_str()).is_err());
+    assert_eq!(
+        guidance::list_styles(Some("dashboard"), 1, first["next_cursor"].as_str())
+            .unwrap_err()
+            .code,
+        "REVISION_CONFLICT"
+    );
     assert!(guidance::get_guidance(Some("does-not-exist")).is_err());
     assert!(guidance::get_style("does-not-exist").is_err());
     assert!(guidance::list_styles(None, 0, None).is_err());
