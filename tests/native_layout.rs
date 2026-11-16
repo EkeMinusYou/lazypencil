@@ -98,14 +98,26 @@ fn named_font_weights_match_numeric_pixels_and_variables_without_rewriting_sourc
 }
 
 #[test]
-fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters() {
+fn vertical_alignment_changes_bounds_and_both_painters() {
     for version in ["2.19", "2.21", "2.22"] {
         let (_root, store) = scene(version);
         let template = store.read().unwrap().value().clone();
+        let mut obsolete = template.clone();
+        obsolete["children"][0]["children"][0]["textAlignVertical"] = json!("center");
+        let project = Project::from_document(
+            store.path(),
+            Document::parse(obsolete.to_string()).unwrap(),
+            &[],
+        )
+        .unwrap();
+        let error = layout::compute(project.resolve().unwrap(), &mut Fonts::new(&[]).unwrap())
+            .err()
+            .unwrap();
+        assert_eq!(error.code, "INVALID_DOCUMENT");
         for backdrop in [false, true] {
             let mut images = vec![];
             let mut bounds = vec![];
-            for alignment in ["center", "middle", "top"] {
+            for alignment in ["middle", "top"] {
                 let mut document = template.clone();
                 let title = &mut document["children"][0]["children"][0];
                 title["textGrowth"] = json!("fixed-width-height");
@@ -141,9 +153,8 @@ fn legacy_center_vertical_alignment_matches_middle_in_bounds_and_both_painters()
                 );
                 assert_eq!(fs::read_to_string(store.path()).unwrap(), source);
             }
-            assert_eq!(bounds[0], bounds[1]);
-            assert_eq!(images[0], images[1]);
-            assert_ne!(images[0], images[2]);
+            assert_ne!(bounds[0], bounds[1]);
+            assert_ne!(images[0], images[1]);
         }
     }
 }

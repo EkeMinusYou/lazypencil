@@ -64,7 +64,7 @@ fn solid(path: &Path, color: Color) {
 }
 
 #[test]
-fn random_sequence_and_legacy_headers_match_independent_pixels_without_saving_generated_nodes() {
+fn random_sequence_and_supported_headers_match_independent_pixels_without_saving_generated_nodes() {
     independent_script_contract("script-random", "random-sequence", "codec-script-random");
 }
 

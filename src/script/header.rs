@@ -3,9 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
-// Script headers have an independent compatibility set. Accepting the legacy
-// header used by published scripts does not enable 2.11 document files.
-pub const SUPPORTED_SCHEMAS: &[&str] = &["2.11", "2.19", "2.21", "2.22"];
+pub const SUPPORTED_SCHEMAS: &[&str] = &["2.19", "2.21", "2.22"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {

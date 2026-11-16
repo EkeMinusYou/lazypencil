@@ -4,7 +4,7 @@ Use a script for parameterized geometry, charts, or repeated structures when ord
 
 ## Author source and inputs
 
-Start new source with a header comment declaring @schema 2.22. Existing @schema 2.21, @schema 2.19, and legacy @schema 2.11 headers are accepted without rewriting the source. Header compatibility is separate from supported document versions; it does not enable 2.11 document files.
+Start new source with a header comment declaring @schema 2.22. Headers for supported versions 2.19, 2.21, and 2.22 are accepted without rewriting the source.
 
 Declare inputs with @input name: type = default. Supported types are number, string, boolean, color, enum, and ref. Defaults are JSON values; an unquoted hexadecimal color is also accepted.
 

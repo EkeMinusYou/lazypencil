@@ -273,7 +273,7 @@ fn typed_headers_clamp_numbers_preserve_strings_and_validate_all_six_input_types
 #[test]
 fn supported_header_versions_execute_typed_inputs_with_the_real_worker() {
     let mut worker = runtime();
-    for version in ["2.11", "2.19", "2.21", "2.22"] {
+    for version in ["2.19", "2.21", "2.22"] {
         let request = ScriptRequest {
             code: format!(
                 "/**\n * @schema {version}\n * @input size: number(min=1,max=8) = 3\n * @input ink: color = #123456\n */\nreturn [{{type:'rectangle',width:pencil.input.size,height:pencil.height,fill:pencil.input.ink}}];"
@@ -306,7 +306,7 @@ fn malformed_headers_are_rejected_without_evaluating_input_declarations() {
     ] {
         assert!(Header::parse(code).is_err(), "{code}");
     }
-    for version in ["2.18", "2.20", "2.23"] {
+    for version in ["2.11", "2.18", "2.20", "2.23"] {
         assert_eq!(
             Header::parse(&format!("/** @schema {version} */ return [];"))
                 .unwrap_err()
@@ -357,11 +357,11 @@ fn process_reuse_resets_the_js_context_and_random_sequence() {
 }
 
 #[test]
-fn independent_random_vectors_match_legacy_headers_and_reset_for_each_script() {
+fn independent_random_vectors_match_supported_headers_and_reset_for_each_script() {
     let words = render_oracles::scripts::random_words();
     let indices = render_oracles::scripts::sample_indices();
     let sources = [
-        include_str!("fixtures/render-corpus/script-random/random-0-2.11.js"),
+        include_str!("fixtures/render-corpus/script-random/random-0-2.22.js"),
         include_str!("fixtures/render-corpus/script-random/random-1-2.19.js"),
         include_str!("fixtures/render-corpus/script-random/random-2-2.21.js"),
         include_str!("fixtures/render-corpus/script-random/random-3-2.19.js"),

@@ -1363,7 +1363,7 @@ mod query_contract_tests {
     use super::*;
 
     #[test]
-    fn script_capabilities_advertise_legacy_headers_without_accepting_legacy_documents() {
+    fn script_capabilities_advertise_only_supported_headers_and_documents() {
         let directory = tempfile::TempDir::new().unwrap();
         let store = Store::init(
             directory.path().join("main.pen"),
@@ -1374,7 +1374,7 @@ mod query_contract_tests {
         let schemas = metadata["capabilities"]["script"]["schemas"]
             .as_array()
             .unwrap();
-        assert!(schemas.iter().any(|value| value == "2.11"));
+        assert_eq!(schemas, &vec![json!("2.19"), json!("2.21"), json!("2.22")]);
         for schema in schemas {
             let header = format!("/* @schema {} */\nreturn [];", schema.as_str().unwrap());
             crate::script::header::Header::parse(&header).unwrap();
