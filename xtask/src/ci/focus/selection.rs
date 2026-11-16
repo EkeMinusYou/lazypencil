@@ -88,10 +88,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
                 "xtask/tests/checkpoints.rs",
                 "xtask/tests/compatible_cache.rs",
                 "xtask/tests/fixtures/focus.json",
-                "README.md",
             ]
             .contains(&path.as_str())
-                || path.starts_with("docs/") && path.ends_with(".md")
         })
     {
         let attachments = paths
@@ -130,6 +128,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         });
     }
     let font_inputs = paths.iter().any(|path| font_input(path));
+    let color_input = any(paths, &["src/color.rs"], &[]);
     let renderer = |path: &str| path == "src/render.rs" || path.starts_with("src/render/");
     if paths.iter().any(|path| renderer(path))
         && paths.iter().all(|path| {
@@ -478,8 +477,6 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
     let oracle_input = |p: &str| {
         p.starts_with("xtask/src/fixtures/oracles/")
             || p.starts_with("tests/fixtures/render-corpus/")
-            // Deletions of the retired corpus must select the same consumers.
-            || p.starts_with("tests/fixtures/pencil-0.3.9/")
     };
     let oracle_only = paths.iter().any(|p| oracle_input(p))
         && paths.iter().all(|p| {
@@ -564,7 +561,7 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             );
         }
         ("graphics".into(), targets)
-    } else if has(&stems, DYNAMIC) || render {
+    } else if has(&stems, DYNAMIC) || render || color_input {
         let mut targets = stems
             .intersection(&rendering)
             .filter(|s| s.as_str() != "agent_workflow")
@@ -658,18 +655,10 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
         }
         ("core".into(), targets)
     };
-    if any(paths, &["src/store.rs"], &["src/store/"]) {
-        // Store lifetimes also own assets and checkpoint provenance, including
-        // mixed project/render changes whose normal selection is rendering-only.
-        targets.extend(["assets", "document_store"].map(str::to_owned));
-    }
-    if any(paths, &["src/main.rs"], &[]) {
-        targets.extend(["assets", "runtime"].map(str::to_owned));
-    }
-    if any(paths, &["src/assets.rs"], &["src/assets/"]) {
-        targets.insert("assets".into());
-    }
-    if any(
+    let store_changed = any(paths, &["src/store.rs"], &["src/store/"]);
+    let main_changed = any(paths, &["src/main.rs"], &[]);
+    let assets_changed = any(paths, &["src/assets.rs"], &["src/assets/"]);
+    let remote_images_changed = any(
         paths,
         &[
             "src/remote_images.rs",
@@ -677,37 +666,15 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "src/project/remote_images.rs",
         ],
         &["src/remote_images/", "src/inline_images/"],
-    ) {
-        targets.extend(["sampler_sources", "runtime", "assets", "mcp"].map(str::to_owned));
-    }
-    if any(paths, &["src/render.rs"], &["src/render/"]) {
-        targets.extend(["graphics", "render"].map(str::to_owned));
-    }
-    if font_inputs {
-        if suite == "shader" {
-            suite = "dynamic".into();
-        } else if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
-        }
-        targets.insert("font_sources".into());
-        if any(paths, &["src/text.rs"], &["src/text/"]) {
-            targets.insert("text".into());
-        }
-    }
-    if project {
-        targets.extend(["project", "queries"].map(str::to_owned));
-    }
-    if any(
+    );
+    let renderer_changed = any(paths, &["src/render.rs"], &["src/render/"]);
+    let text_changed = font_inputs && any(paths, &["src/text.rs"], &["src/text/"]);
+    let font_lock_changed = any(
         paths,
         &["src/font_lock.rs", "tests/support/font_lock.rs"],
         &[],
-    ) {
-        if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
-        }
-        targets.insert("repair".into());
-    }
-    if any(
+    );
+    let bindings_changed = any(
         paths,
         &[
             "src/project/bindings.rs",
@@ -716,13 +683,8 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "tests/support/script_generated_overrides.rs",
         ],
         &["src/project/bindings/"],
-    ) {
-        if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
-        }
-        targets.insert("script_scope".into());
-    }
-    if any(
+    );
+    let script_copy_changed = any(
         paths,
         &[
             "src/project/bindings.rs",
@@ -735,44 +697,11 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "src/project/bindings/",
             "tests/support/script_copy",
         ],
-    ) {
-        if ["core", "conversation", "graphics"].contains(&suite.as_str()) {
-            suite = "copy".into();
-        }
-        targets.extend(["project", "scripts", "script_scope"].map(str::to_owned));
-    }
-    if operations {
-        targets.insert("operations_cli".into());
-    }
-    if any(
-        paths,
-        &[
-            "src/project/browser_context.rs",
-            "src/project/import/browsers.rs",
-            "tests/support/script_browser_copy.rs",
-        ],
-        &[],
-    ) {
-        suite = "dynamic".into();
-        targets.extend(["script_scope", "browser_readiness"].map(str::to_owned));
-    }
-    if stems.contains("conversation_history") || terminal || any(paths, &[], &["src/conversation/"])
-    {
-        targets.insert("conversation_history".into());
-        if suite == "shader" {
-            suite = "dynamic".into();
-            targets.extend(
-                [
-                    "dynamic_render",
-                    "browser_readiness",
-                    "sampler_sources",
-                    "imports",
-                ]
-                .map(str::to_owned),
-            );
-        }
-    }
-    if any(
+    );
+    let history_changed = stems.contains("conversation_history")
+        || terminal
+        || any(paths, &[], &["src/conversation/"]);
+    let native_layout_changed = any(
         paths,
         &[
             "src/layout.rs",
@@ -782,40 +711,84 @@ pub fn select(root: &Path, paths: &[String], platform: &str) -> Result<Plan> {
             "src/script/layout.rs",
         ],
         &["src/layout/", "src/text/", "src/render/"],
-    ) {
-        if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
+    );
+    let command_fixture_changed = any(paths, &["xtask/src/test_support/command.rs"], &[]);
+
+    // Mixed changes contribute the union of their independent source consumers.
+    // Feature/scheduler promotion remains separate from this target inventory.
+    let consumers: &[(bool, &[&str])] = &[
+        (store_changed, &["assets", "document_store"]),
+        (main_changed, &["assets", "runtime"]),
+        (assets_changed, &["assets"]),
+        (
+            remote_images_changed,
+            &["sampler_sources", "runtime", "assets", "mcp"],
+        ),
+        (renderer_changed, &["graphics", "render"]),
+        (
+            color_input,
+            &[
+                "graphics",
+                "render",
+                "scripts",
+                "shader_uniforms",
+                "dynamic_render",
+                "browser_readiness",
+                "sampler_sources",
+                "imports",
+            ],
+        ),
+        (font_inputs, &["font_sources"]),
+        (text_changed, &["text"]),
+        (project, &["project", "queries"]),
+        (font_lock_changed, &["repair"]),
+        (bindings_changed, &["script_scope"]),
+        (script_copy_changed, &["project", "scripts", "script_scope"]),
+        (operations, &["operations_cli"]),
+        (browser_copy, &["script_scope", "browser_readiness"]),
+        (history_changed, &["conversation_history"]),
+        (native_layout_changed, &["native_layout"]),
+        (input, &["tui", "user_config"]),
+        (
+            command_fixture_changed,
+            &["runtime", "runtime_config", "scripts", "dynamic_render"],
+        ),
+    ];
+    for (changed, consumers) in consumers {
+        if *changed {
+            targets.extend(consumers.iter().map(|name| (*name).to_owned()));
         }
-        targets.insert("native_layout".into());
     }
-    if input {
-        if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
-        } else if suite == "shader" {
-            suite = "dynamic".into();
-            targets.extend(
-                [
-                    "dynamic_render",
-                    "browser_readiness",
-                    "sampler_sources",
-                    "imports",
-                ]
-                .map(str::to_owned),
-            );
-        }
-        targets.extend(["tui", "user_config"].map(str::to_owned));
+
+    let needs_graphics = font_inputs
+        || font_lock_changed
+        || bindings_changed
+        || native_layout_changed
+        || input
+        || command_fixture_changed;
+    if needs_graphics && ["core", "conversation"].contains(&suite.as_str()) {
+        suite = "graphics".into();
     }
-    if paths
-        .iter()
-        .any(|p| p == "xtask/src/test_support/command.rs")
-    {
-        if ["core", "conversation"].contains(&suite.as_str()) {
-            suite = "graphics".into();
-        } else if suite == "shader" {
-            suite = "dynamic".into();
-        }
-        targets
-            .extend(["runtime", "runtime_config", "scripts", "dynamic_render"].map(str::to_owned));
+    if font_inputs && suite == "shader" {
+        suite = "dynamic".into();
+    }
+    if script_copy_changed && ["core", "conversation", "graphics"].contains(&suite.as_str()) {
+        suite = "copy".into();
+    }
+    if browser_copy || color_input {
+        suite = "dynamic".into();
+    }
+    if suite == "shader" && (history_changed || input || command_fixture_changed) {
+        suite = "dynamic".into();
+        targets.extend(
+            [
+                "dynamic_render",
+                "browser_readiness",
+                "sampler_sources",
+                "imports",
+            ]
+            .map(str::to_owned),
+        );
     }
     // A specialized source/helper branch must not discard independently changed
     // integration targets. New targets use default features when the narrower

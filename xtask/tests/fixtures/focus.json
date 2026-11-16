@@ -104,13 +104,16 @@
     ],
     "expected": {
       "platform": "macos-26",
-      "suite": "graphics",
+      "suite": "dynamic",
       "targets": [
+        "browser_readiness",
+        "dynamic_render",
         "graphics",
+        "imports",
         "render",
-        "text",
-        "font_sources",
-        "optional_icons"
+        "sampler_sources",
+        "scripts",
+        "shader_uniforms"
       ],
       "preprocessor": false
     }

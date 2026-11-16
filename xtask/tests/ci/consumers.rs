@@ -562,12 +562,27 @@ fn terminal_protocol_and_observer_changes_reproduce_the_bsd_browser_consumer_fir
 }
 
 #[test]
+fn shared_color_changes_keep_script_and_shader_consumers_in_mixed_plans() {
+    for extra in ["src/agent.rs", "src/project/bindings.rs"] {
+        let paths = ["src/color.rs".into(), extra.into()];
+        let plan = focus::select(&util::root(), &paths, "auto").unwrap();
+        assert_eq!(plan.suite, "dynamic", "{paths:?}");
+        for target in ["graphics", "render", "scripts", "shader_uniforms"] {
+            assert!(
+                plan.targets.iter().any(|name| name == target),
+                "{paths:?}: {target}"
+            );
+        }
+        ci::commands::plan(&util::root(), &plan.suite, &plan.targets).unwrap();
+    }
+}
+
+#[test]
 fn independent_oracle_changes_test_all_consumers_without_rebuilding_the_wasm_component() {
     for path in [
         "xtask/src/fixtures/oracles/shapes.rs",
         "xtask/src/fixtures/oracles/shaders.rs",
         "tests/fixtures/render-corpus/shader-logical-coordinates/logical-coordinates.pen",
-        "tests/fixtures/pencil-0.3.9/triangle.png",
     ] {
         let plan = focus::select(&util::root(), &[path.into()], "auto").unwrap();
         assert_eq!(plan.suite, "dynamic", "{path}");
