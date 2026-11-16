@@ -65,10 +65,8 @@ pub struct Attachment {
     pub width: u32,
     pub height: u32,
     pub bytes: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_bytes: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original: Option<OriginalImage>,
+    pub source_bytes: usize,
+    pub original: OriginalImage,
 }
 
 impl Attachment {
@@ -88,10 +86,7 @@ impl Attachment {
                     "The pending image changed during conversion",
                 )
             })?;
-        if previous.original.is_none()
-            || previous.original != self.original
-            || previous.source_bytes != self.source_bytes
-        {
+        if previous.original != self.original || previous.source_bytes != self.source_bytes {
             return Err(invalid("A resize must retain the same captured original"));
         }
         limits.check_request([self])?;
@@ -109,9 +104,7 @@ impl Attachment {
     }
 
     pub fn source_size(&self) -> usize {
-        self.source_bytes
-            .unwrap_or(self.bytes)
-            .max(self.original.as_ref().map_or(0, |source| source.bytes))
+        self.source_bytes.max(self.original.bytes)
     }
 
     pub fn from_file(directory: &Path, source: &Path) -> Result<Self> {
@@ -196,27 +189,20 @@ impl Attachment {
             height: image.source_height,
         };
         let attachment = Self {
-            id: identity(&hash, Some(&original)),
+            id: identity(&hash, &original),
             display_name: display_name.into(),
             hash,
             width: image.width,
             height: image.height,
             bytes: image.png.len(),
-            source_bytes: Some(source.len()),
-            original: Some(original),
+            source_bytes: source.len(),
+            original,
         };
         options.limits.check_request([&attachment])?;
         create_private_directory(&directory.join("attachments"))?;
         // PNG input and its normalized output share one blob when identical.
         // Distinct encodings with the same pixels retain separate originals.
-        persist_image(
-            &attachment
-                .original
-                .as_ref()
-                .expect("original")
-                .path(directory)?,
-            source,
-        )?;
+        persist_image(&attachment.original.path(directory)?, source)?;
         persist_image(&attachment.path(directory)?, &image.png)?;
         Ok(attachment)
     }
@@ -243,7 +229,7 @@ impl Attachment {
     ) -> Result<Self> {
         limits.check_source(self)?;
         let bytes = self.read_original(directory)?;
-        let original = self.original.as_ref().expect("captured original");
+        let original = &self.original;
         let image = crate::image_input::normalize_with_limits(
             &bytes,
             Some(&original.mime_type),
@@ -255,7 +241,7 @@ impl Attachment {
         }
         let mut result = self.clone();
         result.hash = hash(&image.png);
-        result.id = identity(&result.hash, result.original.as_ref());
+        result.id = identity(&result.hash, &result.original);
         result.width = image.width;
         result.height = image.height;
         result.bytes = image.png.len();
@@ -267,21 +253,18 @@ impl Attachment {
     fn path(&self, directory: &Path) -> Result<PathBuf> {
         if self.hash.len() != 64
             || !self.hash.bytes().all(|b| b.is_ascii_hexdigit())
-            || self.id != identity(&self.hash, self.original.as_ref())
+            || self.id != identity(&self.hash, &self.original)
             || self.bytes == 0
             || self.bytes > crate::image_input::MAX_SOURCE_BYTES
-            || self
-                .source_bytes
-                .is_some_and(|bytes| bytes > crate::image_input::MAX_SOURCE_BYTES)
+            || self.source_bytes > crate::image_input::MAX_SOURCE_BYTES
+            || self.source_bytes != self.original.bytes
             || self.width == 0
             || self.height == 0
             || u64::from(self.width) * u64::from(self.height) > crate::image_input::MAX_IMAGE_PIXELS
         {
             return Err(invalid("Invalid attachment identity"));
         }
-        if let Some(original) = &self.original {
-            original.path(directory)?;
-        }
+        self.original.path(directory)?;
         image_path(directory, &self.hash, "png")
     }
 
@@ -293,14 +276,9 @@ impl Attachment {
         let mut live = BTreeSet::new();
         for attachment in retained {
             live.insert(attachment.path(directory)?);
-            if let Some(original) = &attachment.original {
-                live.insert(original.path(directory)?);
-            }
+            live.insert(attachment.original.path(directory)?);
         }
-        let mut retired = BTreeSet::from([self.path(directory)?]);
-        if let Some(original) = &self.original {
-            retired.insert(original.path(directory)?);
-        }
+        let retired = BTreeSet::from([self.path(directory)?, self.original.path(directory)?]);
         for path in retired.difference(&live) {
             match fs::remove_file(path) {
                 Ok(()) => {}
@@ -312,12 +290,7 @@ impl Attachment {
     }
 
     pub fn read_original(&self, directory: &Path) -> Result<Vec<u8>> {
-        let original = self.original.as_ref().ok_or_else(|| {
-            Error::new(
-                "ATTACHMENT_ORIGINAL_UNAVAILABLE",
-                "This older attachment has no captured original",
-            )
-        })?;
+        let original = &self.original;
         self.path(directory)?;
         let bytes = read_bounded(
             &original.path(directory)?,
@@ -351,14 +324,11 @@ impl Attachment {
     }
 }
 
-fn identity(normalized: &str, original: Option<&OriginalImage>) -> String {
-    match original {
-        Some(original) => format!(
-            "img_{}",
-            hash(format!("v2:{normalized}:{}", original.hash).as_bytes())
-        ),
-        None => format!("img_{normalized}"),
-    }
+fn identity(normalized: &str, original: &OriginalImage) -> String {
+    format!(
+        "img_{}",
+        hash(format!("v2:{normalized}:{}", original.hash).as_bytes())
+    )
 }
 
 fn image_path(directory: &Path, digest: &str, extension: &str) -> Result<PathBuf> {

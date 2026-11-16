@@ -106,13 +106,22 @@ mod tests {
         let png = include_bytes!("../../examples/assets/crop-source.png");
         let hash = crate::document::hash(png);
         let image = Attachment {
-            id: format!("img_{hash}"),
+            id: format!(
+                "img_{}",
+                crate::document::hash(format!("v2:{hash}:{hash}").as_bytes())
+            ),
             display_name: "stored.png".into(),
             width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
             height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
             bytes: png.len(),
-            source_bytes: Some(png.len()),
-            original: None,
+            source_bytes: png.len(),
+            original: crate::attachments::OriginalImage {
+                hash: hash.clone(),
+                mime_type: "image/png".into(),
+                bytes: png.len(),
+                width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
+                height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
+            },
             hash,
         };
         let attachments = directory.join("attachments");

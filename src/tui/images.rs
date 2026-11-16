@@ -319,12 +319,7 @@ impl App {
             .get(index)
             .cloned()
             .ok_or_else(|| Error::new("INVALID_ARGUMENT", "No pending image at this index"))?;
-        let original = image.original.as_ref().ok_or_else(|| {
-            Error::new(
-                "ATTACHMENT_ORIGINAL_UNAVAILABLE",
-                "Reattach the source file to resize this older image",
-            )
-        })?;
+        let original = &image.original;
         let bounds = bounds.unwrap_or(ImageBounds::new(original.width, original.height)?);
         let limits = self.conversation.attachment_limits()?;
         self.start_image_job(
@@ -415,17 +410,15 @@ impl App {
 }
 
 pub(super) fn dimensions(image: &Attachment) -> String {
-    image
-        .original
-        .as_ref()
-        .filter(|original| (original.width, original.height) != (image.width, image.height))
-        .map(|original| {
-            format!(
-                "{}×{} → {}×{}",
-                original.width, original.height, image.width, image.height
-            )
-        })
-        .unwrap_or_else(|| format!("{}×{}", image.width, image.height))
+    let original = &image.original;
+    if (original.width, original.height) != (image.width, image.height) {
+        format!(
+            "{}×{} → {}×{}",
+            original.width, original.height, image.width, image.height
+        )
+    } else {
+        format!("{}×{}", image.width, image.height)
+    }
 }
 
 #[cfg(test)]

@@ -51,9 +51,7 @@ to PNG. The original file data is kept separately so subsequent resizes start
 from the original. Original EXIF metadata is not forwarded to the model.
 
 In the TUI, a startup size also applies to later attachments. Use `original` for
-one attachment to keep its dimensions. An older saved attachment without original
-bytes must be reattached before it can be resized; the error is
-`ATTACHMENT_ORIGINAL_UNAVAILABLE`.
+one attachment to keep its dimensions.
 
 ## Image limits
 

@@ -193,14 +193,23 @@ fn retention_protects_busy_drafts_pending_images_and_incomplete_native_continuit
     )
     .unwrap();
     let attachment = crate::attachments::Attachment {
-        id: format!("img_{digest}"),
+        id: format!(
+            "img_{}",
+            crate::document::hash(format!("v2:{digest}:{digest}").as_bytes())
+        ),
         display_name: "pending.png".into(),
-        hash: digest,
+        hash: digest.clone(),
         width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
         height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
         bytes: png.len(),
-        source_bytes: Some(png.len()),
-        original: None,
+        source_bytes: png.len(),
+        original: crate::attachments::OriginalImage {
+            hash: digest.clone(),
+            mime_type: "image/png".into(),
+            bytes: png.len(),
+            width: u32::from_be_bytes(png[16..20].try_into().unwrap()),
+            height: u32::from_be_bytes(png[20..24].try_into().unwrap()),
+        },
     };
     let metadata = image_path.join("session.json");
     let mut state: Value = serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();

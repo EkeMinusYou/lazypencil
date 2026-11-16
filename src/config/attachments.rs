@@ -111,12 +111,7 @@ impl AttachmentSettings {
     pub fn check_source(&self, image: &Attachment) -> Result<usize> {
         self.validate()?;
         let bytes = image.source_size();
-        let (width, height) = image
-            .original
-            .as_ref()
-            .map_or((image.width, image.height), |source| {
-                (source.width, source.height)
-            });
+        let (width, height) = (image.original.width, image.original.height);
         check(
             "max_source_bytes",
             bytes as u64,

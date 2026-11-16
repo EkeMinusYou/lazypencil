@@ -36,7 +36,7 @@ fn send_image_bounds_are_explicit_positive_and_bounded() {
 }
 
 #[test]
-fn legacy_attachment_records_preserve_png_access_without_inventing_an_original() {
+fn attachment_records_require_captured_original_metadata_and_the_current_identity() {
     use lazypencil::{attachments::Attachment, document::hash};
     let temp = TempDir::new().unwrap();
     let png = include_bytes!("../examples/assets/crop-source.png");
@@ -49,22 +49,46 @@ fn legacy_attachment_records_preserve_png_access_without_inventing_an_original()
         png,
     )
     .unwrap();
-    let attachment: Attachment = serde_json::from_value(serde_json::json!({
-        "id":format!("img_{digest}"), "hash":digest, "display_name":"legacy.png",
-        "width":320,"height":160,"bytes":png.len(),"source_bytes":png.len()
-    }))
-    .unwrap();
-    assert!(attachment.original.is_none());
+    let value = serde_json::json!({
+        "id":format!("img_{}", hash(format!("v2:{digest}:{digest}").as_bytes())),
+        "hash":digest,"display_name":"stored.png","width":320,"height":160,
+        "bytes":png.len(),"source_bytes":png.len(),
+        "original":{"hash":digest,"mime_type":"image/png","bytes":png.len(),"width":320,"height":160}
+    });
+    let attachment: Attachment = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(attachment.read(temp.path()).unwrap(), png);
+    assert_eq!(attachment.read_original(temp.path()).unwrap(), png);
+    for field in ["original", "source_bytes"] {
+        for omitted in [false, true] {
+            let mut incomplete = value.clone();
+            if omitted {
+                incomplete.as_object_mut().unwrap().remove(field);
+            } else {
+                incomplete[field] = serde_json::Value::Null;
+            }
+            assert!(
+                serde_json::from_value::<Attachment>(incomplete).is_err(),
+                "{field}, omitted={omitted}"
+            );
+        }
+    }
+    for source_bytes in [png.len() - 1, png.len() + 1] {
+        let mut inconsistent = attachment.clone();
+        inconsistent.source_bytes = source_bytes;
+        assert_eq!(
+            inconsistent.read(temp.path()).unwrap_err().code,
+            "ATTACHMENT_INVALID"
+        );
+        assert_eq!(
+            inconsistent.read_original(temp.path()).unwrap_err().code,
+            "ATTACHMENT_INVALID"
+        );
+    }
+    let mut old_identity = attachment;
+    old_identity.id = format!("img_{digest}");
     assert_eq!(
-        attachment.read_original(temp.path()).unwrap_err().code,
-        "ATTACHMENT_ORIGINAL_UNAVAILABLE"
-    );
-    assert!(
-        serde_json::to_value(attachment)
-            .unwrap()
-            .get("original")
-            .is_none()
+        old_identity.read(temp.path()).unwrap_err().code,
+        "ATTACHMENT_INVALID"
     );
 }
 
@@ -364,13 +388,7 @@ mod originals {
         )
         .unwrap();
         assert_eq!(direct.id, small.id);
-        assert_eq!(
-            direct
-                .original
-                .as_ref()
-                .map(|source| (source.width, source.height)),
-            Some((20, 40))
-        );
+        assert_eq!((direct.original.width, direct.original.height), (20, 40));
     }
 
     #[test]
@@ -615,7 +633,7 @@ mod originals {
         std::fs::write(&source, &bytes).unwrap();
         let directory = temp.path().join("conversation");
         let image = Attachment::from_file(&directory, &source).unwrap();
-        let original = image.original.as_ref().unwrap();
+        let original = &image.original;
         assert_eq!(original.mime_type, "image/jpeg");
         assert_eq!(original.hash, hash(&bytes));
         assert_eq!(original.bytes, bytes.len());
@@ -817,7 +835,7 @@ mod originals {
         .png;
         let first =
             Attachment::from_bytes(conversation.directory(), &original, "first.png").unwrap();
-        assert_eq!(first.hash, first.original.as_ref().unwrap().hash);
+        assert_eq!(first.hash, first.original.hash);
         assert_eq!(
             std::fs::read_dir(conversation.directory().join("attachments"))
                 .unwrap()
