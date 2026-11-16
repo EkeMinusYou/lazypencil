@@ -18,6 +18,7 @@ const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 mod atlas;
 mod backdrop;
 mod blending;
+mod effects;
 mod mesh;
 mod plan;
 mod polygon;
@@ -1000,7 +1001,7 @@ impl Renderer<'_> {
         let filter = if skip_effect {
             None
         } else {
-            effects_filter(node)?
+            effects::filter(node)?
         };
         let has_layer = !skip_effect && (opacity < 1.0 || node.properties.contains_key("effect"));
         let bounds = if has_layer {
@@ -1537,8 +1538,10 @@ impl Renderer<'_> {
     }
 
     fn process_effects(&mut self, index: usize) -> Result<()> {
-        let node = self.snapshot.items[index].node.clone();
-        let record = self.snapshot.items[index].record.clone();
+        let snapshot = self.snapshot;
+        let item = &snapshot.items[index];
+        let node = &item.node;
+        let record = &item.record;
         if record.visual_bounds.width <= 0.0 || record.visual_bounds.height <= 0.0 {
             return Ok(());
         }
@@ -1622,14 +1625,11 @@ impl Renderer<'_> {
                         .runtime
                         .as_deref_mut()
                         .ok_or_else(|| {
-                            unsupported(
-                                &node,
-                                "Shader effects require a configured dynamic runtime",
-                            )
+                            unsupported(node, "Shader effects require a configured dynamic runtime")
                         })?
                         .shader_for_node(crate::shader::Request {
                             project: self.project,
-                            node: &node,
+                            node,
                             fill: effect,
                             property: "effect",
                             size: [width, height],
@@ -1643,22 +1643,10 @@ impl Renderer<'_> {
                     self.artifacts
                         .push(json!({"node_id":node.id(),"acquisition":raster.metadata}));
                 } else {
-                    let mut effect = effect.clone();
-                    for key in ["radius", "blur"] {
-                        if let Some(value) = effect.get_mut(key) {
-                            *value = json!(number(Some(value), 0.0)? * self.raster_scale);
-                        }
-                    }
-                    if let Some(offset) = effect.get("offset") {
-                        let x = number(offset.get("x"), 0.0)?;
-                        let y = number(offset.get("y"), 0.0)?;
-                        let [a, b, c, d, _, _] = record.transform.0;
-                        effect["offset"] = json!({"x":(a*x+c*y)*self.raster_scale,"y":(b*x+d*y)*self.raster_scale});
-                    }
-                    let mut temporary = node.clone();
-                    temporary.properties.insert("effect".into(), effect);
+                    let native = effects::NativeEffect::parse(node, effect)?
+                        .scaled(record.transform, self.raster_scale)?;
                     let mut paint = Paint::default();
-                    paint.set_image_filter(effects_filter(&temporary)?);
+                    paint.set_image_filter(native.filter(None, node)?);
                     let mut filtered =
                         skia_safe::surfaces::raster_n32_premul((width as i32, height as i32))
                             .ok_or_else(|| invalid("Cannot allocate native effect raster"))?;
@@ -2111,104 +2099,6 @@ fn variable_border(node: &ResolvedNode, shape: &Path, widths: [f32; 4]) -> Resul
     Ok(path)
 }
 
-fn effects_filter(node: &ResolvedNode) -> Result<Option<ImageFilter>> {
-    let mut filter = None;
-    if let Some(effects) = node.properties.get("effect") {
-        for effect in values(effects) {
-            if effect["enabled"] == false {
-                continue;
-            }
-            if effect["type"] == "shadow" {
-                blending::shadow_type(effect)
-                    .map_err(|error| blending::at_node(error, node, "effect"))?;
-            }
-            filter = match effect["type"].as_str() {
-                Some("blur") => {
-                    let radius = number(effect.get("radius"), 0.0)?;
-                    if radius < 0.0 {
-                        return Err(invalid("Blur radius cannot be negative"));
-                    }
-                    image_filters::blur((radius / 2.0, radius / 2.0), TileMode::Decal, filter, None)
-                }
-                Some("shadow")
-                    if effect
-                        .get("shadowType")
-                        .and_then(Value::as_str)
-                        .unwrap_or("outer")
-                        == "outer" =>
-                {
-                    let blur = number(effect.get("blur"), 0.0)?;
-                    if blur < 0.0 {
-                        return Err(invalid("Shadow blur cannot be negative"));
-                    }
-                    let dx = number(effect.get("offset").and_then(|v| v.get("x")), 0.0)?;
-                    let dy = number(effect.get("offset").and_then(|v| v.get("y")), 0.0)?;
-                    let color = color::parse(
-                        effect
-                            .get("color")
-                            .and_then(Value::as_str)
-                            .unwrap_or("#00000040"),
-                    )?;
-                    if blending::name(effect)? != "normal" {
-                        return Err(Error::new(
-                            "RENDER_ERROR",
-                            "A blended outer shadow requires scene-aware compositing",
-                        ));
-                    }
-                    image_filters::drop_shadow(
-                        (dx, dy),
-                        (blur / 2.0, blur / 2.0),
-                        color,
-                        None,
-                        filter,
-                        None,
-                    )
-                }
-                Some("shadow") if effect["shadowType"] == "inner" => {
-                    let blur = number(effect.get("blur"), 0.0)?;
-                    if blur < 0.0 {
-                        return Err(invalid("Shadow blur cannot be negative"));
-                    }
-                    let blender = blending::name(effect)
-                        .and_then(blending::inner_shadow)
-                        .map_err(|error| blending::at_node(error, node, "effect"))?;
-                    let offset = (
-                        number(effect.get("offset").and_then(|value| value.get("x")), 0.0)?,
-                        number(effect.get("offset").and_then(|value| value.get("y")), 0.0)?,
-                    );
-                    let color = color::parse(
-                        effect
-                            .get("color")
-                            .and_then(Value::as_str)
-                            .unwrap_or("#00000040"),
-                    )?;
-                    let shifted = image_filters::offset(offset, filter.clone(), None);
-                    let blurred = image_filters::blur(
-                        (blur / 2.0, blur / 2.0),
-                        TileMode::Decal,
-                        shifted,
-                        None,
-                    );
-                    let inverse_alpha = skia_safe::color_filters::matrix_row_major(
-                        &[
-                            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                            0.0, 0.0, 0.0, 0.0, -1.0, 1.0,
-                        ],
-                        None,
-                    );
-                    let inverted = image_filters::color_filter(inverse_alpha, blurred, None);
-                    let tint = skia_safe::color_filters::blend(color, BlendMode::SrcIn)
-                        .ok_or_else(|| invalid("Cannot construct inner shadow color"))?;
-                    let shadow = image_filters::color_filter(tint, inverted, None);
-                    image_filters::blend(blender, filter, shadow, None)
-                }
-                _ => return Err(unsupported(node, "This effect is not implemented yet")),
-            };
-        }
-    }
-    Ok(filter)
-}
-
 fn uses_background(value: &Value) -> bool {
     if let Some(values) = value.as_array() {
         return values.iter().any(uses_background);
@@ -2265,26 +2155,15 @@ fn backdrop_padding(snapshot: &LayoutSnapshot, scale: f32) -> Result<u32> {
     let mut margin = 0.0_f64;
     for item in snapshot.items.iter().filter(|item| item.record.enabled) {
         if let Some(effects) = item.node.properties.get("effect") {
-            for effect in values(effects)
-                .into_iter()
-                .filter(|effect| effect["enabled"] != false)
-            {
+            for effect in crate::effects::active(effects) {
                 needs_backdrop |=
                     effect["type"] == "background_blur" || blending::outer_needs_background(effect);
-                let radius = match effect["type"].as_str() {
-                    Some("blur" | "background_blur") => number(effect.get("radius"), 0.0)?,
-                    Some("shadow") => number(effect.get("blur"), 0.0)?,
-                    _ => 0.0,
-                };
-                if radius < 0.0 {
-                    return Err(invalid("Effect blur radius cannot be negative"));
-                }
+                let geometry = crate::effects::Geometry::parse(effect)?;
                 let [a, b, c, d, _, _] = item.record.transform.0;
                 let extent = (a.abs() + c.abs()).max(b.abs() + d.abs()) as f64;
-                margin += 1.5 * radius as f64 * extent;
+                margin += 1.5 * geometry.blur as f64 * extent;
                 if effect["type"] == "shadow" {
-                    let x = number(effect.get("offset").and_then(|value| value.get("x")), 0.0)?;
-                    let y = number(effect.get("offset").and_then(|value| value.get("y")), 0.0)?;
+                    let [x, y] = geometry.offset;
                     margin += ((a * x + c * y).abs().max((b * x + d * y).abs())) as f64;
                 }
             }

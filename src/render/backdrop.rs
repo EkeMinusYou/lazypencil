@@ -156,9 +156,10 @@ impl Renderer<'_> {
         if let Some(runtime) = self.runtime.as_deref() {
             runtime.check()?;
         }
-        let item = &self.snapshot.items[index];
-        let record = item.record.clone();
-        let node = item.node.clone();
+        let snapshot = self.snapshot;
+        let item = &snapshot.items[index];
+        let record = &item.record;
+        let node = &item.node;
         if record.visual_bounds.width <= 0.0 || record.visual_bounds.height <= 0.0 {
             let image = surface(1, 1)?.image_snapshot();
             return Ok(NodeLayer {
@@ -255,11 +256,8 @@ impl Renderer<'_> {
             color.canvas().save();
             coverage.canvas().save();
             if node.properties.get("clip") == Some(&Value::Bool(true)) {
-                let clip = shape(
-                    &node,
-                    SkRect::from_wh(record.rect.width, record.rect.height),
-                )?
-                .with_transform(&matrix(viewport.then(record.transform)));
+                let clip = shape(node, SkRect::from_wh(record.rect.width, record.rect.height))?
+                    .with_transform(&matrix(viewport.then(record.transform)));
                 color.canvas().clip_path(&clip, ClipOp::Intersect, true);
                 coverage.canvas().clip_path(&clip, ClipOp::Intersect, true);
             }
@@ -319,18 +317,12 @@ impl Renderer<'_> {
         let mut color = color.image_snapshot();
         let mut coverage = coverage.image_snapshot();
         if let Some(effects) = node.properties.get("effect") {
-            for effect in values(effects)
-                .into_iter()
-                .filter(|effect| effect["enabled"] != false)
-            {
+            for effect in crate::effects::active(effects) {
                 if let Some(runtime) = self.runtime.as_deref() {
                     runtime.check()?;
                 }
                 if effect["type"] == "background_blur" {
-                    let radius = number(effect.get("radius"), 0.0)?;
-                    if radius < 0.0 {
-                        return Err(invalid("Background blur radius cannot be negative"));
-                    }
+                    let radius = crate::effects::Geometry::parse(effect)?.blur;
                     let blurred = filtered(
                         &background,
                         image_filters::blur(
@@ -375,14 +367,11 @@ impl Renderer<'_> {
                         .runtime
                         .as_deref_mut()
                         .ok_or_else(|| {
-                            unsupported(
-                                &node,
-                                "Shader effects require a configured dynamic runtime",
-                            )
+                            unsupported(node, "Shader effects require a configured dynamic runtime")
                         })?
                         .shader_for_node(crate::shader::Request {
                             project: self.project,
-                            node: &node,
+                            node,
                             fill: effect,
                             property: "effect",
                             size: [width as u32, height as u32],
@@ -397,43 +386,17 @@ impl Renderer<'_> {
                     self.artifacts
                         .push(json!({"node_id":node.id(),"acquisition":raster.metadata}));
                 } else {
-                    let mut scaled = effect.clone();
-                    for key in ["radius", "blur"] {
-                        if let Some(value) = scaled.get_mut(key) {
-                            *value = json!(number(Some(value), 0.0)? * self.raster_scale);
-                        }
-                    }
-                    if let Some(offset) = scaled.get("offset") {
-                        let x = number(offset.get("x"), 0.0)?;
-                        let y = number(offset.get("y"), 0.0)?;
-                        let [a, b, c, d, _, _] = record.transform.0;
-                        scaled["offset"] = json!({"x":(a*x+c*y)*self.raster_scale,"y":(b*x+d*y)*self.raster_scale});
-                    }
-                    if effect["type"] == "shadow" {
-                        blending::shadow_type(&scaled)
-                            .map_err(|error| blending::at_node(error, &node, "effect"))?;
-                    }
-                    if effect["type"] == "shadow" && effect["shadowType"] != "inner" {
-                        let mode = blending::name(&scaled)
-                            .map_err(|error| blending::at_node(error, &node, "effect"))?;
+                    let native = effects::NativeEffect::parse(node, effect)?
+                        .scaled(record.transform, self.raster_scale)?;
+                    if let Some((color_value, mode)) = native.outer_shadow() {
                         let blender = blending::shadow_source(mode)
-                            .map_err(|error| blending::at_node(error, &node, "effect"))?;
-                        let offset = scaled.get("offset");
-                        let color_value = color::parse(
-                            scaled
-                                .get("color")
-                                .and_then(Value::as_str)
-                                .unwrap_or("#00000040"),
-                        )?;
-                        let blur = number(scaled.get("blur"), 0.0)?;
-                        if blur < 0.0 {
-                            return Err(invalid("Shadow blur cannot be negative"));
-                        }
+                            .map_err(|error| blending::at_node(error, node, "effect"))?;
+                        let crate::effects::Geometry {
+                            blur,
+                            offset: [x, y],
+                        } = native.geometry;
                         let shadow = image_filters::drop_shadow_only(
-                            (
-                                number(offset.and_then(|value| value.get("x")), 0.0)?,
-                                number(offset.and_then(|value| value.get("y")), 0.0)?,
-                            ),
+                            (x, y),
                             (blur / 2.0, blur / 2.0),
                             color_value,
                             None,
@@ -462,10 +425,8 @@ impl Renderer<'_> {
                         merged.canvas().draw_image(&coverage, (0.0, 0.0), None);
                         coverage = merged.image_snapshot();
                     } else {
-                        let mut temporary = node.clone();
-                        temporary.properties.insert("effect".into(), scaled);
-                        let filter = effects_filter(&temporary)?;
-                        if effect["type"] != "shadow" {
+                        let filter = native.filter(None, node)?;
+                        if !native.is_shadow() {
                             coverage = filtered(&coverage, filter.clone())?;
                         }
                         color = filtered(&color, filter)?;

@@ -936,61 +936,25 @@ impl Solver<'_> {
             }
         }
         if let Some(effects) = self.items[index].node.properties.get("effect") {
-            let effects = effects
-                .as_array()
-                .map(|v| v.iter().collect::<Vec<_>>())
-                .unwrap_or_else(|| vec![effects]);
-            for effect in effects {
-                if effect["enabled"] == false {
-                    continue;
-                }
-                let blur = match effect["type"].as_str() {
-                    Some("blur") => effect.get("radius"),
-                    Some("shadow")
-                        if effect
+            for effect in crate::effects::active(effects) {
+                if effect["type"] != "blur"
+                    && !(effect["type"] == "shadow"
+                        && effect
                             .get("shadowType")
                             .and_then(Value::as_str)
                             .unwrap_or("outer")
-                            == "outer" =>
-                    {
-                        effect.get("blur")
-                    }
-                    _ => continue,
+                            == "outer")
+                {
+                    continue;
                 }
-                .map(|v| {
-                    v.as_f64()
-                        .filter(|n| n.is_finite() && *n >= 0.0)
-                        .map(|n| n as f32)
-                        .ok_or_else(|| invalid("Effect blur must be a nonnegative number"))
-                })
-                .transpose()?
-                .unwrap_or(0.0);
+                let geometry = crate::effects::Geometry::parse(effect)?;
                 let [a, b, c, d, _, _] = transform.0;
                 let expanded = bounds.outset(
-                    1.5 * blur * (a.abs() + c.abs()),
-                    1.5 * blur * (b.abs() + d.abs()),
+                    1.5 * geometry.blur * (a.abs() + c.abs()),
+                    1.5 * geometry.blur * (b.abs() + d.abs()),
                 );
                 if effect["type"] == "shadow" {
-                    let x = effect
-                        .get("offset")
-                        .and_then(|v| v.get("x"))
-                        .map(|v| {
-                            v.as_f64()
-                                .map(|n| n as f32)
-                                .ok_or_else(|| invalid("Shadow offsets must be numbers"))
-                        })
-                        .transpose()?
-                        .unwrap_or(0.0);
-                    let y = effect
-                        .get("offset")
-                        .and_then(|v| v.get("y"))
-                        .map(|v| {
-                            v.as_f64()
-                                .map(|n| n as f32)
-                                .ok_or_else(|| invalid("Shadow offsets must be numbers"))
-                        })
-                        .transpose()?
-                        .unwrap_or(0.0);
+                    let [x, y] = geometry.offset;
                     let shadow = Rect::new(
                         expanded.x + a * x + c * y,
                         expanded.y + b * x + d * y,

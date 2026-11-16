@@ -16,6 +16,8 @@ pub mod document;
 pub mod documents;
 #[cfg(feature = "rendering")]
 pub mod dynamic;
+#[cfg(feature = "rendering")]
+mod effects;
 pub mod error;
 #[cfg(feature = "rendering")]
 pub mod font_lock;
