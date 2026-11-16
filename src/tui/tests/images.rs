@@ -707,7 +707,7 @@ fn interrupted_image_queue_retains_each_snapshot_and_accepts_images_while_paused
         let mut args = app.conversation.settings().clone();
         args.create = false;
         args.session = Some(app.conversation.id().into());
-        let executable = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("lazypencil");
+        let executable = app.conversation.executable().to_owned();
         // Leave the outbox's delivery marker intact, as when a frontend exits mid-turn.
         app.conversation.close().await.unwrap();
         drop(app);
