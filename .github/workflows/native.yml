@@ -489,7 +489,7 @@ jobs:
         timeout-minutes: 10
         run: xtask/target/debug/xtask ci native clipboard
       - name: Retain native clipboard and PTY evidence
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default') && (always() && (steps.native-clipboard.outcome == 'success' || steps.native-clipboard.outcome == 'failure' || steps.native-clipboard-focus.outcome == 'success' || steps.native-clipboard-focus.outcome == 'failure')) }}
+        if: ${{ always() && (steps.native-clipboard.outcome == 'success' || steps.native-clipboard.outcome == 'failure' || steps.native-clipboard-focus.outcome == 'success' || steps.native-clipboard-focus.outcome == 'failure') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ inputs.phase }}-clipboard-${{ inputs.os }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
