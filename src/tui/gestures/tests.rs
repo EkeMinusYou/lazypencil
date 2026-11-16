@@ -241,6 +241,8 @@ mod native {
     }
 
     fn run_fixture(name: &str, body: &str) {
+        static BUILD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let build = BUILD.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join(format!("{name}.m"));
         let executable = temp.path().join(name);
@@ -261,6 +263,7 @@ mod native {
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
+        drop(build);
         let output = std::process::Command::new(executable).output().unwrap();
         assert!(output.status.success(), "{output:?}");
     }
