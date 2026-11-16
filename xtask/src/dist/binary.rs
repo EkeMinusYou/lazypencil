@@ -416,10 +416,13 @@ pub fn create(arguments: &Arguments) -> Result<Value> {
     };
     let mut support = String::new();
     if let Some(policy) = &release {
-        support.push_str(&format!(
-            "\nRequires macOS {} or later on Apple Silicon.\n\nFeature limitations:\n",
-            policy.minimum_os
-        ));
+        if policy.target == target {
+            support.push_str(&format!(
+                "\nRequires macOS {} or later on Apple Silicon.\n",
+                policy.minimum_os
+            ));
+        }
+        support.push_str("\nFeature limitations:\n");
         for limitation in &policy.limitations {
             support.push_str(&format!("- {}\n", limitation.description));
         }

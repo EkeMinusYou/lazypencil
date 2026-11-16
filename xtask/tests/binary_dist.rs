@@ -61,6 +61,14 @@ fn fixture(target: &str) -> (tempfile::TempDir, binary::Arguments) {
 }
 
 fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary::Arguments) {
+    fixture_with_declaration(target, stable, stable)
+}
+
+fn fixture_with_declaration(
+    target: &str,
+    stable: bool,
+    declared: bool,
+) -> (tempfile::TempDir, binary::Arguments) {
     let temp = tempfile::TempDir::new().unwrap();
     let root = temp.path().join("source");
     fs::create_dir_all(root.join("src")).unwrap();
@@ -76,8 +84,8 @@ fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary
     ] {
         fs::write(root.join(name), bytes).unwrap();
     }
-    let version = if stable { "0.1.0" } else { "0.1.0-dev" };
-    if stable {
+    let version = if declared { "0.1.0" } else { "0.1.0-dev" };
+    if declared {
         fs::write(
             root.join("Cargo.toml"),
             "[package]\nname='lazypencil'\nversion='0.1.0'\n",
@@ -124,7 +132,7 @@ fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary
     } else {
         b"Original fixture linker map\n"
     };
-    let release = if stable {
+    let release = if declared {
         serde_json::from_slice::<Value>(&fixture_release()).unwrap()
     } else {
         Value::Null
@@ -178,6 +186,31 @@ fn fixture_for_release(target: &str, stable: bool) -> (tempfile::TempDir, binary
             output,
         },
     )
+}
+
+#[test]
+fn candidate_requirements_match_the_binary_target_even_with_a_release_declaration() {
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+    ] {
+        let (temp, arguments) = fixture_with_declaration(target, false, true);
+        binary::create(&arguments).unwrap();
+        let installed = temp.path().join("installed");
+        let verified = binary::verify(&arguments.output, Some(&installed)).unwrap();
+        assert_eq!(verified["release_ready"], false);
+        assert_eq!(verified["target"], target);
+        assert_eq!(
+            fs::read(installed.join("RELEASE.json")).unwrap(),
+            fixture_release()
+        );
+        let readme = fs::read_to_string(installed.join("README.txt")).unwrap();
+        assert_eq!(
+            readme.contains("Requires macOS"),
+            target == "aarch64-apple-darwin"
+        );
+    }
 }
 
 #[test]
