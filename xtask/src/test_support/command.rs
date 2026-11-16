@@ -16,6 +16,12 @@ pub fn response(args: &[String]) -> Result {
         .get(&key)
         .or_else(|| table.get("*"))
         .ok_or_else(|| format!("Unexpected fixture invocation: {key}"))?;
+    #[cfg(unix)]
+    if record["ignore_term"].as_bool() == Some(true) {
+        unsafe {
+            libc::signal(libc::SIGTERM, libc::SIG_IGN);
+        }
+    }
     if let Some(path) = record["pid_file"].as_str() {
         fs::write(path, std::process::id().to_string())?;
     }

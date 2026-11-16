@@ -226,12 +226,9 @@ mod hosted {
     use std::{
         fs,
         io::{Read, Write},
-        os::{
-            fd::{AsRawFd, FromRawFd},
-            unix::process::CommandExt,
-        },
+        os::fd::{AsRawFd, FromRawFd},
         path::Path,
-        process::{Child, Command, Stdio},
+        process::{Command, Stdio},
         thread,
         time::{Duration, Instant},
     };
@@ -306,7 +303,7 @@ mod hosted {
     }
 
     struct Terminal {
-        child: Child,
+        child: crate::process::Session,
         master: fs::File,
         _slave: fs::File,
         screen: observer::Screen,
@@ -319,28 +316,6 @@ mod hosted {
         camera_interactions: Vec<Value>,
         observer: ObserverTime,
         activity: Option<resources::ActiveTrace>,
-    }
-
-    impl Drop for Terminal {
-        fn drop(&mut self) {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGTERM);
-            }
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while Instant::now() < deadline {
-                if self.child.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-            }
-            let _ = self.child.wait();
-        }
     }
 
     impl Terminal {
@@ -416,16 +391,8 @@ mod hosted {
             if let Some(chromium) = chromium {
                 command.env("LAZYPENCIL_CHROMIUM", chromium);
             }
-            unsafe {
-                command.pre_exec(|| {
-                    if libc::setsid() < 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
             let started = Instant::now();
-            let child = command.spawn()?;
+            let child = crate::process::Session::spawn(&mut command, None)?;
             Ok(Self {
                 child,
                 master,

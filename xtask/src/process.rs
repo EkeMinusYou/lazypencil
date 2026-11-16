@@ -3,6 +3,10 @@ use std::{fs, io::Write, path::Path, process::Command, time::Duration};
 #[path = "test_support/command_output.rs"]
 mod command_output;
 pub use command_output::Output;
+#[cfg(unix)]
+mod session;
+#[cfg(unix)]
+pub use session::Session;
 
 pub fn output(command: &mut Command, timeout: Duration) -> Result<Output> {
     output_limited(command, timeout, 64 * 1024 * 1024)

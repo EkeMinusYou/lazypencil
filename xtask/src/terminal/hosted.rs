@@ -5,9 +5,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{
     fs,
-    os::unix::process::CommandExt,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -89,36 +88,13 @@ fn same(a: &[Region], b: &[Region]) -> bool {
 }
 
 struct Emulator {
-    child: Child,
+    child: crate::process::Session,
     root: PathBuf,
     end: Instant,
     #[cfg(target_os = "linux")]
     window: String,
     #[cfg(target_os = "macos")]
     window: super::macos::Window,
-}
-
-impl Drop for Emulator {
-    fn drop(&mut self) {
-        if self.child.try_wait().ok().flatten().is_some() {
-            return;
-        }
-        let group = -(self.child.id() as i32);
-        unsafe {
-            libc::kill(group, libc::SIGTERM);
-        }
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-        unsafe {
-            libc::kill(group, libc::SIGKILL);
-        }
-        let _ = self.child.wait();
-    }
 }
 
 impl Emulator {
@@ -218,16 +194,8 @@ impl Emulator {
             .stdin(Stdio::null())
             .stdout(fs::File::create(root.join("emulator.stdout.log"))?)
             .stderr(fs::File::create(root.join("emulator.stderr.log"))?);
-        unsafe {
-            launch.pre_exec(|| {
-                if libc::setsid() < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
         let mut state = Self {
-            child: launch.spawn()?,
+            child: process::Session::spawn(&mut launch, None)?,
             root: root.into(),
             end,
             #[cfg(target_os = "linux")]

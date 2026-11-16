@@ -178,10 +178,9 @@ mod owned {
     use std::{
         fs,
         io::Write,
-        os::{fd::FromRawFd, unix::process::CommandExt},
+        os::fd::FromRawFd,
         path::Path,
         process::{Child, Command, Stdio},
-        thread,
         time::{Duration, Instant},
     };
 
@@ -287,7 +286,7 @@ mod owned {
     }
 
     struct Terminal {
-        child: Child,
+        child: crate::process::Session,
         master: fs::File,
         reader: super::reader::Reader,
         _slave: fs::File,
@@ -300,29 +299,6 @@ mod owned {
         observer_ms: f64,
         root: PathBuf,
         capture: bool,
-    }
-
-    impl Drop for Terminal {
-        fn drop(&mut self) {
-            if self.child.try_wait().ok().flatten().is_some() {
-                return;
-            }
-            // The child owns a new session; never signal the user's terminal.
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGTERM);
-            }
-            let until = Instant::now() + Duration::from_secs(2);
-            while Instant::now() < until {
-                if self.child.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
-            unsafe {
-                libc::kill(-(self.child.id() as i32), libc::SIGKILL);
-            }
-            let _ = self.child.wait();
-        }
     }
 
     impl Terminal {
@@ -388,17 +364,9 @@ mod owned {
             if args.worker_profile {
                 command.env("LAZYPENCIL_PROFILE_PREVIEW", "owned-local-measurement");
             }
-            unsafe {
-                command.pre_exec(|| {
-                    if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
             let reader = super::reader::Reader::start(master.try_clone()?)?;
             let started = Instant::now();
-            let child = command.spawn()?;
+            let child = crate::process::Session::spawn(&mut command, Some(0))?;
             let mut decoder = decoder::KittyFrames::for_lazypencil();
             decoder.allow_local_files = matches!(args.kitty_transfer, KittyTransfer::File);
             Ok(Self {
