@@ -9,20 +9,16 @@ pub(super) struct Scope {
     pub version: u32,
     pub url: String,
     pub library: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url_library: Option<String>,
+    pub url_library: String,
 }
 
 impl Scope {
     fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2) {
+        if self.version != 2 {
             return Err(Error::new(
                 "UNSUPPORTED_VERSION",
                 "Unsupported copied browser scope version",
             ));
-        }
-        if (self.version == 2) != self.url_library.is_some() {
-            return Err(invalid("Browser scope v2 requires a URL ownership library"));
         }
         if self.url.is_empty() || self.url.len() > 1024 * 1024 {
             return Err(invalid("Invalid copied browser URL binding"));
@@ -170,7 +166,7 @@ impl bindings::Bound {
                 version: 2,
                 url: url.clone(),
                 library: library.into(),
-                url_library: Some(library.into()),
+                url_library: library.into(),
             });
         }
         let default_library = self.values.browser_library.as_ref().or_else(|| {
@@ -181,19 +177,14 @@ impl bindings::Bound {
         });
         let scope = if let Some(mut scope) = explicit.filter(|scope| scope.url == url) {
             scope.library = self.browser_alias(&scope.library)?;
-            if let Some(alias) = &scope.url_library {
-                scope.url_library = Some(self.browser_alias(alias)?);
-            } else if owns_url && let Some(library) = default_library {
-                scope.version = 2;
-                scope.url_library = Some(library.clone());
-            }
+            scope.url_library = self.browser_alias(&scope.url_library)?;
             Some(scope)
         } else if let Some(library) = &self.values.browser_library {
             Some(Scope {
                 version: 2,
                 url: url.clone(),
                 library: library.clone(),
-                url_library: Some(library.clone()),
+                url_library: library.clone(),
             })
         } else {
             if url::Url::parse(&url).is_ok_and(|url| url.scheme() == "file") {
@@ -206,7 +197,7 @@ impl bindings::Bound {
                 version: 2,
                 url: url.clone(),
                 library: library.clone(),
-                url_library: Some(library.clone()),
+                url_library: library.clone(),
             })
         };
         if let Some(user_metadata) = metadata.take() {
@@ -323,10 +314,8 @@ impl Project {
         owner: &Path,
     ) -> Result<()> {
         node.browser_scope = self.browser_scope_value(node, scope, owner)?;
-        if node.properties.get("url").and_then(Value::as_str) == Some(scope.url.as_str())
-            && let Some(library) = &scope.url_library
-        {
-            node.browser_url_scope = Some(self.scope_document(owner, library)?);
+        if node.properties.get("url").and_then(Value::as_str) == Some(scope.url.as_str()) {
+            node.browser_url_scope = Some(self.scope_document(owner, &scope.url_library)?);
         }
         Ok(())
     }
@@ -398,7 +387,7 @@ impl Project {
                     .ok_or_else(|| invalid("A detached browser needs a URL"))?
                     .into(),
                 library: self.detached_scope(original.browser_origin())?,
-                url_library: Some(self.detached_scope(original.browser_url_origin())?),
+                url_library: self.detached_scope(original.browser_url_origin())?,
             };
             let namespace = super::scope::metadata_namespace(value)?;
             namespace.insert(
@@ -449,7 +438,7 @@ impl Project {
                     .ok_or_else(|| invalid("A detached browser needs a URL"))?
                     .into(),
                 library: self.detached_scope(target.browser_origin())?,
-                url_library: Some(self.detached_scope(target.browser_url_origin())?),
+                url_library: self.detached_scope(target.browser_url_origin())?,
             })
         } else {
             None
@@ -508,6 +497,27 @@ pub(crate) fn revoke<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copied_browser_scope_requires_the_current_version_and_explicit_url_ownership() {
+        for value in [
+            json!({"version":1,"url":"https://example.test/","library":""}),
+            json!({"version":2,"url":"https://example.test/","library":""}),
+            json!({"version":2,"url":"https://example.test/","library":"","url_library":null}),
+        ] {
+            assert!(
+                serde_json::from_value::<Scope>(value.clone())
+                    .map(|scope| scope.validate().is_err())
+                    .unwrap_or(true),
+                "Accepted an obsolete or incomplete scope: {value}",
+            );
+        }
+        let current: Scope = serde_json::from_value(json!({
+            "version":2,"url":"https://example.test/","library":"","url_library":""
+        }))
+        .unwrap();
+        current.validate().unwrap();
+    }
 
     #[cfg(feature = "rendering")]
     #[test]
@@ -589,8 +599,12 @@ mod tests {
                 "browser_library":"root-copy","browser_libraries":{"":"root-copy","base:leaf":"leaf-copy"}})).unwrap(),
         };
         let url = "file:///page.html?literal=$keep#anchor";
-        for alias in ["base:leaf", "leaf-copy", ""] {
-            let scope = json!({"version":1,"url":url,"library":alias});
+        for (alias, url_owner) in [
+            ("base:leaf", ""),
+            ("leaf-copy", "base:leaf"),
+            ("", "root-copy"),
+        ] {
+            let scope = json!({"version":2,"url":url,"library":alias,"url_library":url_owner});
             for envelope in [false, true] {
                 let metadata = json!({"type":"test","keep":"$literal"});
                 let mut changes = if envelope {
@@ -615,9 +629,17 @@ mod tests {
                         "leaf-copy"
                     }
                 );
+                assert_eq!(
+                    scope.url_library,
+                    if url_owner == "base:leaf" {
+                        "leaf-copy"
+                    } else {
+                        "root-copy"
+                    },
+                );
             }
         }
-        let mut stale = json!({"metadata":{"type":"test","lazypencil":{"browser_scope":{"version":1,"url":"file:///old.html","library":"not-declared"}}}});
+        let mut stale = json!({"metadata":{"type":"test","lazypencil":{"browser_scope":{"version":2,"url":"file:///old.html","library":"not-declared","url_library":"not-declared"}}}});
         assert_eq!(
             bound
                 .generated_browser_context_at(&mut stale, false, Some(url), None, &mut 0)
@@ -643,7 +665,7 @@ mod tests {
         assert_eq!(scope.version, 2);
         assert_eq!(scope.url, url);
         assert_eq!(scope.library, "leaf-copy");
-        assert_eq!(scope.url_library.as_deref(), Some("leaf-copy"));
+        assert_eq!(scope.url_library, "leaf-copy");
         stale["url"] = json!(url);
         bound
             .generated_browser_context(&mut stale, false, &mut 0)
@@ -659,15 +681,15 @@ mod tests {
         );
         for (scope, code) in [
             (
-                json!({"version":1,"url":url,"library":"not-declared"}),
+                json!({"version":2,"url":url,"library":"not-declared","url_library":""}),
                 "ASSET_NOT_FOUND",
             ),
             (
-                json!({"version":1,"url":url,"library":"../outside.pen"}),
+                json!({"version":2,"url":url,"library":"../outside.pen","url_library":""}),
                 "ASSET_NOT_FOUND",
             ),
             (
-                json!({"version":3,"url":"file:///old.html","library":""}),
+                json!({"version":3,"url":"file:///old.html","library":"","url_library":""}),
                 "UNSUPPORTED_VERSION",
             ),
             (
@@ -676,14 +698,14 @@ mod tests {
             ),
             (
                 json!({"version":1,"url":url,"library":"base:leaf","url_library":""}),
-                "INVALID_DOCUMENT",
+                "UNSUPPORTED_VERSION",
             ),
             (
                 json!({"version":2,"url":url,"library":"base:leaf","url_library":"unknown"}),
                 "ASSET_NOT_FOUND",
             ),
             (
-                json!({"version":1,"url":"","library":""}),
+                json!({"version":2,"url":"","library":"","url_library":""}),
                 "INVALID_DOCUMENT",
             ),
         ] {
@@ -704,7 +726,7 @@ mod tests {
                 .code,
             "INVALID_DOCUMENT"
         );
-        let mut node = json!({"type":"browser","url":url,"metadata":{"lazypencil":{"browser_scope":{"version":1,"url":url,"library":"base:leaf"}}}});
+        let mut node = json!({"type":"browser","url":url,"metadata":{"lazypencil":{"browser_scope":{"version":2,"url":url,"library":"base:leaf","url_library":"base:leaf"}}}});
         let mut bytes = crate::script::MAX_OUTPUT_BYTES;
         assert_eq!(
             bound
@@ -741,8 +763,7 @@ mod tests {
              "metadata":{"type":"test","lazypencil":{"browser_scope":scope}}}
         ]}).to_string()).unwrap()).unwrap().resolve()
         };
-        let mut scope =
-            json!({"version":1,"url":"https://example.test/","library":"../../private.pen"});
+        let mut scope = json!({"version":2,"url":"https://example.test/","library":"../../private.pen","url_library":""});
         assert_eq!(scene(scope.clone()).unwrap_err().code, "INVALID_DOCUMENT");
         scope["url"] = json!("https://stale.test/");
         assert!(
@@ -755,7 +776,7 @@ mod tests {
             scene(scope.clone()).unwrap_err().code,
             "UNSUPPORTED_VERSION"
         );
-        scope["version"] = json!(1);
+        scope["version"] = json!(2);
         scope["path"] = json!("/private");
         assert_eq!(scene(scope).unwrap_err().code, "INVALID_DOCUMENT");
         let mut v2 =

@@ -139,7 +139,7 @@ pub fn setup(version: &str, style: &str, declared: bool) -> (TempDir, Store, Str
         base["imports"] = json!({"leaf":"leaf/leaf.pen"});
         if style == "scope-default-shift-metadata" {
             base["children"][0]["metadata"]["lazypencil"] =
-                json!({"browser_scope":{"version":1,"url":url,"library":"leaf"}});
+                json!({"browser_scope":{"version":2,"url":url,"library":"leaf","url_library":""}});
         }
         write(&base_path, base);
     }
@@ -148,7 +148,13 @@ pub fn setup(version: &str, style: &str, declared: bool) -> (TempDir, Store, Str
     } else {
         url.clone()
     };
-    let scope = json!({"version":1,"url":scope_url,"library":library(style)});
+    let url_library = if style.ends_with("-metadata") {
+        "base"
+    } else {
+        ""
+    };
+    let scope =
+        json!({"version":2,"url":scope_url,"library":library(style),"url_library":url_library});
     let mut metadata = json!({"type":"example","label":"generated","literal":"$unchanged"});
     if style.starts_with("scope-") {
         metadata["lazypencil"] = json!({"browser_scope":scope});

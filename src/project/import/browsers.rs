@@ -159,7 +159,7 @@ impl Copier<'_> {
                     .ok_or_else(|| copy_error("A copied browser needs a URL"))?
                     .into(),
                 library: self.copied_browser_scope(origin)?,
-                url_library: Some(self.copied_browser_scope(info.resolved.browser_url_origin())?),
+                url_library: self.copied_browser_scope(info.resolved.browser_url_origin())?,
             })
         } else {
             None
