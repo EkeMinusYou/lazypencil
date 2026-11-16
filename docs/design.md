@@ -63,6 +63,11 @@ enumerated values are checked before saving or resolving a scene. Unknown fields
 remain readable for repair, but must be removed or moved into `metadata` before
 editing or rendering. An unknown version fails explicitly; it is not silently upgraded.
 
+Two observed interoperability cases are explicit: an existing top-level `fileToken`
+string is kept opaque and in place, and legacy vertical text alignment `center` reads
+as `middle`. Edits preserve unchanged legacy properties; newly authored or copied
+alignment properties use `middle`. Other unsupported properties and values remain errors.
+
 A batch resolves references against captured inputs, validates the resulting document,
 and checks expected document/dependency revisions before publication. Immutable assets
 are staged before the document is replaced. A dry run publishes neither files nor

@@ -29,7 +29,7 @@ fn invalid_nodes() -> Vec<Value> {
         json!({"type":"frame","layoutPosition":"relative"}),
         json!({"type":"frame","justifyContent":"space-between"}),
         json!({"type":"frame","alignItems":"stretch"}),
-        json!({"type":"text","textAlignVertical":"center"}),
+        json!({"type":"text","textAlignVertical":"unknown"}),
         json!({"type":"text","textAlign":"start"}),
         json!({"type":"text","textGrowth":"fixed"}),
         json!({"type":"text","fontWeight":400}),
@@ -123,7 +123,7 @@ fn cli_structure_and_layout_reject_the_same_invalid_values() {
         scopes.push("layout");
     }
     for node in [
-        json!({"type":"text","textAlignVertical":"center"}),
+        json!({"type":"text","textAlignVertical":"unknown"}),
         json!({"type":"rectangle","fill":"#fff8"}),
         json!({"type":"icon","stroke":"#fff"}),
     ] {
@@ -182,6 +182,110 @@ fn schema_accepts_canonical_values_and_open_metadata_after_reference_expansion()
             .unwrap()
             .code,
         "INVALID_DOCUMENT"
+    );
+}
+
+#[test]
+fn observed_compatibility_values_remain_opaque_and_unchanged_by_unrelated_edits() {
+    for version in ["2.19", "2.21", "2.22"] {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("legacy.pen");
+        let source = format!(
+            "{{\"version\":\"{version}\",\"fileToken\":\"$opaque-token\",\"children\":[{{\"id\":\"label\",\"type\":\"text\",\"content\":\"Hello\",\"fontSize\":16,\"textAlignVertical\":\"center\",\"metadata\":{{\"type\":\"custom\",\"textAlignVertical\":\"center\"}}}}]}}"
+        );
+        fs::write(&path, &source).unwrap();
+        let document = Document::parse(source.clone()).unwrap();
+        Project::from_document(&path, document.clone(), &[])
+            .unwrap()
+            .resolve()
+            .unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
+        let mut scopes = vec!["structure"];
+        if cfg!(feature = "rendering") {
+            scopes.push("layout");
+        }
+        for scope in scopes {
+            let output = fixture_support::output(
+                Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+                    .args(["--json", "validate"])
+                    .arg(&path)
+                    .args(["--scope", scope])
+                    .env("LAZYPENCIL_DATA_DIR", temp.path().join("data")),
+                Duration::from_secs(15),
+            );
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["valid"], true, "{report}");
+        }
+        let edits: Vec<operations::Operation> = serde_json::from_value(json!([
+            {"op":"update","target":"label","set":{"fontSize":20}}
+        ]))
+        .unwrap();
+        let (after, _) = operations::apply(&document, &edits).unwrap();
+        assert_eq!(
+            after.text(),
+            source.replace("\"fontSize\":16", "\"fontSize\":20")
+        );
+        assert_eq!(after.value()["fileToken"], "$opaque-token");
+        for token in [Value::Null, json!(1), json!({}), json!([])] {
+            let mut invalid = document.value().clone();
+            invalid["fileToken"] = token;
+            assert_eq!(
+                operations::validate_local(&Document::parse(invalid.to_string()).unwrap())
+                    .unwrap_err()
+                    .code,
+                "INVALID_DOCUMENT"
+            );
+        }
+    }
+}
+
+#[test]
+fn newly_written_alignment_values_use_middle_without_rewriting_legacy_sources() {
+    let document = Document::parse(
+        json!({"version":"2.22","fileToken":"opaque-token","children":[
+            {"id":"base","type":"frame","reusable":true,"children":[
+                {"id":"label","type":"text","content":"Hello","textAlignVertical":"center"}]},
+            {"id":"use","type":"ref","ref":"base"}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let edits: Vec<operations::Operation> = serde_json::from_value(json!([
+        {"op":"copy","target":"base","client_ref":"copy"},
+        {"op":"insert","node":{"id":"new-label","type":"text","textAlignVertical":"center","metadata":{"type":"custom","textAlignVertical":"center"}},"client_ref":"new"},
+        {"op":"set_override","target":{"node_id":"use","instance_path":["label"]},"set":{"textAlignVertical":"center"}}
+    ])).unwrap();
+    let (after, result) = operations::apply(&document, &edits).unwrap();
+    assert_eq!(after.node("label").unwrap()["textAlignVertical"], "center");
+    let copied = after
+        .node(result["bindings"]["copy"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(copied["children"][0]["textAlignVertical"], "middle");
+    let new = after
+        .node(result["bindings"]["new"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(new["textAlignVertical"], "middle");
+    assert_eq!(new["metadata"]["textAlignVertical"], "center");
+    assert_eq!(
+        after.node("use").unwrap()["descendants"]["label"]["textAlignVertical"],
+        "middle"
+    );
+    assert_eq!(after.value()["fileToken"], "opaque-token");
+    let edits: Vec<operations::Operation> = serde_json::from_value(json!([
+        {"op":"update","target":result["bindings"]["new"],"set":{"textAlignVertical":"center"}}
+    ]))
+    .unwrap();
+    let (updated, _) = operations::apply(&after, &edits).unwrap();
+    assert_eq!(
+        updated
+            .node(result["bindings"]["new"].as_str().unwrap())
+            .unwrap()["textAlignVertical"],
+        "middle"
     );
 }
 

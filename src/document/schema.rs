@@ -1,4 +1,4 @@
-//! Authored and resolved property rules from the public .pen TypeScript schema.
+//! Public .pen property rules with explicitly documented interoperability cases.
 //! https://docs.pencil.dev/for-developers/the-pen-format#typescript-schema
 use super::*;
 
@@ -124,7 +124,8 @@ fn validate_property(key: &str, value: &Value, id: &str, authored: bool) -> Resu
         "alignItems" => Some(&["start", "center", "end"]),
         "textGrowth" => Some(&["auto", "fixed-width", "fixed-width-height"]),
         "textAlign" => Some(&["left", "center", "right", "justify"]),
-        "textAlignVertical" => Some(&["top", "middle", "bottom"]),
+        // Older Pencil documents retain this spelling; new edits use middle.
+        "textAlignVertical" => Some(&["top", "middle", "center", "bottom"]),
         "strokeAlignment" => Some(&["inner", "center", "outer"]),
         "strokeLinecap" => Some(&["butt", "round", "square"]),
         "strokeLinejoin" => Some(&["miter", "bevel", "round"]),

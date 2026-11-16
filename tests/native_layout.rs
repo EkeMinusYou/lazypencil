@@ -104,11 +104,11 @@ fn vertical_alignment_changes_bounds_and_both_painters() {
     for version in ["2.19", "2.21", "2.22"] {
         let (_root, store) = scene(version);
         let template = store.read().unwrap().value().clone();
-        let mut obsolete = template.clone();
-        obsolete["children"][0]["children"][0]["textAlignVertical"] = json!("center");
+        let mut unsupported = template.clone();
+        unsupported["children"][0]["children"][0]["textAlignVertical"] = json!("unknown");
         let project = Project::from_document(
             store.path(),
-            Document::parse(obsolete.to_string()).unwrap(),
+            Document::parse(unsupported.to_string()).unwrap(),
             &[],
         )
         .unwrap();
@@ -121,7 +121,7 @@ fn vertical_alignment_changes_bounds_and_both_painters() {
         for backdrop in [false, true] {
             let mut images = vec![];
             let mut bounds = vec![];
-            for alignment in ["middle", "top"] {
+            for alignment in ["middle", "center", "top"] {
                 let mut document = template.clone();
                 let title = &mut document["children"][0]["children"][0];
                 title["textGrowth"] = json!("fixed-width-height");
@@ -157,8 +157,10 @@ fn vertical_alignment_changes_bounds_and_both_painters() {
                 );
                 assert_eq!(fs::read_to_string(store.path()).unwrap(), source);
             }
-            assert_ne!(bounds[0], bounds[1]);
-            assert_ne!(images[0], images[1]);
+            assert_eq!(bounds[0], bounds[1]);
+            assert_eq!(images[0], images[1]);
+            assert_ne!(bounds[0], bounds[2]);
+            assert_ne!(images[0], images[2]);
         }
     }
 }

@@ -63,7 +63,7 @@ pub(super) fn apply(
             index += 1;
         }
     }
-    batch.finish()
+    batch.finish(document)
 }
 
 impl Batch<'_> {
@@ -477,8 +477,9 @@ impl Batch<'_> {
         Ok(())
     }
 
-    fn finish(self) -> Result<PreparedBatch> {
+    fn finish(mut self, before: &Document) -> Result<PreparedBatch> {
         crate::cancel::check(self.context.cancel)?;
+        alignments::canonicalize_new_values(before, &mut self.edited, self.context.cancel)?;
         validate_local_with_cancellation(&self.edited, self.context.cancel)?;
         if self.context.path.is_some()
             || self

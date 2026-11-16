@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 use uuid::Uuid;
 
+mod alignments;
 mod batch;
 mod import;
 mod input;
@@ -255,12 +256,29 @@ pub(crate) fn validate_local_with_cancellation(
         .expect("parsed document")
         .keys()
     {
-        if !["version", "children", "imports", "variables", "themes"].contains(&key.as_str()) {
+        if ![
+            "version",
+            "children",
+            "imports",
+            "variables",
+            "themes",
+            "fileToken",
+        ]
+        .contains(&key.as_str())
+        {
             return Err(Error::new(
                 "INVALID_DOCUMENT",
                 format!("Document property {key:?} is not in the public .pen schema"),
             ));
         }
+    }
+    // Official example files carry this opaque string outside the public schema.
+    if document
+        .value()
+        .get("fileToken")
+        .is_some_and(|value| !value.is_string())
+    {
+        return Err(Error::new("INVALID_DOCUMENT", "fileToken must be a string"));
     }
     let imports = document.value().get("imports").and_then(Value::as_object);
     let has_imports = imports.is_some_and(|v| !v.is_empty());
