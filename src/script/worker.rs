@@ -15,6 +15,7 @@ use std::{
 };
 
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+const MAX_REQUEST_FRAME_BYTES: usize = MAX_REQUEST_BYTES + 1;
 const WORKER_PROTOCOL: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -333,13 +334,13 @@ pub(super) fn serve() -> Result<()> {
         let mut bytes = Vec::new();
         let count = input
             .by_ref()
-            .take(MAX_REQUEST_BYTES as u64 + 1)
+            .take(MAX_REQUEST_FRAME_BYTES as u64 + 1)
             .read_until(b'\n', &mut bytes)
             .map_err(|e| invalid(format!("Cannot read script request: {e}")))?;
         if count == 0 {
             return Ok(());
         }
-        if bytes.len() > MAX_REQUEST_BYTES || bytes.last() != Some(&b'\n') {
+        if bytes.len() > MAX_REQUEST_FRAME_BYTES || bytes.last() != Some(&b'\n') {
             return Err(invalid("Script request exceeds its framing limit"));
         }
         let result = serde_json::from_slice::<Envelope<ScriptRequest>>(&bytes)

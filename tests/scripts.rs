@@ -178,6 +178,53 @@ fn the_internal_worker_protocol_validates_policy_before_executing_source() {
 }
 
 #[test]
+fn worker_request_limit_counts_json_bytes_separately_from_the_line_terminator() {
+    use lazypencil::config::runtime::ScriptSettings;
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+    const LIMIT: usize = 4 * 1024 * 1024;
+    for (json_bytes, terminated, accepted) in [
+        (LIMIT, true, true),
+        (LIMIT + 1, true, false),
+        (LIMIT, false, false),
+    ] {
+        let mut frame = serde_json::to_vec(&json!({
+            "protocol":1,"limits":ScriptSettings::default(),
+            "request":request("return [{type:'rectangle',width:7}];")
+        }))
+        .unwrap();
+        frame.resize(json_bytes, b' ');
+        if terminated {
+            frame.push(b'\n');
+        }
+        let mut child = Command::new(env!("CARGO_BIN_EXE_lazypencil"))
+            .arg("__script_worker")
+            .env_clear()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(&frame).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.success(),
+            accepted,
+            "{json_bytes}/{terminated}: {output:?}"
+        );
+        if accepted {
+            let reply: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(reply["output"]["nodes"][0]["width"], 7);
+        } else {
+            assert_eq!(output.status.code(), Some(4));
+            assert!(String::from_utf8_lossy(&output.stderr).contains("framing limit"));
+        }
+    }
+}
+
+#[test]
 fn typed_headers_clamp_numbers_preserve_strings_and_validate_all_six_input_types() {
     let header = Header::parse(
         r##"/**
