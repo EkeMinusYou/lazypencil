@@ -305,7 +305,7 @@ fn bound_accounting_includes_mcp_both_scripts_supervisor_and_unknown_owned_child
 }
 
 #[test]
-fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_set() {
+fn direct_pixel_profiles_require_the_current_phase_set() {
     use lazypencil_xtask::performance::tui::preview_profiles;
     use serde_json::json;
     let report = json!({"format_version":3,"generation":1,"worker_total_ms":22.0,"phases_ms":{
@@ -353,36 +353,22 @@ fn direct_pixel_profiles_keep_legacy_reports_readable_and_require_the_new_phase_
 }
 
 #[test]
-fn split_raster_and_png_profiles_preserve_strict_phase_and_interval_validation() {
+fn obsolete_png_profiles_are_rejected_even_with_complete_phase_sets() {
     use lazypencil_xtask::performance::tui::preview_profiles;
     use serde_json::json;
-    let report = json!({"format_version":2,"generation":1,"worker_total_ms":22.0,"phases_ms":{
-        "snapshot_ms":1.0,"render_raster_ms":1.5,"render_png_encode_ms":0.5,
-        "verification_ms":3.0,"decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
-    }});
-    let encode = |report: &serde_json::Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
-    assert_eq!(
-        preview_profiles(encode(&report).as_bytes())
-            .unwrap()
-            .as_slice(),
-        std::slice::from_ref(&report)
-    );
-    for (field, value) in [
-        ("format_version", json!(1)),
-        ("format_version", json!(3)),
-        ("worker_total_ms", json!(20.0)),
+    for report in [
+        json!({"format_version":1,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+            "snapshot_ms":1.0,"render_png_ms":2.0,"verification_ms":3.0,
+            "decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+        }}),
+        json!({"format_version":2,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+            "snapshot_ms":1.0,"render_raster_ms":1.5,"render_png_encode_ms":0.5,
+            "verification_ms":3.0,"decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+        }}),
     ] {
-        let mut invalid = report.clone();
-        invalid[field] = value;
-        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
-    }
-    for phase in ["render_raster_ms", "render_png_encode_ms"] {
-        let mut invalid = report.clone();
-        invalid["phases_ms"][phase] = json!(-1.0);
-        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
-        invalid["phases_ms"].as_object_mut().unwrap().remove(phase);
-        invalid["phases_ms"]["render_png_ms"] = json!(0.0);
-        assert!(preview_profiles(encode(&invalid).as_bytes()).is_err());
+        assert!(
+            preview_profiles(format!("LAZYPENCIL_PREVIEW_TIMING {report}\n").as_bytes()).is_err()
+        );
     }
 }
 
@@ -390,9 +376,9 @@ fn split_raster_and_png_profiles_preserve_strict_phase_and_interval_validation()
 fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_data() {
     use lazypencil_xtask::performance::tui::preview_profiles;
     use serde_json::{Value, json};
-    let report = json!({"format_version":1,"generation":1,"worker_total_ms":22.0,"phases_ms":{
-        "snapshot_ms":1.0,"render_png_ms":2.0,"verification_ms":3.0,
-        "decode_png_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
+    let report = json!({"format_version":3,"generation":1,"worker_total_ms":22.0,"phases_ms":{
+        "snapshot_ms":1.0,"render_raster_ms":2.0,"render_pixel_copy_ms":3.0,
+        "verification_ms":4.0,"terminal_encode_ms":5.0,"metadata_ms":6.0
     }});
     let encode = |report: &Value| format!("LAZYPENCIL_PREVIEW_TIMING {report}\n");
     let mut next = report.clone();
@@ -409,7 +395,7 @@ fn worker_profiles_require_complete_bounded_monotonic_intervals_without_extra_da
             v["phases_ms"]
                 .as_object_mut()
                 .unwrap()
-                .remove("decode_png_ms");
+                .remove("render_pixel_copy_ms");
             v
         },
         {
