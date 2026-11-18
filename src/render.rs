@@ -12,9 +12,10 @@ use skia_safe::{
     gradient, image_filters, paint,
 };
 use std::{
+    borrow::Borrow,
     cell::RefCell,
     collections::{BTreeMap, VecDeque},
-    path::{Path as FilePath, PathBuf},
+    path::PathBuf,
     rc::Rc,
 };
 
@@ -208,7 +209,8 @@ fn png_impl(
 /// Snapshot-scoped analysis and drawing resources for viewport-only renders.
 struct RasterCache {
     shapes: RefCell<BTreeMap<usize, Path>>,
-    asset_images: Rc<RefCell<AssetImages>>,
+    asset_images: Rc<RefCell<RasterImages<PathBuf>>>,
+    mesh_rasters: Rc<RefCell<RasterImages<mesh::RasterKey>>>,
     pictures: RefCell<BTreeMap<PictureKey, RecordedPicture>>,
     picture_clock: std::cell::Cell<u64>,
     pool: RefCell<raster_pool::RasterPool>,
@@ -220,45 +222,53 @@ struct RasterCache {
     has_outer_shadows: bool,
 }
 
-#[derive(Default)]
-struct AssetImages {
-    images: VecDeque<(PathBuf, Image)>,
+struct RasterImages<K> {
+    images: VecDeque<(K, Image)>,
     bytes: usize,
 }
 
-impl AssetImages {
+impl<K> Default for RasterImages<K> {
+    fn default() -> Self {
+        Self {
+            images: VecDeque::new(),
+            bytes: 0,
+        }
+    }
+}
+
+impl<K> RasterImages<K> {
     const MAX_BYTES: usize = 16 * 1024 * 1024;
+    const MAX_ENTRIES: usize = 64;
 
     fn bytes(image: &Image) -> usize {
         image.image_info().compute_min_byte_size()
     }
 
-    fn get(&mut self, path: &FilePath) -> Option<Image> {
-        let index = self.images.iter().position(|(key, _)| key == path)?;
+    fn get<Q: PartialEq + ?Sized>(&mut self, key: &Q) -> Option<Image>
+    where
+        K: Borrow<Q>,
+    {
+        let index = self
+            .images
+            .iter()
+            .position(|(entry, _)| entry.borrow() == key)?;
         let entry = self.images.remove(index).unwrap();
         let image = entry.1.clone();
         self.images.push_back(entry);
         Some(image)
     }
 
-    fn decode(&mut self, path: PathBuf, image: Image) -> Image {
-        if Self::bytes(&image) > Self::MAX_BYTES {
-            return image;
-        }
-        let Some(decoded) = image.make_raster_image(None, None) else {
-            return image;
-        };
-        let bytes = Self::bytes(&decoded);
+    fn insert(&mut self, key: K, image: &Image) {
+        let bytes = Self::bytes(image);
         if bytes > Self::MAX_BYTES {
-            return image;
+            return;
         }
-        while self.bytes + bytes > Self::MAX_BYTES || self.images.len() >= 64 {
+        while self.bytes + bytes > Self::MAX_BYTES || self.images.len() >= Self::MAX_ENTRIES {
             let (_, old) = self.images.pop_front().unwrap();
             self.bytes -= Self::bytes(&old);
         }
         self.bytes += bytes;
-        self.images.push_back((path, decoded.clone()));
-        decoded
+        self.images.push_back((key, image.clone()));
     }
 }
 
@@ -283,6 +293,7 @@ impl RasterCache {
         Self {
             shapes: RefCell::new(self.shapes.borrow().clone()),
             asset_images: self.asset_images.clone(),
+            mesh_rasters: self.mesh_rasters.clone(),
             pictures: RefCell::new(self.pictures.borrow().clone()),
             picture_clock: std::cell::Cell::new(self.picture_clock.get()),
             pool: RefCell::default(),
@@ -333,6 +344,7 @@ impl RasterCache {
         Self {
             shapes: RefCell::default(),
             asset_images: Rc::default(),
+            mesh_rasters: Rc::default(),
             pictures: RefCell::default(),
             picture_clock: std::cell::Cell::new(0),
             pool: RefCell::default(),
@@ -359,19 +371,25 @@ impl RasterCache {
         {
             return None;
         }
-        // Each recorded band can hold a raster for every mesh until replay.
-        // Charge the upper bound and use direct rendering when it exceeds the cap.
-        self.mesh_sizes
+        let bytes = self
+            .mesh_sizes
             .iter()
             .try_fold(0_u64, |total, &[width, height]| {
                 let [width, height] = mesh::raster_size(width, height, scale);
-                let bytes = width
-                    .saturating_mul(height)
-                    .saturating_mul(4 * parts as u64);
+                let bytes = width.saturating_mul(height).saturating_mul(4);
                 let total = total.saturating_add(bytes);
                 (total <= MAX_PICTURE_BYTES as u64).then_some(total)
-            })
-            .map(|bytes| bytes as usize)
+            })? as usize;
+        if bytes <= RasterImages::<mesh::RasterKey>::MAX_BYTES
+            && self.mesh_sizes.len() <= RasterImages::<mesh::RasterKey>::MAX_ENTRIES
+        {
+            // All rasters for this scale fit together; every band shares them.
+            Some(bytes)
+        } else {
+            // Entries can be evicted while recording successive bands.
+            let bytes = bytes * parts;
+            (bytes <= MAX_PICTURE_BYTES).then_some(bytes)
+        }
     }
 
     fn padding(&self, snapshot: &LayoutSnapshot, scale: f32) -> Result<u32> {
@@ -1873,7 +1891,7 @@ impl Renderer<'_> {
             let asset = self.project.asset(&path)?;
             let cached = self
                 .cache
-                .and_then(|cache| cache.asset_images.borrow_mut().get(&path));
+                .and_then(|cache| cache.asset_images.borrow_mut().get(path.as_path()));
             let image = if let Some(cached) = cached {
                 cached
             } else {
@@ -1885,8 +1903,15 @@ impl Renderer<'_> {
                 {
                     return Err(invalid("Decoded image exceeds 32 megapixels"));
                 }
-                if let Some(cache) = self.cache {
-                    cache.asset_images.borrow_mut().decode(path.clone(), image)
+                if let Some(cache) = self.cache
+                    && RasterImages::<PathBuf>::bytes(&image) <= RasterImages::<PathBuf>::MAX_BYTES
+                    && let Some(decoded) = image.make_raster_image(None, None)
+                {
+                    cache
+                        .asset_images
+                        .borrow_mut()
+                        .insert(path.clone(), &decoded);
+                    decoded
                 } else {
                     image
                 }

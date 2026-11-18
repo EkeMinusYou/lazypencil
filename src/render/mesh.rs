@@ -372,6 +372,13 @@ pub(super) fn raster_size(width: f32, height: f32, scale: f32) -> [u64; 2] {
     [width, height].map(|extent| (f64::from(extent) * f64::from(scale)).ceil().max(1.0) as u64)
 }
 
+#[derive(PartialEq, Eq)]
+pub(super) struct RasterKey {
+    // Paint values borrow stable storage from the immutable layout snapshot.
+    paint: usize,
+    size: (i32, i32),
+}
+
 pub(super) fn draw(
     renderer: &mut Renderer<'_>,
     node: &ResolvedNode,
@@ -404,7 +411,38 @@ pub(super) fn paint(
         return Ok(());
     }
     let [width, height] = raster_size(rect.width(), rect.height(), renderer.raster_scale);
-    let (width, height) = raster_dimensions(width, height)?;
+    let size @ (width, height) = raster_dimensions(width, height)?;
+    let key = RasterKey {
+        paint: std::ptr::from_ref(fill) as usize,
+        size,
+    };
+    let cached = renderer
+        .cache
+        .and_then(|cache| cache.mesh_rasters.borrow_mut().get(&key));
+    let image = if let Some(image) = cached {
+        image
+    } else {
+        let image = rasterize(renderer, mesh, size)?;
+        if let Some(cache) = renderer.cache {
+            cache.mesh_rasters.borrow_mut().insert(key, &image);
+        }
+        image
+    };
+    let local = matrix(
+        Affine::translation(rect.left(), rect.top()).then(Affine::scale(
+            rect.width() / width as f32,
+            rect.height() / height as f32,
+        )),
+    );
+    paint.set_shader(image.to_shader(
+        (TileMode::Clamp, TileMode::Clamp),
+        SamplingOptions::from(skia_safe::FilterMode::Linear),
+        Some(&local),
+    ));
+    draw(renderer.canvas, &paint)
+}
+
+fn rasterize(renderer: &Renderer<'_>, mesh: Mesh, (width, height): (i32, i32)) -> Result<Image> {
     let mut columns = vec![1; mesh.columns - 1];
     let mut rows = vec![1; mesh.rows - 1];
     let mut patches = Vec::with_capacity(columns.len() * rows.len());
@@ -445,16 +483,5 @@ pub(super) fn paint(
             })?;
         }
     }
-    let local = matrix(
-        Affine::translation(rect.left(), rect.top()).then(Affine::scale(
-            rect.width() / width as f32,
-            rect.height() / height as f32,
-        )),
-    );
-    paint.set_shader(surface.image_snapshot().to_shader(
-        (TileMode::Clamp, TileMode::Clamp),
-        SamplingOptions::from(skia_safe::FilterMode::Linear),
-        Some(&local),
-    ));
-    draw(renderer.canvas, &paint)
+    Ok(surface.image_snapshot())
 }
