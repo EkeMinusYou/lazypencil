@@ -472,7 +472,7 @@ fn raster_impl_cached(
     mut runtime: Option<&mut crate::dynamic::DynamicRuntime>,
     cache: Option<&RasterCache>,
     recordable: bool,
-    viewport: Option<[u32; 2]>,
+    viewport_size: Option<[u32; 2]>,
 ) -> Result<RenderedRaster> {
     let shapes = cache.map(|cache| &cache.shapes);
     let pool = cache.map(|cache| &cache.pool);
@@ -485,7 +485,7 @@ fn raster_impl_cached(
         region,
         width,
         height,
-    } = plan.with_viewport(viewport)?;
+    } = plan.with_viewport(viewport_size)?;
     if let Some(runtime) = runtime.as_deref_mut() {
         runtime.prepare_pages(project, snapshot)?;
     }
@@ -623,6 +623,11 @@ fn raster_impl_cached(
         coverage: None,
         own_pass: None,
         tight_text_layer_hints: true,
+        #[cfg(target_os = "macos")]
+        bounded_preview_layers: recordable
+            && viewport_size.is_some()
+            && u64::from(working_width as u32) * u64::from(working_height as u32)
+                > atlas::MAX_ATLAS_PIXELS,
         rasters,
         shapes,
         recording: false,
@@ -686,6 +691,8 @@ fn raster_impl_cached(
                     coverage: None,
                     own_pass: None,
                     tight_text_layer_hints: anchored,
+                    #[cfg(target_os = "macos")]
+                    bounded_preview_layers: false,
                     rasters: renderer.rasters.clone(),
                     shapes,
                     recording: !anchored,
@@ -702,7 +709,7 @@ fn raster_impl_cached(
                 // Keep oversized fallback on the ordinary bounded draw path.
                 if anchored
                     && part + 1 < band_count
-                    && working_width as u64 * working_height as u64 <= 8 * 1024 * 1024
+                    && working_width as u64 * working_height as u64 <= atlas::MAX_ATLAS_PIXELS
                     && images
                         .values()
                         .map(|(_, image)| image.width() as u64 * image.height() as u64 * 4)
@@ -903,6 +910,8 @@ struct Renderer<'a> {
     coverage: Option<Image>,
     own_pass: Option<(usize, OwnPass)>,
     tight_text_layer_hints: bool,
+    #[cfg(target_os = "macos")]
+    bounded_preview_layers: bool,
     rasters: Rc<backdrop::RasterBudget>,
     shapes: Option<&'a RefCell<BTreeMap<usize, Path>>>,
     recording: bool,
@@ -1106,6 +1115,25 @@ impl Renderer<'_> {
         let mut layer = Paint::default();
         layer.set_alpha_f(opacity);
         layer.set_image_filter(filter);
+        #[cfg(target_os = "macos")]
+        if self.bounded_preview_layers
+            && node.properties.get("effect").is_some_and(|effects| {
+                crate::effects::active(effects)
+                    .all(|effect| effect["type"] == "shadow" && effect["shadowType"] != "inner")
+            })
+        {
+            let transform = self.viewport.then(item.record.transform);
+            if let Some(inverse) = axis_aligned_inverse(transform) {
+                // Include sampling support beyond the layout's shadow bounds.
+                let clip = item
+                    .record
+                    .visual_bounds
+                    .transformed(self.viewport)
+                    .outset(3.0, 3.0)
+                    .transformed(inverse);
+                effects::bound_filter_output(&mut layer, clip, false);
+            }
+        }
         let tight_text_layer_hints = self.tight_text_layer_hints;
         self.tight_text_layer_hints &= !has_layer;
         if has_layer {
@@ -1279,9 +1307,28 @@ impl Renderer<'_> {
             } else {
                 self.allocation_hint(device_bounds, transform, true, None)
             };
+            #[cfg(target_os = "macos")]
+            let mut layer_paint = Paint::default();
             let mut fill_layer = SaveLayerRec::default();
             if let Some(bounds) = &layer_bounds {
                 fill_layer = fill_layer.bounds(bounds);
+            }
+            #[cfg(target_os = "macos")]
+            if !self.tight_text_layer_hints
+                && self.bounded_preview_layers
+                && let Some(original) = self.canvas.device_clip_bounds()
+                && device_bounds.x >= original.left as f32 + 2.0
+                && device_bounds.y >= original.top as f32 + 2.0
+                && let Some(inverse) = axis_aligned_inverse(transform)
+            {
+                // The filtered layer's padding can replace the leading pixels
+                // only when they are already transparent.
+                effects::bound_filter_output(
+                    &mut layer_paint,
+                    device_bounds.transformed(inverse),
+                    true,
+                );
+                fill_layer = fill_layer.paint(&layer_paint);
             }
             self.canvas.save_layer(&fill_layer);
             self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
@@ -1655,6 +1702,8 @@ impl Renderer<'_> {
             coverage: None,
             own_pass: None,
             tight_text_layer_hints: false,
+            #[cfg(target_os = "macos")]
+            bounded_preview_layers: false,
             rasters: self.rasters.clone(),
             shapes: self.shapes,
             recording: self.recording,
@@ -2258,6 +2307,16 @@ fn values(value: &Value) -> Vec<&Value> {
         .map(|v| v.iter().collect())
         .unwrap_or_else(|| vec![value])
 }
+#[cfg(target_os = "macos")]
+fn axis_aligned_inverse(transform: Affine) -> Option<Affine> {
+    let [scale_x, skew_y, skew_x, scale_y, ..] = transform.0;
+    if scale_x > 0.0 && scale_y > 0.0 && skew_x == 0.0 && skew_y == 0.0 {
+        transform.inverse()
+    } else {
+        None
+    }
+}
+
 fn matrix(affine: Affine) -> Matrix {
     Matrix::from_affine(&affine.0)
 }

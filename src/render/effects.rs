@@ -131,3 +131,33 @@ pub(super) fn filter(node: &ResolvedNode) -> Result<Option<ImageFilter>> {
     }
     Ok(filter)
 }
+
+#[cfg(target_os = "macos")]
+pub(super) fn bound_filter_output(paint: &mut Paint, clip: Rect, text_mask: bool) {
+    unsafe extern "C" {
+        fn C_Lazypencil_boundFilterOutput(
+            paint: *mut std::ffi::c_void,
+            size: usize,
+            alignment: usize,
+            left: f32,
+            top: f32,
+            right: f32,
+            bottom: f32,
+            text_mask: bool,
+        );
+    }
+    // The native bridge checks the transparent Paint wrapper's size and alignment.
+    // The mutable borrow gives it exclusive access to the initialized native paint.
+    unsafe {
+        C_Lazypencil_boundFilterOutput(
+            std::ptr::from_mut(paint).cast(),
+            std::mem::size_of::<Paint>(),
+            std::mem::align_of::<Paint>(),
+            clip.x,
+            clip.y,
+            clip.right(),
+            clip.bottom(),
+            text_mask,
+        );
+    }
+}

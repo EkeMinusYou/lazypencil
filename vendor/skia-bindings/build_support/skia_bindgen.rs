@@ -231,7 +231,10 @@ pub fn generate_bindings(
         }
     }
 
-    cc_build.cpp(true).out_dir(output_directory);
+    cc_build
+        .cpp(true)
+        .define("LAZYPENCIL_NATIVE_BRIDGES", None)
+        .out_dir(output_directory);
 
     {
         let std_cpp_arg = if target.builds_with_msvc() {

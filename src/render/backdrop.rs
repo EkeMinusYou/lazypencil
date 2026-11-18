@@ -141,6 +141,8 @@ impl Renderer<'_> {
             coverage: None,
             own_pass: pass.map(|pass| (index, pass)),
             tight_text_layer_hints: false,
+            #[cfg(target_os = "macos")]
+            bounded_preview_layers: false,
             rasters: self.rasters.clone(),
             shapes: self.shapes,
             recording: self.recording,
@@ -242,6 +244,8 @@ impl Renderer<'_> {
                 coverage: Some(coverage.image_snapshot()),
                 own_pass: None,
                 tight_text_layer_hints: false,
+                #[cfg(target_os = "macos")]
+                bounded_preview_layers: false,
                 rasters: self.rasters.clone(),
                 shapes: self.shapes,
                 recording: self.recording,
@@ -287,6 +291,8 @@ impl Renderer<'_> {
                 coverage: Some(coverage.image_snapshot()),
                 own_pass: None,
                 tight_text_layer_hints: false,
+                #[cfg(target_os = "macos")]
+                bounded_preview_layers: false,
                 rasters: self.rasters.clone(),
                 shapes: self.shapes,
                 recording: self.recording,

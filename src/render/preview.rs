@@ -381,6 +381,65 @@ pub(crate) fn preview_with_runtime_observed(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn large_preview_keeps_shadow_and_text_pixels_at_fractional_camera_positions() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.pen");
+        let children = json!([
+            {"type":"rectangle","id":"mesh","x":28.5,"y":16.25,"width":180,"height":96,
+             "fill":{"type":"mesh_gradient","columns":2,"rows":2,
+                     "colors":["#304878","#98ABDE","#775C95","#ACC8D9"]}},
+            {"type":"text","id":"title","x":32.75,"y":43.375,"content":"Fractional bounds",
+             "fontSize":25,"fill":"#F8FAFCC0","underline":true}
+        ]);
+        let document = json!({"version":"2.22","children":[{
+            "type":"frame","id":"card","x":1700.625,"y":1260.375,"width":330,"height":183,
+            "clip":true,"fill":"#F8FAFCC0","cornerRadius":13,"opacity":0.83,
+            "effect":{"type":"shadow","color":"#27335270","blur":17,
+                      "offset":{"x":-9.25,"y":5.375}},
+            "children":children
+        }]});
+        std::fs::write(&path, document.to_string()).unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+        let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        let mut preview = PreviewRenderer::default();
+        let viewport = [3840, 3320];
+        preview.set_viewport(viewport);
+        let scale = 1.125;
+        let options = RenderOptions {
+            region: Some(Rect::new(
+                18.375,
+                -79.625,
+                viewport[0] as f32 / scale,
+                viewport[1] as f32 / scale,
+            )),
+            scale,
+            background: Color::WHITE,
+            ..Default::default()
+        };
+        let native = raster_impl_cached(
+            &project,
+            &snapshot,
+            &options,
+            None,
+            None,
+            false,
+            Some(viewport),
+        )
+        .unwrap();
+        let (expected, _) = PreviewPixels::from_image(&native.image).unwrap();
+        let frame = preview
+            .render(&project, &snapshot, &options, &mut runtime, None, None)
+            .unwrap();
+        assert_eq!(
+            crate::document::hash(&frame.pixels.rgba),
+            crate::document::hash(&expected.rgba)
+        );
+        assert!(preview.cache.unwrap().pictures.borrow().is_empty());
+    }
+
     #[test]
     fn static_mesh_frames_can_be_retained_without_changing_native_pixels() {
         let directory = tempfile::tempdir().unwrap();

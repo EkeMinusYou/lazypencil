@@ -84,6 +84,11 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/core/RasterContext.h"
+#if defined(__APPLE__) && defined(LAZYPENCIL_NATIVE_BRIDGES)
+#include "src/core/SkImageFilter_Base.h"
+#include "src/core/SkImageFilterTypes.h"
+#include <algorithm>
+#endif
 // docs/
 #include "include/docs/SkPDFDocument.h"
 #include "include/docs/SkPDFJpegHelpers.h"
@@ -1495,6 +1500,80 @@ extern "C" bool C_Lazypencil_installRasterBitmap(
     return static_cast<SkBitmap*>(bitmap)->installPixels(
         SkImageInfo::MakeN32Premul(width, height), pixels, row_bytes, release, context);
 }
+
+#if defined(__APPLE__) && defined(LAZYPENCIL_NATIVE_BRIDGES)
+namespace {
+// This filter is used only on direct raster canvases. Keep the source layer's
+// left/top origin, since moving it changes the rounding of paths and shaders.
+class LazypencilFilterBounds final : public SkImageFilter_Base {
+public:
+    LazypencilFilterBounds(sk_sp<SkImageFilter> input, const SkRect& crop)
+            : SkImageFilter_Base(&input, 1), fCrop(crop) {}
+
+    Factory getFactory() const override { return nullptr; }
+    const char* getTypeName() const override { return "LazypencilFilterBounds"; }
+
+private:
+    skif::FilterResult onFilterImage(const skif::Context& context) const override {
+        auto crop = context.mapping().paramToLayer(fCrop).roundOut();
+        auto desired = context.desiredOutput();
+        if (!desired.intersect(crop)) {
+            return {};
+        }
+        const auto input = this->getChildInputLayerBounds(
+                0, context.mapping(), desired, std::nullopt);
+        // Use the tighter source only after the layer has been painted, so
+        // transparent margins do not feed the blur or the restore blend.
+        auto source = context.source().applyCrop(context.withNewDesiredOutput(input), crop);
+        return this->getChildOutput(
+                0, context.withNewDesiredOutput(desired).withNewSource(std::move(source)))
+                .applyCrop(context, crop, SkTileMode::kDecal);
+    }
+
+    skif::LayerSpace<SkIRect> onGetInputLayerBounds(
+            const skif::Mapping& mapping,
+            const skif::LayerSpace<SkIRect>& desired,
+            std::optional<skif::LayerSpace<SkIRect>> content) const override {
+        auto bounds = SkIRect(this->getChildInputLayerBounds(0, mapping, desired, content));
+        auto crop = SkIRect(mapping.paramToLayer(fCrop).roundOut());
+        bounds.fRight = std::min(bounds.fRight, crop.fRight);
+        bounds.fBottom = std::min(bounds.fBottom, crop.fBottom);
+        if (this->getInput(0) || bounds.isEmpty()) {
+            return skif::LayerSpace<SkIRect>(bounds);
+        }
+        // Filtered save layers add a one-pixel transparent border. Inset
+        // before that allocation so the color-mask layer keeps its origin.
+        bounds.fLeft += 1;
+        bounds.fTop += 1;
+        return skif::LayerSpace<SkIRect>(bounds);
+    }
+
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
+            const skif::Mapping& mapping,
+            std::optional<skif::LayerSpace<SkIRect>> content) const override {
+        return this->getChildOutputLayerBounds(0, mapping, content);
+    }
+
+    const skif::ParameterSpace<SkRect> fCrop;
+};
+}
+
+extern "C" void C_Lazypencil_boundFilterOutput(
+    void* paint, size_t size, size_t alignment, float left, float top,
+    float right, float bottom, bool text_mask) noexcept {
+    if (size != sizeof(SkPaint) || alignment != alignof(SkPaint)) {
+        return;
+    }
+    const auto crop = SkRect::MakeLTRB(left, top, right, bottom);
+    if (!crop.isFinite() || crop.isEmpty()) {
+        return;
+    }
+    auto* native = static_cast<SkPaint*>(paint);
+    if (auto input = native->refImageFilter(); input || text_mask) {
+        native->setImageFilter(sk_make_sp<LazypencilFilterBounds>(std::move(input), crop));
+    }
+}
+#endif
 
 extern "C" bool C_SkBitmap_ComputeIsOpaque(const SkBitmap* self) {
     return SkBitmap::ComputeIsOpaque(*self);

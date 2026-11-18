@@ -14,4 +14,6 @@ The native Ninja invocation forwards Cargo's `NUM_JOBS` through its job limit, s
 
 On macOS, the `embed-freetype` feature also enables the FreeType build used for explicitly supplied file fonts through `SkFontMgr_New_Custom_Empty`. CoreText remains the system font manager.
 
-The original MIT license is included in LICENSE. Remove upstream-fix patches when a crates.io release includes them; retain the application-specific ownership bridge and its build requirements while the renderer uses it.
+`C_Lazypencil_boundFilterOutput` uses the pinned Skia filter interface to bound raster layer allocation and restore work while retaining the original input origin. It is compiled only on macOS and its private headers are excluded from bindgen. The application uses it on direct preview canvases.
+
+The original MIT license is included in LICENSE. Remove upstream-fix patches when a crates.io release includes them; retain the application-specific bridges and their build requirements while the renderer uses them.
