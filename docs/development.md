@@ -64,6 +64,12 @@ checks affected by that edit, rather than starting every unrelated suite again.
 
 ## Pull requests and integration
 
+Run `bash scripts/check-before-push.sh` while editing, or pass a commit such as
+`HEAD` to check the committed snapshot. It checks application and tool formatting,
+Rust notice bundles, and reviewed Skia wrapper sources without a native build.
+In a checkout with no existing hook configuration, enable the automatic check
+for pushes to `main` with `git config --local core.hooksPath .githooks`.
+
 CI selects checks from the PR's tested changes. Main pushes, manual runs and
 reusable full-verification calls use the complete graph.
 

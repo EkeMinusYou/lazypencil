@@ -55,6 +55,11 @@ pub enum Command {
         #[arg(long)]
         upstream: Option<PathBuf>,
     },
+    /// Verify the reviewed Skia wrapper source inputs without a native build.
+    SkiaWrapper {
+        #[arg(long, default_value_os_t=util::root())]
+        root: PathBuf,
+    },
     Assets {
         #[arg(value_parser=["collect","verify"])]
         operation: String,
@@ -82,6 +87,10 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::SkiaWrapper { root } => {
+                skia_wrapper::verify_inputs(&root)?;
+                util::print(&json!({"verified":skia_wrapper::REVIEW}))
+            }
             Self::Toolchain {
                 operation,
                 rustc,

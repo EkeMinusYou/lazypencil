@@ -16,11 +16,7 @@ const INPUTS: &[&str] = &[
     "src/shaper.cpp",
 ];
 
-pub fn build(root: &Path, features: &[String], stdout: &[u8]) -> Result<(Value, super::Files)> {
-    ensure!(
-        stdout.len() <= 16 * 1024 * 1024,
-        "Unbounded wrapper build output"
-    );
+fn read_review(root: &Path) -> Result<(Vec<u8>, Value)> {
     let definition = util::read(&root.join(REVIEW), 64 * 1024)?;
     let review: Value = serde_json::from_slice(&definition)?;
     ensure!(
@@ -28,15 +24,6 @@ pub fn build(root: &Path, features: &[String], stdout: &[u8]) -> Result<(Value, 
             && review["package"]
                 == json!({"name":"skia-bindings","version":"0.153.3","license":"MIT"}),
         "Unreviewed wrapper package"
-    );
-    let required: BTreeSet<String> = serde_json::from_value(review["required_features"].clone())?;
-    let optional: BTreeSet<String> = serde_json::from_value(review["optional_features"].clone())?;
-    let selected = features.iter().cloned().collect::<BTreeSet<_>>();
-    ensure!(
-        selected.len() == features.len()
-            && required.is_subset(&selected)
-            && selected.is_subset(&required.union(&optional).cloned().collect()),
-        "Review newly selected Skia wrapper features"
     );
     let package = root.join("vendor/skia-bindings");
     let manifest: toml::Value = toml::from_str(&String::from_utf8(util::read(
@@ -54,16 +41,6 @@ pub fn build(root: &Path, features: &[String], stdout: &[u8]) -> Result<(Value, 
         units == ["src/bindings.cpp", "src/shaper.cpp", "src/paragraph.cpp"],
         "Unreviewed wrapper source selection"
     );
-    let observed = std::str::from_utf8(stdout)?
-        .lines()
-        .filter_map(|line| line.strip_prefix("COMPILING BINDINGS: "))
-        .map(serde_json::from_str::<Vec<String>>)
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    ensure!(
-        observed.len() == 1 && observed.first() == Some(&units),
-        "Wrapper build output does not establish reviewed compilation inputs"
-    );
-    let mut inputs = Vec::new();
     let mut paths = BTreeSet::new();
     for pin in review["files"]
         .as_array()
@@ -85,14 +62,46 @@ pub fn build(root: &Path, features: &[String], stdout: &[u8]) -> Result<(Value, 
                 "Review new wrapper source notices: {path}"
             );
         }
-        inputs.push(pin.clone());
     }
     ensure!(
         paths == INPUTS.iter().copied().collect(),
         "Missing reviewed wrapper input"
     );
-    let license = util::read(&package.join("LICENSE"), util::MAX_FILE)?;
-    let index = json!({"format_version":1,"package":review["package"],"scope":review["scope"],"definition":{"path":REVIEW,"sha256":util::digest(&definition)},"features":selected,"compiled_sources":units,"inputs":inputs,"source_comments":[],"build_output_sha256":util::digest(stdout)});
+    Ok((definition, review))
+}
+
+pub(super) fn verify_inputs(root: &Path) -> Result<()> {
+    read_review(root)?;
+    Ok(())
+}
+
+pub fn build(root: &Path, features: &[String], stdout: &[u8]) -> Result<(Value, super::Files)> {
+    ensure!(
+        stdout.len() <= 16 * 1024 * 1024,
+        "Unbounded wrapper build output"
+    );
+    let (definition, review) = read_review(root)?;
+    let required: BTreeSet<String> = serde_json::from_value(review["required_features"].clone())?;
+    let optional: BTreeSet<String> = serde_json::from_value(review["optional_features"].clone())?;
+    let selected = features.iter().cloned().collect::<BTreeSet<_>>();
+    ensure!(
+        selected.len() == features.len()
+            && required.is_subset(&selected)
+            && selected.is_subset(&required.union(&optional).cloned().collect()),
+        "Review newly selected Skia wrapper features"
+    );
+    let units: Vec<String> = serde_json::from_value(review["compiled_sources"].clone())?;
+    let observed = std::str::from_utf8(stdout)?
+        .lines()
+        .filter_map(|line| line.strip_prefix("COMPILING BINDINGS: "))
+        .map(serde_json::from_str::<Vec<String>>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    ensure!(
+        observed.len() == 1 && observed.first() == Some(&units),
+        "Wrapper build output does not establish reviewed compilation inputs"
+    );
+    let license = util::read(&root.join("vendor/skia-bindings/LICENSE"), util::MAX_FILE)?;
+    let index = json!({"format_version":1,"package":review["package"],"scope":review["scope"],"definition":{"path":REVIEW,"sha256":util::digest(&definition)},"features":selected,"compiled_sources":units,"inputs":review["files"],"source_comments":[],"build_output_sha256":util::digest(stdout)});
     let mut files = super::Files::new();
     files.insert("LICENSE.original".into(), license.clone());
     files.insert("review.json".into(), definition);
