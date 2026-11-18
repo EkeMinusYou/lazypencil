@@ -1319,30 +1319,6 @@ fn read_binary(
     )
 }
 
-#[cfg(test)]
-mod asset_read_tests {
-    use super::*;
-
-    #[test]
-    fn local_asset_reads_observe_cancellation_before_opening_or_capturing_bytes() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("asset");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        cancel.cancel();
-        assert_eq!(
-            read_binary(&path, Some(&cancel)).unwrap_err().code,
-            "CANCELLED"
-        );
-        let bytes = vec![0x57; 128 * 1024];
-        std::fs::write(&path, &bytes).unwrap();
-        assert_eq!(read_binary(&path, None).unwrap(), bytes);
-        assert_eq!(
-            read_binary(&path, Some(&cancel)).unwrap_err().code,
-            "CANCELLED"
-        );
-    }
-}
-
 fn collect_icon_libraries(node: &ResolvedNode, libraries: &mut BTreeSet<String>) {
     if node.kind() == "icon" {
         libraries.insert(
@@ -1459,5 +1435,29 @@ fn property_values_mut(value: &mut Value) -> &mut [Value] {
     match value {
         Value::Array(values) => values,
         value => std::slice::from_mut(value),
+    }
+}
+
+#[cfg(test)]
+mod asset_read_tests {
+    use super::*;
+
+    #[test]
+    fn local_asset_reads_observe_cancellation_before_opening_or_capturing_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("asset");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            read_binary(&path, Some(&cancel)).unwrap_err().code,
+            "CANCELLED"
+        );
+        let bytes = vec![0x57; 128 * 1024];
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_binary(&path, None).unwrap(), bytes);
+        assert_eq!(
+            read_binary(&path, Some(&cancel)).unwrap_err().code,
+            "CANCELLED"
+        );
     }
 }

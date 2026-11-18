@@ -229,18 +229,19 @@ pub(crate) fn valid_size(value: &str) -> bool {
 }
 
 fn number(value: &Value, path: &str, authored: bool) -> Result<()> {
-    if !value.is_number()
-        && !(authored
+    if value.is_number()
+        || authored
             && value
                 .as_str()
-                .is_some_and(|value| value.starts_with('$') && value.len() > 1))
+                .is_some_and(|value| value.starts_with('$') && value.len() > 1)
     {
-        return Err(invalid(format!(
+        Ok(())
+    } else {
+        Err(invalid(format!(
             "{path} must be a number{}",
             if authored { " or variable" } else { "" }
-        )));
+        )))
     }
-    Ok(())
 }
 
 fn numbers(value: &Value, path: &str, lengths: &[usize], authored: bool) -> Result<()> {
