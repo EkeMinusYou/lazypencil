@@ -150,13 +150,28 @@ pub struct Output {
     pub generation: u64,
     pub result: Result<Preview>,
 }
+struct ActiveRequest {
+    request: Request,
+    cancel: CancellationToken,
+}
+
+impl Request {
+    fn renders_camera(&self, target: &Self) -> bool {
+        !self.check_only
+            && self.generation == target.generation
+            && self.cells == target.cells
+            && self.view == target.view
+            && self.attachment.is_none()
+    }
+}
+
 struct Shared {
     canvas_background: Mutex<image::Rgba<u8>>,
     show_node_names: Mutex<bool>,
     selection: Mutex<super::selection::render::State>,
     request: Mutex<(Option<Request>, bool)>,
     wake: Condvar,
-    active: Mutex<Option<CancellationToken>>,
+    active: Mutex<Option<ActiveRequest>>,
     output: Mutex<Option<Output>>,
     notify: Notify,
     generation: AtomicU64,
@@ -237,9 +252,9 @@ impl Worker {
             .generation
             .store(request.generation, Ordering::Relaxed);
         if !request.check_only
-            && let Some(cancel) = self.shared.active.lock().unwrap().as_ref()
+            && let Some(active) = self.shared.active.lock().unwrap().as_ref()
         {
-            cancel.cancel();
+            active.cancel.cancel();
         }
         // A periodic dependency check must never replace a requested viewport change.
         if !request.check_only || pending.0.is_none() {
@@ -256,15 +271,38 @@ impl Worker {
         {
             return false;
         }
+        self.queue_camera(&mut pending.0, request);
+        true
+    }
+    pub(super) fn request_final_camera(&self, request: Request) {
+        let mut pending = self.shared.request.lock().unwrap();
+        let active = self.shared.active.lock().unwrap();
+        if pending.1
+            || pending
+                .0
+                .as_ref()
+                .is_some_and(|queued| queued.renders_camera(&request))
+            || active.as_ref().is_some_and(|active| {
+                !active.cancel.is_cancelled() && active.request.renders_camera(&request)
+            })
+            || self.shared.output.lock().unwrap().is_some()
+        {
+            return;
+        }
+        if let Some(active) = active.as_ref() {
+            active.cancel.cancel();
+        }
+        self.queue_camera(&mut pending.0, request);
+    }
+    fn queue_camera(&self, pending: &mut Option<Request>, request: Request) {
         self.shared
             .generation
             .store(request.generation, Ordering::Relaxed);
         self.shared
             .presentation_clock
             .fetch_add(1, Ordering::Relaxed);
-        pending.0 = Some(request);
+        *pending = Some(request);
         self.shared.wake.notify_one();
-        true
     }
     pub(super) fn present(&self, mut request: super::selection::render::Request) -> Arc<AtomicU64> {
         // Use the same queue lock as scene updates so the wake cannot be lost.
@@ -303,8 +341,8 @@ impl Worker {
             .fetch_add(1, Ordering::Relaxed);
         let mut state = self.shared.request.lock().unwrap();
         state.1 = true;
-        if let Some(cancel) = self.shared.active.lock().unwrap().as_ref() {
-            cancel.cancel();
+        if let Some(active) = self.shared.active.lock().unwrap().as_ref() {
+            active.cancel.cancel();
         }
         self.shared.wake.notify_one();
     }
@@ -399,7 +437,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             continue;
         };
         let cancel = CancellationToken::new();
-        *shared.active.lock().unwrap() = Some(cancel.clone());
+        *shared.active.lock().unwrap() = Some(ActiveRequest {
+            request: request.clone(),
+            cancel: cancel.clone(),
+        });
         drop(state);
         let canvas_background = *shared.canvas_background.lock().unwrap();
         let picker = &picker.clone().with_canvas_background(canvas_background);
@@ -711,9 +752,9 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 timing.mark("selection_ms");
             }
         }
-        let cancelled = cancel.is_cancelled();
-        *shared.active.lock().unwrap() = None;
-        if cancelled {
+        let mut active = shared.active.lock().unwrap();
+        *active = None;
+        if cancel.is_cancelled() {
             continue;
         }
         if let Ok(preview) = &result
@@ -731,6 +772,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             generation: request.generation,
             result,
         });
+        drop(active);
         shared.notify.notify_one();
         // Recent frames reuse owned pixels without another compression pass.
         if let Some(preview) = retain {
@@ -1681,7 +1723,10 @@ mod tests {
             attachment: None,
         };
         let cancel = CancellationToken::new();
-        *shared.active.lock().unwrap() = Some(cancel.clone());
+        *shared.active.lock().unwrap() = Some(ActiveRequest {
+            request: request.clone(),
+            cancel: cancel.clone(),
+        });
         assert!(!worker.request_if_idle(request.clone()));
         assert!(!cancel.is_cancelled());
         assert!(shared.request.lock().unwrap().0.is_none());
@@ -1701,7 +1746,7 @@ mod tests {
         assert!(!worker.request_if_idle(request.clone()));
         shared.request.lock().unwrap().1 = false;
         assert!(worker.request_if_idle(request.clone()));
-        assert!(!worker.request_if_idle(request));
+        assert!(!worker.request_if_idle(request.clone()));
         assert_eq!(shared.generation.load(Ordering::Relaxed), 8);
         assert_eq!(
             shared
@@ -1713,6 +1758,30 @@ mod tests {
                 .unwrap()
                 .generation,
             8
+        );
+
+        let active = shared.request.lock().unwrap().0.take().unwrap();
+        *shared.active.lock().unwrap() = Some(ActiveRequest {
+            request: active,
+            cancel: cancel.clone(),
+        });
+        worker.request_final_camera(request.clone());
+        assert!(!cancel.is_cancelled());
+        assert!(shared.request.lock().unwrap().0.is_none());
+
+        let mut target = request;
+        target.view.pan([20.0, -12.0]);
+        worker.request_final_camera(target.clone());
+        assert!(cancel.is_cancelled());
+        assert!(
+            shared
+                .request
+                .lock()
+                .unwrap()
+                .0
+                .as_ref()
+                .unwrap()
+                .renders_camera(&target)
         );
     }
 

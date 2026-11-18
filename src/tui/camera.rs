@@ -188,9 +188,7 @@ impl super::App {
             return;
         }
         if !exact {
-            // Start the newest target only when the previous source render has
-            // completed. No queued history and no cancellation on each repeat.
-            worker.request_if_idle(super::preview::Request {
+            let request = super::preview::Request {
                 generation: self.generation,
                 cells: self.cells,
                 view: target,
@@ -198,7 +196,13 @@ impl super::App {
                 refresh_pages: false,
                 check_only: false,
                 attachment: None,
-            });
+            };
+            if idle.is_some() {
+                // Finish incoming frames during motion so repeat input cannot starve painting.
+                worker.request_if_idle(request);
+            } else {
+                worker.request_final_camera(request);
+            }
         }
     }
 
