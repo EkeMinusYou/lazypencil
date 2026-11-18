@@ -4,6 +4,7 @@ use image::{Rgba, RgbaImage};
 
 const NAVIGATION_IDLE: std::time::Duration = std::time::Duration::from_millis(80);
 const POINTER_ZOOM_COALESCE: std::time::Duration = std::time::Duration::from_millis(125);
+const CAMERA_COMPLETION_BUDGET: std::time::Duration = std::time::Duration::from_millis(200);
 
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
 
@@ -226,11 +227,12 @@ impl super::App {
                 check_only: false,
                 attachment: None,
             };
-            if idle.is_none() || coalescing {
-                // Coalesce only at the start of a pinch on large previews. A long
-                // gesture must still allow in-flight frames to reach the screen.
+            if self.camera_frame_time > CAMERA_COMPLETION_BUDGET && (idle.is_none() || coalescing) {
+                // Discard obsolete expensive work so the final frame starts sooner.
                 worker.request_latest_camera(request);
             } else {
+                // A short render can reach the screen during a burst. Its
+                // completion will schedule the newest view, including at release.
                 worker.request_if_idle(request);
             }
         }

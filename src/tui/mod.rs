@@ -283,6 +283,7 @@ struct App {
     camera: Option<camera::Camera>,
     camera_deadline: Option<Instant>,
     camera_settle_deadline: Option<Instant>,
+    camera_frame_time: Duration,
     pointer_zoom_coalesce_until: Option<Instant>,
     camera_navigation: bool,
     camera_was_visible: bool,
@@ -391,6 +392,7 @@ impl App {
             camera: None,
             camera_deadline: None,
             camera_settle_deadline: None,
+            camera_frame_time: Duration::MAX,
             pointer_zoom_coalesce_until: None,
             camera_navigation: false,
             camera_was_visible: false,
@@ -864,6 +866,10 @@ impl App {
                     self.view = preview.view;
                     if !preview.time_dependent && !preview.live_pages {
                         self.playback.stop();
+                        if !preview.frame_time.is_zero() {
+                            // Cached images do not estimate the next full render.
+                            self.camera_frame_time = preview.frame_time;
+                        }
                     }
                 }
                 if preview.attachment && self.status.is_empty() {
