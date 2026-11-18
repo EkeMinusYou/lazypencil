@@ -20,6 +20,9 @@ use std::{
 
 const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 const MAX_PICTURE_BYTES: usize = 32 * 1024 * 1024;
+// Four complete band surfaces fit the existing scratch budget at the TUI's
+// largest canvas size. The long-lived full-viewport atlas has a separate cap.
+const MAX_PARALLEL_PIXELS: u64 = 16 * 1024 * 1024;
 
 mod atlas;
 mod backdrop;
@@ -352,7 +355,7 @@ impl RasterCache {
         let parts = raster_pool::RasterPool::parts(size);
         if !self.has_outer_shadows
             || parts == 1
-            || size.0 as u64 * size.1 as u64 > atlas::MAX_ATLAS_PIXELS
+            || size.0 as u64 * size.1 as u64 > MAX_PARALLEL_PIXELS
         {
             return None;
         }
@@ -741,7 +744,7 @@ fn raster_impl_cached(
                     own_pass: None,
                     tight_text_layer_hints: anchored,
                     #[cfg(target_os = "macos")]
-                    bounded_preview_layers: false,
+                    bounded_preview_layers: renderer.bounded_preview_layers,
                     rasters: renderer.rasters.clone(),
                     cache,
                     recording: !anchored,
@@ -758,7 +761,7 @@ fn raster_impl_cached(
                 // Keep oversized fallback on the ordinary bounded draw path.
                 if anchored
                     && part + 1 < band_count
-                    && working_width as u64 * working_height as u64 <= atlas::MAX_ATLAS_PIXELS
+                    && working_width as u64 * working_height as u64 <= MAX_PARALLEL_PIXELS
                     && images
                         .values()
                         .map(|(_, image)| image.width() as u64 * image.height() as u64 * 4)

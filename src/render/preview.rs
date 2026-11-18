@@ -437,7 +437,12 @@ mod tests {
             crate::document::hash(&frame.pixels.rgba),
             crate::document::hash(&expected.rgba)
         );
-        assert!(preview.cache.unwrap().pictures.borrow().is_empty());
+        let cache = preview.cache.unwrap();
+        let size = (viewport[0] as i32, viewport[1] as i32);
+        assert_eq!(
+            !cache.pictures.borrow().is_empty(),
+            raster_pool::RasterPool::parts(size) > 1,
+        );
     }
 
     #[test]
