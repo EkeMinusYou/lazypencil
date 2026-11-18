@@ -1,5 +1,6 @@
 //! Shared workspace actions for the palette, slash commands and help.
 use super::*;
+use crate::agent::SessionSelector;
 
 pub(super) mod completion;
 pub(super) mod palette;
@@ -8,6 +9,8 @@ pub(super) mod palette;
 enum Requirement {
     Always,
     Idle,
+    AgentModel,
+    AgentSpeed,
     Checkpoints,
     LocalRead,
     ImageInput,
@@ -51,6 +54,10 @@ macro_rules! commands {
 commands! {
     Permissions, "Conversation", "Agent permissions…", "Choose the connected agent's permission mode and optionally save its default.",
         "permissions", ["mode"], "", 0, 0, Always;
+    Model, "Conversation", "Agent model…", "Choose a model for the connected conversation.",
+        "model", [], "", 0, 0, AgentModel;
+    Speed, "Conversation", "Agent speed…", "Choose Standard, Fast or Ultrafast when offered by the connected model.",
+        "speed", ["fast"], "", 0, 0, AgentSpeed;
     NewConversation, "Conversation", "New empty conversation…", "Save the current draft and start an empty local conversation.",
         "new-conversation", [], "", 0, 0, Idle;
     Logs, "Conversation", "Current conversation logs…", "Read saved turns of the current conversation without sending a request.",
@@ -121,6 +128,8 @@ impl Command {
         matches!(
             self.action,
             Action::Permissions
+                | Action::Model
+                | Action::Speed
                 | Action::NewConversation
                 | Action::Logs
                 | Action::Conversations
@@ -350,8 +359,31 @@ impl App {
         use Requirement::*;
         let busy = self.conversation.active()
             || self.conversation.modes().pending().is_some()
+            || self.conversation.configuration_pending()
             || self.document_task.is_some();
         match command.requirement {
+            AgentModel | AgentSpeed if busy => {
+                Some("Wait for the active turn or settings change to finish")
+            }
+            AgentModel | AgentSpeed if !self.conversation.connected() => {
+                Some("Connect to the agent before changing its settings")
+            }
+            AgentModel
+                if SessionSelector::Model
+                    .choices(self.agent.options())
+                    .next()
+                    .is_none() =>
+            {
+                Some("This adapter does not offer model selection")
+            }
+            AgentSpeed
+                if SessionSelector::Speed
+                    .choices(self.agent.options())
+                    .next()
+                    .is_none() =>
+            {
+                Some("This model or adapter does not offer speed selection")
+            }
             Idle if busy || self.input.is_some() => {
                 Some("Finish or cancel the active operation before selecting a conversation")
             }
@@ -400,6 +432,18 @@ impl App {
         }
         match action {
             Action::Permissions => self.open_agent_permissions(),
+            Action::Model | Action::Speed => {
+                let selector = if action == Action::Model {
+                    SessionSelector::Model
+                } else {
+                    SessionSelector::Speed
+                };
+                self.pointer.reset_modal_list();
+                self.modal = Some(checkpoints::Modal::AgentOptions(agent_status::Picker::new(
+                    selector,
+                    self.agent.options(),
+                )));
+            }
             Action::NewConversation => self.pending_session = Some(saved::SessionChange::New),
             Action::Logs => {
                 self.open_saved(saved::Page::current(self.conversation.id().into()), None)?

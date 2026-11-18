@@ -1,5 +1,5 @@
 use agent_client_protocol::schema::v1::{ContentBlock, TextContent};
-use lazypencil::agent::{AgentEvent, AgentHost, AgentOptions};
+use lazypencil::agent::{AgentEvent, AgentHost, AgentOptions, SessionSelector};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -2520,6 +2520,38 @@ fn permission_mode_changes_are_confirmed_and_unknown_modes_are_rejected() {
             host.close().await.unwrap();
         });
     }
+}
+
+#[test]
+fn session_option_changes_validate_speed_against_the_current_model_and_require_confirmation() {
+    let temp = TempDir::new().unwrap();
+    runtime().block_on(async {
+        let mut host = AgentHost::spawn(options("settings-fast-ultrafast", temp.path())).unwrap();
+        ready(&mut host).await;
+        host.set_session_option(SessionSelector::Speed, "ultrafast".into())
+            .unwrap();
+        let rejected = message(&mut host).await;
+        assert_eq!(rejected["type"], "config_error");
+        assert_eq!(rejected["error"]["code"], "INVALID_ARGUMENT");
+        assert!(!temp.path().join("received-settings.jsonl").exists());
+        host.set_session_option(SessionSelector::Model, "fixture-model-2".into())
+            .unwrap();
+        assert_eq!(message(&mut host).await["type"], "config_changed");
+        host.set_session_option(SessionSelector::Speed, "ultrafast".into())
+            .unwrap();
+        assert_eq!(message(&mut host).await["type"], "config_changed");
+        host.close().await.unwrap();
+
+        let mut host = AgentHost::spawn(options("settings-fast-unconfirmed", temp.path())).unwrap();
+        ready(&mut host).await;
+        host.set_session_option(SessionSelector::Speed, "on".into())
+            .unwrap();
+        let rejected = message(&mut host).await;
+        assert_eq!(rejected["type"], "config_error");
+        assert_eq!(rejected["error"]["code"], "AGENT_ERROR");
+        assert!(!temp.path().join("sent-turn.txt").exists());
+        host.close().await.unwrap();
+    });
 }
 
 #[test]

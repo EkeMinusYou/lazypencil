@@ -147,7 +147,7 @@ struct Peer<'a> {
     permission_answered: bool,
     cancel_received: bool,
     model: String,
-    fast: bool,
+    speed: String,
     selection: String,
     authenticated: bool,
     session: String,
@@ -164,7 +164,12 @@ impl<'a> Peer<'a> {
             permission_answered: false,
             cancel_received: false,
             model: "fixture-model".into(),
-            fast: mode == "settings-fast-inherited",
+            speed: if mode == "settings-fast-inherited" {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
             selection: "read-only".into(),
             authenticated: false,
             session: "fixture-native".into(),
@@ -205,7 +210,13 @@ impl<'a> Peer<'a> {
             && !(self.mode == "settings-fast-model-only" && self.model != "fixture-model-2")
             && !(self.mode == "settings-fast-model-removes" && self.model == "fixture-model-2")
         {
-            let fast = json!({"id":"fast-mode","name":"Fast mode","category":"model_config","type":"select","currentValue":if self.fast {"on"} else {"off"},"options":[{"value":"off","name":"Off"},{"value":"on","name":"On"}]});
+            let mut fast = json!({"id":"fast-mode","name":"Fast mode","category":"model_config","type":"select","currentValue":self.speed,"options":[{"value":"off","name":"Off"},{"value":"on","name":"On"}]});
+            if self.mode == "settings-fast-ultrafast" && self.model == "fixture-model-2" {
+                fast["options"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"value":"ultrafast","name":"Ultrafast"}));
+            }
             options.as_array_mut().unwrap().push(fast.clone());
             if self.mode == "settings-fast-duplicate" {
                 options.as_array_mut().unwrap().push(fast);
@@ -522,12 +533,15 @@ impl<'a> Peer<'a> {
                                 .as_str()
                                 .ok_or("Missing selected model")?
                                 .into();
+                            if self.model != "fixture-model-2" && self.speed == "ultrafast" {
+                                self.speed = "off".into();
+                            }
                         }
                     }
                     Some("fast-mode") => {
                         assert!(mode.starts_with("settings-fast"));
                         if mode != "settings-fast-unconfirmed" {
-                            self.fast = params["value"] == "on";
+                            self.speed = params["value"].as_str().ok_or("Missing speed")?.into();
                         }
                     }
                     _ => return Err("Unexpected configuration selector".into()),

@@ -117,6 +117,12 @@ impl Conversation {
     /// User-facing callers must obtain explicit confirmation for elevated native modes.
     pub fn change_mode(&mut self, mode: String, save: Option<Prepared>) -> Result<()> {
         self.require_project_agent()?;
+        if self.configuration_pending() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the pending settings change to finish",
+            ));
+        }
         if self.modes.pending.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",

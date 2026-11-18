@@ -43,7 +43,10 @@ pub mod permissions;
 mod preparation;
 mod process;
 mod settings;
+pub use settings::SessionSelector;
 pub(crate) use settings::normalize_modes;
+#[cfg(feature = "tui")]
+pub(crate) use settings::unique_option;
 mod steering;
 use auth::{AuthPolicy, AuthReport};
 use process::AgentProcess;
@@ -133,9 +136,14 @@ struct Turn {
     generation: u64,
 }
 
+enum SettingChange {
+    Mode(String),
+    Select(SessionSelector, String),
+}
+
 struct Commands {
     turns: mpsc::Receiver<Turn>,
-    modes: mpsc::Receiver<String>,
+    settings: mpsc::Receiver<SettingChange>,
     steering: mpsc::Receiver<steering::Request>,
     steering_supported: Arc<AtomicBool>,
     steering_turn: Arc<Mutex<Option<u64>>>,
@@ -144,7 +152,7 @@ struct Commands {
 /// Owns one adapter connection and one session. Sequential prompts reuse both.
 pub struct AgentHost {
     commands: Option<mpsc::Sender<Turn>>,
-    modes: mpsc::Sender<String>,
+    settings: mpsc::Sender<SettingChange>,
     steering: mpsc::Sender<steering::Request>,
     steering_supported: Arc<AtomicBool>,
     steering_turn: Arc<Mutex<Option<u64>>>,
@@ -201,13 +209,13 @@ impl AgentHost {
             ));
         }
         let (commands, receiver) = mpsc::channel(1);
-        let (modes, mode_receiver) = mpsc::channel(1);
+        let (settings, settings_receiver) = mpsc::channel(1);
         let (steering, steering_receiver) = mpsc::channel(1);
         let steering_supported = Arc::new(AtomicBool::new(false));
         let steering_turn = Arc::new(Mutex::new(None));
         let controls = Commands {
             turns: receiver,
-            modes: mode_receiver,
+            settings: settings_receiver,
             steering: steering_receiver,
             steering_supported: steering_supported.clone(),
             steering_turn: steering_turn.clone(),
@@ -242,7 +250,7 @@ impl AgentHost {
         });
         Ok(Self {
             commands: Some(commands),
-            modes,
+            settings,
             steering,
             steering_supported,
             steering_turn,
@@ -321,9 +329,18 @@ impl AgentHost {
 
     /// Changes are consumed only between prompts, never inside an active turn.
     pub fn set_mode(&self, mode: String) -> Result<()> {
-        self.modes
-            .try_send(mode)
-            .map_err(|_| agent_error("A mode change is pending or the agent is closed"))
+        self.change_setting(SettingChange::Mode(mode))
+    }
+
+    /// Select a model or speed currently advertised by the adapter.
+    pub fn set_session_option(&self, selector: SessionSelector, value: String) -> Result<()> {
+        self.change_setting(SettingChange::Select(selector, value))
+    }
+
+    fn change_setting(&self, change: SettingChange) -> Result<()> {
+        self.settings
+            .try_send(change)
+            .map_err(|_| agent_error("A setting change is pending or the agent is closed"))
     }
 
     pub async fn prompt(
@@ -624,7 +641,7 @@ async fn conversation(
     } = channels;
     let Commands {
         mut turns,
-        mut modes,
+        settings: mut changes,
         mut steering,
         steering_supported,
         steering_turn,
@@ -804,24 +821,53 @@ async fn conversation(
         let mut turn = tokio::select! {
             biased;
             _ = shutdown.cancelled() => return Ok(()),
-            mode = modes.recv() => {
-                let Some(mode) = mode else { return Ok(()); };
-                settings::merge_updates(&mut configuration,&session,&mode_updates);
+            change = changes.recv() => {
+                let Some(change) = change else { return Ok(()); };
+                settings::merge_updates(&mut configuration, &session, &mode_updates);
+                let diagnostic = options.diagnostic_directory.as_deref();
+                let apply = async {
+                    match &change {
+                        SettingChange::Mode(mode) => settings::apply(
+                            connection, &session, &mut configuration, Some(mode), None, None, diagnostic,
+                        ).await,
+                        SettingChange::Select(selector, value) => settings::select(
+                            connection, &session, &mut configuration, *selector, value, diagnostic,
+                        ).await,
+                    }
+                };
                 let result = tokio::select! {
                     _ = shutdown.cancelled() => return Ok(()),
-                    result = tokio::time::timeout(options.setup_timeout,
-                        settings::apply(connection, &session, &mut configuration, Some(&mode), None, None, options.diagnostic_directory.as_deref())) => result,
+                    result = tokio::time::timeout(options.setup_timeout, apply) => result,
                 };
-                match result {
-                    Ok(Ok(())) => {
-                        settings::merge_updates(&mut configuration,&session,&mode_updates);
-                        if configuration["modes"]["currentModeId"]!=mode {
-                            emit(events,json!({"type":"mode_error","mode":mode,"response":configuration,"error":agent_error("The adapter reported a different permission mode")})).await?;
-                        } else {emit(events, json!({"type":"mode_changed","mode":mode,"response":configuration})).await?;}
-                    },
-                    Ok(Err(error)) => emit(events, json!({"type":"mode_error","mode":mode,"error":error,"response":configuration})).await?,
-                    Err(_) => return Err(agent_error("Permission mode change timed out; reconnect before sending another prompt")),
+                let label = match &change {
+                    SettingChange::Mode(_) => "Permission mode",
+                    SettingChange::Select(selector, _) => selector.name(),
+                };
+                let result = result.map_err(|_| agent_error(format!(
+                    "{label} change timed out; reconnect before sending another prompt"
+                )))?;
+                settings::merge_updates(&mut configuration, &session, &mode_updates);
+                let (mut event, confirmed, error_type) = match change {
+                    SettingChange::Mode(mode) => (
+                        json!({"type":"mode_changed","mode":mode,"response":configuration}),
+                        configuration["modes"]["currentModeId"] == mode,
+                        "mode_error",
+                    ),
+                    SettingChange::Select(selector, value) => (
+                        json!({"type":"config_changed","setting":selector.name(),"response":configuration}),
+                        selector.option(&configuration["configOptions"])
+                            .is_some_and(|option| option["currentValue"] == value),
+                        "config_error",
+                    ),
+                };
+                if let Err(error) = result.and_then(|()| {
+                    if confirmed { Ok(()) }
+                    else { Err(agent_error(format!("The adapter reported a different {label}"))) }
+                }) {
+                    event["type"] = json!(error_type);
+                    event["error"] = json!(error);
                 }
+                emit(events, event).await?;
                 continue;
             },
             input = steering.recv() => {

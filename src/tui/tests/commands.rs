@@ -5,6 +5,7 @@ fn workspace_commands_keep_legacy_names_and_literal_queue_text() {
     use commands::Action;
     for (name, action) in [
         ("permissions", Action::Permissions), ("mode", Action::Permissions),
+        ("model", Action::Model), ("speed", Action::Speed), ("fast", Action::Speed),
         ("new-conversation", Action::NewConversation), ("logs", Action::Logs),
         ("conversations", Action::Conversations), ("resume-queue", Action::ResumeQueue),
         ("clear-queue", Action::ClearQueue), ("clear-images", Action::ClearImages),
@@ -13,8 +14,8 @@ fn workspace_commands_keep_legacy_names_and_literal_queue_text() {
         assert_eq!(commands::parse(&format!("/{name}")).unwrap().0.action, action);
         assert!(commands::parse(&format!("/{name} extra")).is_err());
     }
-    assert_eq!(commands::COMMANDS.iter().filter(|command| command.slash_enabled()).count(), 12);
-    assert_eq!(commands::COMMANDS.len(), 28);
+    assert_eq!(commands::COMMANDS.iter().filter(|command| command.slash_enabled()).count(), 14);
+    assert_eq!(commands::COMMANDS.len(), 30);
     for command in commands::COMMANDS.iter().filter(|command| !command.slash_enabled()) {
         for name in std::iter::once(&command.name).chain(command.aliases.iter()) {
             let error = commands::parse(&format!("/{name}")).unwrap_err();

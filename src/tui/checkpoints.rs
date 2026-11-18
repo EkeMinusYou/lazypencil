@@ -130,6 +130,7 @@ impl Drop for Task {
 pub enum Modal {
     Commands { selected: usize },
     CommandInput(Box<super::commands::Input>),
+    AgentOptions(super::agent_status::Picker),
     Loading { message: &'static str },
     History(Page),
     Confirm(Page),
@@ -290,6 +291,7 @@ impl super::App {
                     }
                 }
             }
+            Modal::AgentOptions(picker) => picker.apply(self)?,
             Modal::History(page) if !page.entries.is_empty() => {
                 self.modal = Some(Modal::Confirm(page))
             }
@@ -387,6 +389,12 @@ impl super::App {
                 }
                 self.pointer.reattach(super::mouse::ListTarget::Commands);
             }
+            Modal::AgentOptions(picker) => {
+                if key.code == KeyCode::Esc {
+                    return Ok(false);
+                }
+                picker.key(key.code);
+            }
             Modal::Loading { .. } => {
                 if key.code == KeyCode::Esc {
                     self.saved_return = None;
@@ -480,6 +488,10 @@ impl super::App {
             }
             Modal::CommandInput(input) => {
                 input.draw(frame, popup, self.permissions.is_empty(), &mut self.pointer);
+                return;
+            }
+            Modal::AgentOptions(picker) => {
+                picker.draw(frame, popup, &mut self.pointer);
                 return;
             }
             _ => {}

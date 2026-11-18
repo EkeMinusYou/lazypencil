@@ -702,6 +702,10 @@ pub fn run(
             permission_modes(&mut h)?;
             Value::Null
         }
+        "agent-model-speed" => {
+            agent_model_speed(&mut h)?;
+            Value::Null
+        }
         "command-palette" => {
             command_palette(&mut h)?;
             Value::Null
@@ -2566,6 +2570,77 @@ fn navigation(h: &mut Harness) -> Result<Value> {
     Ok(
         json!({"source_commit":source_commit(),"case":h.case,"frames":frames,"draft_sha256":hash(format!("{text} 続き")),"help_end_reached":true,"startup_keys_retained":true,"feedback":{"pan":pan_feedback,"zoom":zoom_feedback},"turns":h.turns().len()}),
     )
+}
+
+fn agent_model_speed(h: &mut Harness) -> Result {
+    h.visible("fixture-model medium ·")?;
+    h.paste("/speed")?;
+    h.key(b"\r")?;
+    h.visible("Choose speed")?;
+    h.visible("Standard")?;
+    assert!(!h.screen.text().contains("Ultrafast"));
+    h.key(b"\x1b[B\r")?;
+    h.visible("fixture-model medium fast ·")?;
+
+    let draft = "モデルを変更しても下書きを保持";
+    h.paste(draft)?;
+    h.draft(draft)?;
+    command(h, "Agent model")?;
+    h.visible("Choose model")?;
+    h.key(b"\x1b[B\r")?;
+    h.visible("fixture-model-2 high fast ·")?;
+    h.draft(draft)?;
+    command(h, "Agent speed")?;
+    h.visible("Choose speed")?;
+    h.visible("Ultrafast")?;
+    h.key(b"\x1b[B\r")?;
+    h.visible("fixture-model-2 high ultrafast ·")?;
+    h.draft(draft)?;
+    no_agent(h);
+    h.key(b"\x13")?;
+    h.wait("turn completed at the selected speed", 15.0, |h| {
+        h.completed_turns(1)
+    })?;
+    let ready = h
+        .turns()
+        .into_iter()
+        .find(|v| v["type"] == "ready")
+        .unwrap();
+    assert!(
+        ready["response"]["configOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|option| { option["id"] == "fast-mode" && option["currentValue"] == "ultrafast" })
+    );
+
+    command(h, "Agent speed")?;
+    h.visible("Choose speed")?;
+    h.key(b"\x1b[A\x1b[A\r")?;
+    h.visible("fixture-model-2 high ·")?;
+    let requests = fs::read_to_string(h.root.join("received-settings.jsonl"))?;
+    let requests: Vec<Value> = requests
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 4);
+    for (request, (id, value)) in requests.iter().zip([
+        ("fast-mode", "on"),
+        ("model", "fixture-model-2"),
+        ("fast-mode", "ultrafast"),
+        ("fast-mode", "off"),
+    ]) {
+        assert_eq!(request["configId"], id);
+        assert_eq!(request["value"], value);
+        assert_eq!(request["sessionId"], ready["session_id"]);
+    }
+    assert_eq!(
+        fs::read_to_string(h.root.join("received-settings-sessions.jsonl"))?
+            .lines()
+            .count(),
+        1
+    );
+    Ok(())
 }
 
 fn permission_modes(h: &mut Harness) -> Result {

@@ -10,6 +10,7 @@ pub(super) enum ListTarget {
     Attachments,
     References,
     Commands,
+    AgentOptions,
     Checkpoints,
     Saved,
     Documents,
@@ -136,7 +137,10 @@ impl Pointer {
         self.detached.retain(|list| {
             !matches!(
                 list,
-                ListTarget::Commands | ListTarget::Checkpoints | ListTarget::Saved
+                ListTarget::Commands
+                    | ListTarget::AgentOptions
+                    | ListTarget::Checkpoints
+                    | ListTarget::Saved
             )
         });
     }
@@ -353,6 +357,9 @@ impl App {
                     checkpoints::Modal::Commands { .. } => {
                         self.pointer.reattach(ListTarget::Commands)
                     }
+                    checkpoints::Modal::AgentOptions(_) => {
+                        self.pointer.reattach(ListTarget::AgentOptions)
+                    }
                     checkpoints::Modal::History(_) => {
                         self.pointer.reattach(ListTarget::Checkpoints)
                     }
@@ -417,6 +424,7 @@ impl App {
                 checkpoints::Modal::CommandInput(input) => {
                     format!("command-input:{:?}", input.action)
                 }
+                checkpoints::Modal::AgentOptions(_) => "agent-options".into(),
                 checkpoints::Modal::History(page) => {
                     format!("checkpoints:{}:{:?}", page.revision, page.cursors)
                 }
@@ -483,6 +491,9 @@ impl App {
         match (&mut self.modal, list) {
             (Some(checkpoints::Modal::Commands { selected }), ListTarget::Commands) => {
                 *selected = index
+            }
+            (Some(checkpoints::Modal::AgentOptions(picker)), ListTarget::AgentOptions) => {
+                picker.selected = index;
             }
             (Some(checkpoints::Modal::History(page)), ListTarget::Checkpoints) => {
                 page.selected = index
@@ -902,6 +913,7 @@ impl App {
                     return;
                 }
                 ListTarget::Commands
+                | ListTarget::AgentOptions
                 | ListTarget::Checkpoints
                 | ListTarget::Saved
                 | ListTarget::Documents => {

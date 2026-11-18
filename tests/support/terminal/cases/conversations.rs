@@ -123,9 +123,7 @@ pub fn completion(h: &mut Harness) -> Result {
     h.hidden("Conversation commands")?;
     h.resize(50, 16)?;
     h.paste("/")?;
-    for _ in 0..11 {
-        h.key(b"\x1b[B")?;
-    }
+    h.key(b"\x1b[A")?;
     h.key(b"\t")?;
     h.draft("/help")?;
     h.save_screen("slash-completion-small-screen.txt")?;

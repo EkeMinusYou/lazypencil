@@ -1137,6 +1137,20 @@ impl App {
             Some("mode_changed") => {
                 self.update_agent_configuration(&value["response"]["configOptions"])
             }
+            Some("config_changed") => {
+                self.update_agent_configuration(&value["response"]["configOptions"]);
+                let setting = value["setting"].as_str().unwrap_or("setting");
+                self.set_status(format!("Agent {setting} updated"));
+            }
+            Some("config_error") => {
+                self.update_agent_configuration(&value["response"]["configOptions"]);
+                self.pause_after_setting_error();
+                self.set_error_status(clean(
+                    value["error"]["message"]
+                        .as_str()
+                        .unwrap_or("The agent could not apply the setting"),
+                ));
+            }
             Some("permissions_changed") => {
                 if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
                     self.set_error_status(clean(
@@ -1156,10 +1170,7 @@ impl App {
                 }
             }
             Some("mode_error") => {
-                self.outbox.paused = true;
-                if let Err(error) = self.outbox.save(self.conversation.directory()) {
-                    self.error(error);
-                }
+                self.pause_after_setting_error();
                 self.set_error_status(clean(
                     value["error"]["message"]
                         .as_str()
@@ -1187,6 +1198,9 @@ impl App {
             }
             Some("connection_error") => {
                 self.agent.unavailable();
+                if value["config_change_pending"] == true {
+                    self.pause_after_setting_error();
+                }
                 self.error(Error::new(
                     "AGENT_ERROR",
                     value["error"]["message"]
@@ -1212,6 +1226,12 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+    fn pause_after_setting_error(&mut self) {
+        self.outbox.paused = true;
+        if let Err(error) = self.outbox.save(self.conversation.directory()) {
+            self.error(error);
         }
     }
     fn toggle_panel(&mut self, action: Nav, worker: &Worker) {

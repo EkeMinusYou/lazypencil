@@ -52,7 +52,7 @@ Tab moves between visible panels. Existing documents start in Preview; new
 documents start at Prompt. Alt+Up/Down moves between Agent's history, attachments,
 references and prompt. Collapse Nodes or Agent to give Preview more room.
 
-The header shows the connected agent's model, effort, Fast mode and account.
+The header shows the connected agent's model, effort, active speed tier and account.
 The activity indicator shows Idle, Working or Blocked while an approval is needed.
 Write the next draft while the agent works. Submitting text steers a compatible
 active turn; `/queue <text>` explicitly schedules a later turn. Images and node
@@ -61,6 +61,17 @@ references use a queued turn.
 If delivery is uncertain or a turn fails, the queue pauses. Check saved logs before
 using `/resume-queue`; `/clear-queue` discards queued requests. Draft edits and
 attachments added later belong to the next request.
+
+### Change the agent model and speed
+
+Open **Agent model…** or **Agent speed…** from the command palette, or enter
+`/model` or `/speed` in the prompt. Choose an option and press Enter while the
+agent is idle. The change applies to subsequent turns in the current connection.
+Queued prompts wait for the adapter to confirm the change.
+
+**Standard** turns off accelerated speed. **Fast** and **Ultrafast** are listed
+when the adapter offers them for the selected model. Ultrafast requires a Codex
+ACP adapter that advertises the `ultrafast` value in its speed options.
 
 ### Refer to nodes and diagnostics
 

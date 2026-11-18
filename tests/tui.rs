@@ -403,6 +403,11 @@ fn real_pty_permission_modes_preserve_draft_confirm_full_access_and_save_reviewe
 }
 
 #[test]
+fn real_pty_switches_agent_model_and_speed_in_the_connected_session() {
+    run_pty_case("agent-model-speed");
+}
+
+#[test]
 fn real_pty_command_palette_inputs_preserve_drafts_validate_and_keep_unicode_cursor() {
     run_pty_case("command-palette");
 }

@@ -251,6 +251,8 @@ impl Harness {
                 .arg("--adapter-arg=acp")
                 .arg(if case == "permission-modes" {
                     "--adapter-arg=settings-permissions"
+                } else if case == "agent-model-speed" {
+                    "--adapter-arg=settings-fast-ultrafast"
                 } else if case == "basic" {
                     "--adapter-arg=image-inspect-audit"
                 } else if case == "queued-followups" {

@@ -8,6 +8,51 @@ use agent_client_protocol::{
 };
 use serde_json::{Value, json};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionSelector {
+    Model,
+    Speed,
+}
+
+impl SessionSelector {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Speed => "speed",
+        }
+    }
+
+    pub(crate) fn option(self, options: &Value) -> Option<&Value> {
+        unique_option(options, |option| match self {
+            Self::Model => option["category"] == "model" || option["id"] == "model",
+            Self::Speed => option["id"] == "fast-mode",
+        })
+    }
+
+    pub(crate) fn choices(self, options: &Value) -> impl Iterator<Item = &Value> {
+        self.option(options)
+            .filter(|option| option["type"] == "select")
+            .and_then(|option| option["options"].as_array())
+            .into_iter()
+            .flatten()
+            .flat_map(|option| {
+                option["options"]
+                    .as_array()
+                    .map_or(std::slice::from_ref(option), Vec::as_slice)
+            })
+            .filter(|option| option["value"].is_string())
+    }
+}
+
+pub(crate) fn unique_option(
+    options: &Value,
+    mut matches: impl FnMut(&Value) -> bool,
+) -> Option<&Value> {
+    let mut matching = options.as_array()?.iter().filter(|option| matches(option));
+    let option = matching.next()?;
+    matching.next().is_none().then_some(option)
+}
+
 fn mode_selector(response: &Value) -> Option<&Value> {
     let options = response["configOptions"].as_array()?;
     let mut modes = options.iter().filter(|item| {
@@ -65,11 +110,12 @@ pub(super) fn merge_updates(
 async fn set_config_option(
     connection: &ConnectionTo<Agent>,
     session: &SessionId,
+    response: &mut Value,
     id: &str,
     value: &str,
     setting: &str,
     diagnostic_directory: Option<&std::path::Path>,
-) -> Result<Value> {
+) -> Result<()> {
     let changed = connection
         .send_request(SetSessionConfigOptionRequest::new(
             session.clone(),
@@ -81,23 +127,55 @@ async fn set_config_option(
         .map_err(|error| {
             protocol_error("session/set_config_option", error, diagnostic_directory)
         })?;
-    let configs = serde_json::to_value(changed.config_options)
+    response["configOptions"] = serde_json::to_value(changed.config_options)
         .map_err(|error| agent_error(error.to_string()))?;
-    let mut confirmed = configs
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|option| option["id"] == id);
-    if !confirmed
-        .next()
+    normalize_modes(response);
+    if !unique_option(&response["configOptions"], |option| option["id"] == id)
         .is_some_and(|option| option["currentValue"] == value)
-        || confirmed.next().is_some()
     {
         return Err(agent_error(format!(
             "The adapter did not confirm the selected {setting}"
         )));
     }
-    Ok(configs)
+    Ok(())
+}
+
+pub(super) async fn select(
+    connection: &ConnectionTo<Agent>,
+    session: &SessionId,
+    response: &mut Value,
+    selector: SessionSelector,
+    value: &str,
+    diagnostic_directory: Option<&std::path::Path>,
+) -> Result<()> {
+    let options = &response["configOptions"];
+    let name = selector.name();
+    let id = selector
+        .option(options)
+        .and_then(|option| option["id"].as_str())
+        .filter(|id| unique_option(options, |option| option["id"] == *id).is_some())
+        .filter(|_| {
+            selector
+                .choices(options)
+                .any(|choice| choice["value"] == value)
+        })
+        .ok_or_else(|| {
+            Error::new(
+                "INVALID_ARGUMENT",
+                format!("The requested {name} is not advertised by the adapter"),
+            )
+        })?
+        .to_owned();
+    set_config_option(
+        connection,
+        session,
+        response,
+        &id,
+        value,
+        name,
+        diagnostic_directory,
+    )
+    .await
 }
 
 pub(super) async fn apply(
@@ -110,68 +188,24 @@ pub(super) async fn apply(
     diagnostic_directory: Option<&std::path::Path>,
 ) -> Result<()> {
     if let Some(model) = model {
-        let configs = response["configOptions"].as_array().ok_or_else(|| {
-            Error::new(
-                "INVALID_ARGUMENT",
-                "This adapter does not advertise model selection",
-            )
-        })?;
-        let models: Vec<_> = configs
-            .iter()
-            .filter(|option| option["category"] == "model" || option["id"] == "model")
-            .collect();
-        if models.len() != 1 || models[0]["type"] != "select" {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "The adapter did not advertise one unambiguous model selector",
-            ));
-        }
-        let option = models[0];
-        let id = option["id"]
-            .as_str()
-            .ok_or_else(|| agent_error("The model selector has no ID"))?
-            .to_owned();
-        if !contains_value(&option["options"], model) {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "The requested model is not advertised by the adapter",
-            )
-            .details(json!({"requested_model":model,"model_options":option["options"]})));
-        }
-        response["configOptions"] = set_config_option(
+        select(
             connection,
             session,
-            &id,
+            response,
+            SessionSelector::Model,
             model,
-            "model",
             diagnostic_directory,
         )
         .await?;
     }
     // Model changes can replace the available speed controls, so select speed afterward.
     if let Some(fast) = fast {
-        let value = if fast { "on" } else { "off" };
-        let options: Vec<_> = response["configOptions"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|option| option["id"] == "fast-mode")
-            .collect();
-        if options.len() != 1
-            || options[0]["type"] != "select"
-            || !contains_value(&options[0]["options"], value)
-        {
-            return Err(Error::new(
-                "INVALID_ARGUMENT",
-                "The adapter does not advertise the requested Fast mode setting for this model",
-            ));
-        }
-        response["configOptions"] = set_config_option(
+        select(
             connection,
             session,
-            "fast-mode",
-            value,
-            "Fast mode",
+            response,
+            SessionSelector::Speed,
+            if fast { "on" } else { "off" },
             diagnostic_directory,
         )
         .await?;
@@ -190,16 +224,16 @@ pub(super) async fn apply(
             .and_then(|item| item["id"].as_str())
             .map(str::to_owned);
         if let Some(selector_id) = selector_id {
-            response["configOptions"] = set_config_option(
+            set_config_option(
                 connection,
                 session,
+                response,
                 &selector_id,
                 mode,
                 "permission mode",
                 diagnostic_directory,
             )
             .await?;
-            normalize_modes(response);
         } else {
             // ACP set_mode's successful response acknowledges the selected mode.
             connection
@@ -211,12 +245,4 @@ pub(super) async fn apply(
         response["modes"]["currentModeId"] = json!(mode);
     }
     Ok(())
-}
-
-fn contains_value(options: &Value, value: &str) -> bool {
-    options.as_array().is_some_and(|items| {
-        items
-            .iter()
-            .any(|option| option["value"] == value || contains_value(&option["options"], value))
-    })
 }

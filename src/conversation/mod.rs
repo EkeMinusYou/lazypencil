@@ -2,7 +2,9 @@
 
 use crate::{
     Error, Result,
-    agent::{AgentEvent, AgentHost, AgentOptions, permissions::DocumentPermissions},
+    agent::{
+        AgentEvent, AgentHost, AgentOptions, SessionSelector, permissions::DocumentPermissions,
+    },
     attachments::{Attachment, AttachmentGrant, AttachmentOptions},
     prompt::{AuthMode, DocumentTools, PromptArgs},
     store::Store,
@@ -74,6 +76,7 @@ pub struct Conversation {
     preview_control: Option<crate::preview_control::Client>,
     ready: bool,
     prepared_ready: Option<Value>,
+    configuration_pending: bool,
     transcript: Option<Transcript>,
     submission: Option<oneshot::Receiver<Result<()>>>,
     completion: Option<Completion>,
@@ -176,6 +179,7 @@ impl Conversation {
             preview_control: None,
             ready: false,
             prepared_ready: None,
+            configuration_pending: false,
             transcript: None,
             submission: None,
             completion: None,
@@ -225,6 +229,38 @@ impl Conversation {
     pub fn active(&self) -> bool {
         self.active.is_some() || self.preparation.is_some() || self.completion.is_some()
     }
+
+    pub fn configuration_pending(&self) -> bool {
+        self.configuration_pending
+    }
+
+    #[cfg(feature = "tui")]
+    pub(crate) fn connected(&self) -> bool {
+        self.ready
+    }
+
+    pub fn change_session_option(
+        &mut self,
+        selector: SessionSelector,
+        value: String,
+    ) -> Result<()> {
+        self.require_project_agent()?;
+        if self.active() || self.configuration_pending || self.modes.pending.is_some() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the active turn or settings change to finish",
+            ));
+        }
+        let host = self
+            .host
+            .as_ref()
+            .filter(|_| self.ready)
+            .ok_or_else(|| Error::new("AGENT_ERROR", "The agent session is not connected"))?;
+        host.set_session_option(selector, value)?;
+        self.configuration_pending = true;
+        Ok(())
+    }
+
     /// Mid-turn input is available after the active prompt has been submitted.
     pub fn can_steer(&self) -> bool {
         self.pending_steering.is_none()
@@ -522,6 +558,12 @@ impl Conversation {
         result
     }
     fn validate_send(&self) -> Result<()> {
+        if self.configuration_pending {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Wait for the pending settings change before sending",
+            ));
+        }
         if self.modes.pending.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -913,7 +955,13 @@ impl Conversation {
                 let closed = self.host.take().expect("agent connection").close().await;
                 self.ready = false;
                 self.grant.take();
-                if self.active() {
+                if self.configuration_pending {
+                    self.configuration_pending = false;
+                    self.message(json!({"type":"connection_error","config_change_pending":true,
+                        "error":closed.err().unwrap_or_else(|| Error::new(
+                            "AGENT_ERROR", "The adapter closed before confirming the settings change",
+                        ))}))?;
+                } else if self.active() {
                     self.finish(Err(closed.err().unwrap_or_else(|| {
                         Error::new(
                             "AGENT_ERROR",
@@ -981,7 +1029,7 @@ impl Conversation {
 
     async fn process(&mut self, event: AgentEvent) -> Result<()> {
         match event {
-            AgentEvent::Message(value) => {
+            AgentEvent::Message(mut value) => {
                 match value["type"].as_str() {
                     Some("update") => {
                         self.permissions.observe(&value["notification"]);
@@ -993,6 +1041,10 @@ impl Conversation {
                         if update["sessionUpdate"] == "config_option_update" {
                             self.modes
                                 .observe(&json!({"configOptions":update["configOptions"]}));
+                            if let Some(ready) = self.prepared_ready.as_mut() {
+                                ready["response"]["configOptions"] =
+                                    update["configOptions"].clone();
+                            }
                         }
                     }
                     Some("session_modes") => self.modes.observe(&value["response"]),
@@ -1008,6 +1060,13 @@ impl Conversation {
                             self.args.mode = change.old_mode;
                         }
                         self.modes.error = Some(error_from_value(&value["error"]));
+                    }
+                    Some("config_changed" | "config_error") => {
+                        self.configuration_pending = false;
+                        self.modes.observe(&value["response"]);
+                        if let Some(ready) = self.prepared_ready.as_mut() {
+                            ready["response"] = value["response"].clone();
+                        }
                     }
                     Some("auth_status") => {
                         self.session.state.authentication =
@@ -1075,6 +1134,9 @@ impl Conversation {
                             error_from_value(&value["error"])
                         };
                         let fatal = value["type"] == "connection_error";
+                        if fatal && std::mem::take(&mut self.configuration_pending) {
+                            value["config_change_pending"] = json!(true);
+                        }
                         self.message(value)?;
                         self.finish(Err(error.clone()))?;
                         if fatal {
@@ -1221,6 +1283,7 @@ impl Conversation {
         };
         self.ready = false;
         self.prepared_ready = None;
+        self.configuration_pending = false;
         self.grant.take();
         if self.active.is_some() {
             self.finish(Err(Error::new(

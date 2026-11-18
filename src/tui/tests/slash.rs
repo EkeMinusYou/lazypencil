@@ -3,7 +3,7 @@
 #[test]
 fn slash_completion_filters_conversation_actions_and_retains_the_permission_alias() {
     use commands::completion::{candidates, query};
-    assert_eq!(candidates("").len(), 12);
+    assert_eq!(candidates("").len(), 14);
     assert_eq!(
         candidates("cl")
             .iter()
@@ -12,6 +12,8 @@ fn slash_completion_filters_conversation_actions_and_retains_the_permission_alia
         ["clear-queue", "clear-images"]
     );
     assert_eq!(candidates("mo")[0].name, "permissions");
+    assert_eq!(candidates("model")[0].name, "model");
+    assert_eq!(candidates("fast")[0].name, "speed");
     for prefix in ["theme", "history", "play", "commands", "quit", "日本語"] {
         assert!(candidates(prefix).is_empty());
     }
@@ -197,12 +199,16 @@ fn slash_completion_scrolls_and_keeps_the_prompt_caret_at_every_supported_size()
             195,
         )
         .unwrap();
+        let help = commands::completion::candidates("")
+            .iter()
+            .position(|command| command.action == commands::Action::Help)
+            .unwrap();
         for (width, height) in [(50, 16), (80, 24), (130, 34), (170, 44)] {
             app.editor = editor("/");
             app.completion = Default::default();
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
-            for _ in 0..11 {
+            for _ in 0..help {
                 press(&mut app, KeyCode::Down, KeyModifiers::NONE, &worker).await;
             }
             terminal
