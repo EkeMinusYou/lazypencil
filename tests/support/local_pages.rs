@@ -278,7 +278,8 @@ fn offline_network_policy_blocks_http_websocket_and_tls_routes_for_pages_and_wor
     );
     assert!(resumed_counts.2 >= first_counts.2 + 8);
     retain("online-two-contexts", &resumed);
-    document["children"].as_array_mut().unwrap().truncate(1);
+    let second_page = document["children"].as_array_mut().unwrap().pop().unwrap();
+    assert_eq!(second_page["id"], "other");
     document["children"][0]["url"] = format!("http://{}/network/green", server.address).into();
     fs::write(f.store.path(), document.to_string()).unwrap();
     policy("offline");
