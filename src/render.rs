@@ -1375,48 +1375,79 @@ impl Renderer<'_> {
                     .transformed(transform)
                     .outset(1.0, 1.0);
             let mask_bounds = self.allocation_hint(device_bounds, transform, false, None);
-            let layer_bounds = if self.tight_text_layer_hints {
-                mask_bounds
+            #[cfg(target_os = "macos")]
+            let mask_color = fill
+                .as_str()
+                .filter(|_| {
+                    // Paragraph decorations can cross the antialiased fill edge.
+                    self.bounded_preview_layers
+                        && axis_aligned_inverse(transform).is_some()
+                        && node.properties.get("underline") != Some(&Value::Bool(true))
+                        && node.properties.get("strikethrough") != Some(&Value::Bool(true))
+                })
+                .map(color::parse)
+                .transpose()?
+                .filter(|color| color.a() == 255);
+            #[cfg(not(target_os = "macos"))]
+            let mask_color: Option<Color> = None;
+            if let (Some(color), Some(mask_bounds)) = (mask_color, mask_bounds) {
+                // An opaque solid paints the entire glyph mask with the same
+                // color. Tint that mask on restore instead of allocating a
+                // second large layer for the solid and masking it with DstIn.
+                let mut tint = Paint::default();
+                tint.set_color_filter(skia_safe::color_filters::blend(color, BlendMode::SrcIn));
+                self.canvas.save();
+                self.canvas.clip_rect(mask_bounds, ClipOp::Intersect, false);
+                self.canvas
+                    .save_layer(&SaveLayerRec::default().paint(&tint));
+                self.canvas.clip_rect(bounds, ClipOp::Intersect, true);
+                block.paragraph.paint(self.canvas, (0.0, offset));
+                self.canvas.restore();
+                self.canvas.restore();
             } else {
-                self.allocation_hint(device_bounds, transform, true, None)
-            };
-            #[cfg(target_os = "macos")]
-            let mut layer_paint = Paint::default();
-            let mut fill_layer = SaveLayerRec::default();
-            if let Some(bounds) = &layer_bounds {
-                fill_layer = fill_layer.bounds(bounds);
+                let layer_bounds = if self.tight_text_layer_hints {
+                    mask_bounds
+                } else {
+                    self.allocation_hint(device_bounds, transform, true, None)
+                };
+                #[cfg(target_os = "macos")]
+                let mut layer_paint = Paint::default();
+                let mut fill_layer = SaveLayerRec::default();
+                if let Some(bounds) = &layer_bounds {
+                    fill_layer = fill_layer.bounds(bounds);
+                }
+                #[cfg(target_os = "macos")]
+                if !self.tight_text_layer_hints
+                    && self.bounded_preview_layers
+                    && let Some(original) = self.canvas.device_clip_bounds()
+                    && device_bounds.x >= original.left as f32 + 2.0
+                    && device_bounds.y >= original.top as f32 + 2.0
+                    && let Some(inverse) = axis_aligned_inverse(transform)
+                {
+                    // The filtered layer's padding can replace the leading pixels
+                    // only when they are already transparent.
+                    effects::bound_filter_output(
+                        &mut layer_paint,
+                        device_bounds.transformed(inverse),
+                        true,
+                    );
+                    fill_layer = fill_layer.paint(&layer_paint);
+                }
+                self.canvas.save_layer(&fill_layer);
+                self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
+                let mut mask = Paint::default();
+                mask.set_blend_mode(BlendMode::DstIn);
+                self.canvas.save();
+                if let Some(bounds) = &mask_bounds {
+                    self.canvas.clip_rect(bounds, ClipOp::Intersect, false);
+                }
+                self.canvas
+                    .save_layer(&SaveLayerRec::default().paint(&mask));
+                block.paragraph.paint(self.canvas, (0.0, offset));
+                self.canvas.restore();
+                self.canvas.restore();
+                self.canvas.restore();
             }
-            #[cfg(target_os = "macos")]
-            if !self.tight_text_layer_hints
-                && self.bounded_preview_layers
-                && let Some(original) = self.canvas.device_clip_bounds()
-                && device_bounds.x >= original.left as f32 + 2.0
-                && device_bounds.y >= original.top as f32 + 2.0
-                && let Some(inverse) = axis_aligned_inverse(transform)
-            {
-                // The filtered layer's padding can replace the leading pixels
-                // only when they are already transparent.
-                effects::bound_filter_output(
-                    &mut layer_paint,
-                    device_bounds.transformed(inverse),
-                    true,
-                );
-                fill_layer = fill_layer.paint(&layer_paint);
-            }
-            self.canvas.save_layer(&fill_layer);
-            self.fills(node, Some(fill), &Path::rect(bounds, None), rect, "fill")?;
-            let mut mask = Paint::default();
-            mask.set_blend_mode(BlendMode::DstIn);
-            self.canvas.save();
-            if let Some(bounds) = &mask_bounds {
-                self.canvas.clip_rect(bounds, ClipOp::Intersect, false);
-            }
-            self.canvas
-                .save_layer(&SaveLayerRec::default().paint(&mask));
-            block.paragraph.paint(self.canvas, (0.0, offset));
-            self.canvas.restore();
-            self.canvas.restore();
-            self.canvas.restore();
         }
         if stroke_enabled && let Some(outline) = &block.outline {
             self.stroke(node, &outline.with_offset((0.0, offset)), rect)?;

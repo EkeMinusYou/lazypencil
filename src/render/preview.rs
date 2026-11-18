@@ -391,7 +391,11 @@ mod tests {
              "fill":{"type":"mesh_gradient","columns":2,"rows":2,
                      "colors":["#304878","#98ABDE","#775C95","#ACC8D9"]}},
             {"type":"text","id":"title","x":32.75,"y":43.375,"content":"Fractional bounds",
-             "fontSize":25,"fill":"#F8FAFCC0","underline":true}
+             "fontSize":25,"fill":"#F8FAFCC0","underline":true},
+            {"type":"text","id":"subtitle","x":64.375,"y":113.75,"content":"Opaque text",
+             "fontSize":22,"fill":"#4872A9"},
+            {"type":"text","id":"decoration","x":64.375,"y":143.375,"content":"Decorated text",
+             "fontSize":22,"fill":"#4872A9","strikethrough":true}
         ]);
         let document = json!({"version":"2.22","children":[{
             "type":"frame","id":"card","x":1700.625,"y":1260.375,"width":330,"height":183,
