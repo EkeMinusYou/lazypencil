@@ -274,7 +274,7 @@ impl Worker {
         self.queue_camera(&mut pending.0, request);
         true
     }
-    pub(super) fn request_final_camera(&self, request: Request) {
+    pub(super) fn request_latest_camera(&self, request: Request) {
         let mut pending = self.shared.request.lock().unwrap();
         let active = self.shared.active.lock().unwrap();
         if pending.1
@@ -827,7 +827,11 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                     json!({"generation":request.generation,"repeated":repeated,"next":next.is_some(),"queued":preparation_pending(shared)})
                 );
             }
-            let Some(next) = next.filter(|_| repeated) else {
+            // Keep the worker available when a speculative full-size raster
+            // could delay an unrelated input by an entire frame.
+            let Some(next) =
+                next.filter(|_| repeated && !super::camera::large_viewport(viewport.raster))
+            else {
                 continue;
             };
             if frames.get(request.cells, canvas_background, next).is_some()
@@ -1765,13 +1769,13 @@ mod tests {
             request: active,
             cancel: cancel.clone(),
         });
-        worker.request_final_camera(request.clone());
+        worker.request_latest_camera(request.clone());
         assert!(!cancel.is_cancelled());
         assert!(shared.request.lock().unwrap().0.is_none());
 
         let mut target = request;
         target.view.pan([20.0, -12.0]);
-        worker.request_final_camera(target.clone());
+        worker.request_latest_camera(target.clone());
         assert!(cancel.is_cancelled());
         assert!(
             shared

@@ -1213,6 +1213,9 @@ impl Renderer<'_> {
             self.stroke(node, &shape, rect)?;
         }
         if has_layer {
+            if let Some(runtime) = self.runtime.as_deref() {
+                runtime.check()?;
+            }
             self.canvas.restore();
         }
         self.tight_text_layer_hints = tight_text_layer_hints;

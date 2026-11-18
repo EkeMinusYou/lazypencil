@@ -609,7 +609,11 @@ impl App {
             }
         }
         self.view.zoom = Some(zoom);
-        self.request_camera_navigation(worker, picker)
+        if position.is_some() {
+            self.request_pointer_zoom(worker, picker)
+        } else {
+            self.request_camera_navigation(worker, picker)
+        }
     }
 
     pub(super) fn gesture_event(

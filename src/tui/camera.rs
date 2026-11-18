@@ -3,8 +3,13 @@ use super::preview::View;
 use image::{Rgba, RgbaImage};
 
 const NAVIGATION_IDLE: std::time::Duration = std::time::Duration::from_millis(80);
+const POINTER_ZOOM_COALESCE: std::time::Duration = std::time::Duration::from_millis(125);
 
 const EXACT_FRAME_HEAD_START: std::time::Duration = std::time::Duration::from_millis(1);
+
+pub(super) fn large_viewport([width, height]: [u32; 2]) -> bool {
+    u64::from(width) * u64::from(height) > 8 * 1024 * 1024
+}
 
 pub(super) struct InputProfile {
     enabled: bool,
@@ -94,6 +99,23 @@ impl super::App {
         worker: &super::preview::Worker,
         picker: &super::graphics::Backend,
     ) -> crate::Result<()> {
+        self.navigate_camera(worker, picker, false)
+    }
+
+    pub(super) fn request_pointer_zoom(
+        &mut self,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+    ) -> crate::Result<()> {
+        self.navigate_camera(worker, picker, true)
+    }
+
+    fn navigate_camera(
+        &mut self,
+        worker: &super::preview::Worker,
+        picker: &super::graphics::Backend,
+        pointer_zoom: bool,
+    ) -> crate::Result<()> {
         worker.set_selection(self.selection.render_state());
         let progressive = self.presentation.source_size().is_some()
             && self.pending_preview.is_none()
@@ -108,16 +130,23 @@ impl super::App {
             self.request(worker, false, false);
             return self.camera_feedback(picker);
         }
+        let now = std::time::Instant::now();
         if !self.camera_navigation {
             self.request(worker, false, false);
             self.camera_navigation = true;
+            self.pointer_zoom_coalesce_until = (pointer_zoom
+                && self.presentation.source_size().is_some_and(large_viewport))
+            .then_some(now + POINTER_ZOOM_COALESCE);
         }
-        // Keep the render generation stable throughout navigation. New keys
-        // update the target only; an in-flight source render must finish.
+        // Keep the render generation stable throughout navigation.
         self.preview_generation = None;
         self.camera = None;
-        self.camera_settle_deadline = Some(std::time::Instant::now() + NAVIGATION_IDLE);
-        self.refresh_camera_navigation(worker);
+        self.camera_settle_deadline = Some(now + NAVIGATION_IDLE);
+        let coalescing = pointer_zoom
+            && self
+                .pointer_zoom_coalesce_until
+                .is_some_and(|deadline| now < deadline);
+        self.refresh_camera_navigation(worker, coalescing);
         Ok(())
     }
 
@@ -154,7 +183,7 @@ impl super::App {
                     {
                         self.preview_generation = None;
                     }
-                    self.refresh_camera_navigation(worker);
+                    self.refresh_camera_navigation(worker, false);
                 }
                 accepted
             }
@@ -168,7 +197,7 @@ impl super::App {
         }
     }
 
-    fn refresh_camera_navigation(&mut self, worker: &super::preview::Worker) {
+    fn refresh_camera_navigation(&mut self, worker: &super::preview::Worker, coalescing: bool) {
         if !self.camera_navigation {
             return;
         }
@@ -197,18 +226,19 @@ impl super::App {
                 check_only: false,
                 attachment: None,
             };
-            if idle.is_some() {
-                // Finish incoming frames during motion so repeat input cannot starve painting.
-                worker.request_if_idle(request);
+            if idle.is_none() || coalescing {
+                // Coalesce only at the start of a pinch on large previews. A long
+                // gesture must still allow in-flight frames to reach the screen.
+                worker.request_latest_camera(request);
             } else {
-                worker.request_final_camera(request);
+                worker.request_if_idle(request);
             }
         }
     }
 
     pub(super) fn finish_camera_gesture(&mut self, worker: &super::preview::Worker) {
         self.camera_settle_deadline = None;
-        self.refresh_camera_navigation(worker);
+        self.refresh_camera_navigation(worker, false);
     }
 
     pub(super) fn camera_feedback(
