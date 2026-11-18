@@ -4,6 +4,9 @@ all-features = true
 [advisories]
 db-urls = ["https://github.com/RustSec/advisory-db"]
 yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "Unmaintained advisory for chrono, required by rmcp and its Schemars feature. Remove when rmcp ships optional chrono support (modelcontextprotocol/rust-sdk#1474)." },
+]
 
 [licenses]
 confidence-threshold = 0.95
