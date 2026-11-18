@@ -144,7 +144,7 @@ impl Renderer<'_> {
             #[cfg(target_os = "macos")]
             bounded_preview_layers: false,
             rasters: self.rasters.clone(),
-            shapes: self.shapes,
+            cache: self.cache,
             recording: self.recording,
             band: self.band,
         };
@@ -247,7 +247,7 @@ impl Renderer<'_> {
                 #[cfg(target_os = "macos")]
                 bounded_preview_layers: false,
                 rasters: self.rasters.clone(),
-                shapes: self.shapes,
+                cache: self.cache,
                 recording: self.recording,
                 band: self.band,
             };
@@ -294,7 +294,7 @@ impl Renderer<'_> {
                 #[cfg(target_os = "macos")]
                 bounded_preview_layers: false,
                 rasters: self.rasters.clone(),
-                shapes: self.shapes,
+                cache: self.cache,
                 recording: self.recording,
                 band: self.band,
             };

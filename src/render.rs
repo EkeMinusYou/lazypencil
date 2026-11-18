@@ -11,7 +11,12 @@ use skia_safe::{
     PathFillType, Point, RRect, Rect as SkRect, RoundOut, TileMode, Vector, canvas::SaveLayerRec,
     gradient, image_filters, paint,
 };
-use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, VecDeque},
+    path::{Path as FilePath, PathBuf},
+    rc::Rc,
+};
 
 const MAX_PIXELS: u64 = 32 * 1024 * 1024;
 const MAX_PICTURE_BYTES: usize = 32 * 1024 * 1024;
@@ -200,6 +205,7 @@ fn png_impl(
 /// Snapshot-scoped analysis and drawing resources for viewport-only renders.
 struct RasterCache {
     shapes: RefCell<BTreeMap<usize, Path>>,
+    asset_images: Rc<RefCell<AssetImages>>,
     pictures: RefCell<BTreeMap<PictureKey, RecordedPicture>>,
     picture_clock: std::cell::Cell<u64>,
     pool: RefCell<raster_pool::RasterPool>,
@@ -209,6 +215,48 @@ struct RasterCache {
     has_images: bool,
     mesh_sizes: Vec<[f32; 2]>,
     has_outer_shadows: bool,
+}
+
+#[derive(Default)]
+struct AssetImages {
+    images: VecDeque<(PathBuf, Image)>,
+    bytes: usize,
+}
+
+impl AssetImages {
+    const MAX_BYTES: usize = 16 * 1024 * 1024;
+
+    fn bytes(image: &Image) -> usize {
+        image.image_info().compute_min_byte_size()
+    }
+
+    fn get(&mut self, path: &FilePath) -> Option<Image> {
+        let index = self.images.iter().position(|(key, _)| key == path)?;
+        let entry = self.images.remove(index).unwrap();
+        let image = entry.1.clone();
+        self.images.push_back(entry);
+        Some(image)
+    }
+
+    fn decode(&mut self, path: PathBuf, image: Image) -> Image {
+        if Self::bytes(&image) > Self::MAX_BYTES {
+            return image;
+        }
+        let Some(decoded) = image.make_raster_image(None, None) else {
+            return image;
+        };
+        let bytes = Self::bytes(&decoded);
+        if bytes > Self::MAX_BYTES {
+            return image;
+        }
+        while self.bytes + bytes > Self::MAX_BYTES || self.images.len() >= 64 {
+            let (_, old) = self.images.pop_front().unwrap();
+            self.bytes -= Self::bytes(&old);
+        }
+        self.bytes += bytes;
+        self.images.push_back((path, decoded.clone()));
+        decoded
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -231,6 +279,7 @@ impl RasterCache {
     fn fork(&self) -> Self {
         Self {
             shapes: RefCell::new(self.shapes.borrow().clone()),
+            asset_images: self.asset_images.clone(),
             pictures: RefCell::new(self.pictures.borrow().clone()),
             picture_clock: std::cell::Cell::new(self.picture_clock.get()),
             pool: RefCell::default(),
@@ -280,6 +329,7 @@ impl RasterCache {
         }
         Self {
             shapes: RefCell::default(),
+            asset_images: Rc::default(),
             pictures: RefCell::default(),
             picture_clock: std::cell::Cell::new(0),
             pool: RefCell::default(),
@@ -474,7 +524,6 @@ fn raster_impl_cached(
     recordable: bool,
     viewport_size: Option<[u32; 2]>,
 ) -> Result<RenderedRaster> {
-    let shapes = cache.map(|cache| &cache.shapes);
     let pool = cache.map(|cache| &cache.pool);
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -629,7 +678,7 @@ fn raster_impl_cached(
             && u64::from(working_width as u32) * u64::from(working_height as u32)
                 > atlas::MAX_ATLAS_PIXELS,
         rasters,
-        shapes,
+        cache,
         recording: false,
         band: None,
     };
@@ -694,7 +743,7 @@ fn raster_impl_cached(
                     #[cfg(target_os = "macos")]
                     bounded_preview_layers: false,
                     rasters: renderer.rasters.clone(),
-                    shapes,
+                    cache,
                     recording: !anchored,
                     band: anchored.then_some(band),
                 };
@@ -913,7 +962,7 @@ struct Renderer<'a> {
     #[cfg(target_os = "macos")]
     bounded_preview_layers: bool,
     rasters: Rc<backdrop::RasterBudget>,
-    shapes: Option<&'a RefCell<BTreeMap<usize, Path>>>,
+    cache: Option<&'a RasterCache>,
     recording: bool,
     band: Option<SkRect>,
 }
@@ -1144,8 +1193,8 @@ impl Renderer<'_> {
             self.canvas.save_layer(&record);
         }
         let rect = SkRect::from_xywh(0.0, 0.0, item.record.rect.width, item.record.rect.height);
-        let shape = if let Some(shapes) = self.shapes {
-            let mut shapes = shapes.borrow_mut();
+        let shape = if let Some(cache) = self.cache {
+            let mut shapes = cache.shapes.borrow_mut();
             if let Some(shape) = shapes.get(&index) {
                 shape.clone()
             } else {
@@ -1708,7 +1757,7 @@ impl Renderer<'_> {
             #[cfg(target_os = "macos")]
             bounded_preview_layers: false,
             rasters: self.rasters.clone(),
-            shapes: self.shapes,
+            cache: self.cache,
             recording: self.recording,
             band: self.band,
         };
@@ -1819,14 +1868,26 @@ impl Renderer<'_> {
             .resolve_image(node.property_source(property), url)?;
         if !self.images.contains_key(&path) {
             let asset = self.project.asset(&path)?;
-            let image = Image::from_encoded(Data::new_copy(&asset.bytes))
-                .ok_or_else(|| invalid("Cannot decode the image"))?;
-            if image.width() <= 0
-                || image.height() <= 0
-                || image.width() as u64 * image.height() as u64 > MAX_PIXELS
-            {
-                return Err(invalid("Decoded image exceeds 32 megapixels"));
-            }
+            let cached = self
+                .cache
+                .and_then(|cache| cache.asset_images.borrow_mut().get(&path));
+            let image = if let Some(cached) = cached {
+                cached
+            } else {
+                let image = Image::from_encoded(Data::new_copy(&asset.bytes))
+                    .ok_or_else(|| invalid("Cannot decode the image"))?;
+                if image.width() <= 0
+                    || image.height() <= 0
+                    || image.width() as u64 * image.height() as u64 > MAX_PIXELS
+                {
+                    return Err(invalid("Decoded image exceeds 32 megapixels"));
+                }
+                if let Some(cache) = self.cache {
+                    cache.asset_images.borrow_mut().decode(path.clone(), image)
+                } else {
+                    image
+                }
+            };
             self.images
                 .insert(path.clone(), (asset.revision.clone(), image));
         }
