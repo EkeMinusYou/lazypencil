@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "6f4e719e003fa209d9b4a5357477039808a3f13acf447fb7a15345df8f4e56f4",
+  "cargo_lock_sha256": "2d4b78d787a3831f9654d1a90d90c45214bbbb3c88f9ebf053e8dd3578eca33b",
   "format_version": 1,
   "license_references": [
     {
@@ -992,6 +992,56 @@
         "path_in_vcs": ""
       },
       "version": "0.5.1"
+    },
+    {
+      "archive_sha256": "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f",
+      "attribution_comments": [
+        {
+          "lines": [
+            {
+              "line": 238,
+              "text": "([LICENSE-UNICODE](https://www.unicode.org/copyright.html#License)), although"
+            }
+          ],
+          "path": "README.md"
+        }
+      ],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b"
+        },
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "8c734b1f4d7737949ce694c7aeedf4b37cb9e0815e7bf3bfef0a5e182e6f3641",
+      "name": "bstr",
+      "repository": "https://github.com/BurntSushi/bstr",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "134195be38c7c9a4887980fd0f6f8bae042dd91e"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "1.13.1"
     },
     {
       "archive_sha256": "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649",
@@ -2608,6 +2658,102 @@
         "path_in_vcs": ""
       },
       "version": "1.5.3"
+    },
+    {
+      "archive_sha256": "622f3fc73690be383c7214310406f28a90e6edeadc3cea882f9d71e495b9711a",
+      "attribution_comments": [],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "d000cd463fb12a575d291905e3e4d125382964542626839eb818ade1e26db9b4",
+      "name": "crossbeam-deque",
+      "repository": "https://github.com/crossbeam-rs/crossbeam",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "2920c984290229ab4e0ca0452ef09e48a82063f3"
+        },
+        "path_in_vcs": "crossbeam-deque"
+      },
+      "version": "0.8.8"
+    },
+    {
+      "archive_sha256": "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d",
+      "attribution_comments": [],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "630ac9711ae7d4844bd8b60929934e28c945c87a28eab65e320f940efb247805",
+      "name": "crossbeam-epoch",
+      "repository": "https://github.com/crossbeam-rs/crossbeam",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "2920c984290229ab4e0ca0452ef09e48a82063f3"
+        },
+        "path_in_vcs": "crossbeam-epoch"
+      },
+      "version": "0.9.21"
+    },
+    {
+      "archive_sha256": "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6",
+      "attribution_comments": [],
+      "authors": [],
+      "files": [
+        {
+          "blob": "texts/a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2.txt",
+          "kind": "archive",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "blob": "texts/5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "manifest_sha256": "e7a383373c60dea49a5c0dd2558aebbdae26ba9b07878d4f8fa004a5538e2b80",
+      "name": "crossbeam-utils",
+      "repository": "https://github.com/crossbeam-rs/crossbeam",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "2920c984290229ab4e0ca0452ef09e48a82063f3"
+        },
+        "path_in_vcs": "crossbeam-utils"
+      },
+      "version": "0.8.23"
     },
     {
       "archive_sha256": "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b",
@@ -4735,6 +4881,46 @@
       "version": "0.3.4"
     },
     {
+      "archive_sha256": "f98b0d85522dc0a824cfebbc9594ff4a9b289c568bea0370319dfbdf20ccdd2d",
+      "attribution_comments": [],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+        },
+        {
+          "blob": "texts/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        },
+        {
+          "blob": "texts/7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c.txt",
+          "kind": "archive",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license_file": null,
+      "manifest_sha256": "7922ff1ecf0b243355ba1e24c773370e231317b52e938dcb40b17317214ac8fb",
+      "name": "globset",
+      "repository": "https://github.com/BurntSushi/ripgrep/tree/master/crates/globset",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "55f2f69ab9f07eeca80b483668e9d7d4beca8e10"
+        },
+        "path_in_vcs": "crates/globset"
+      },
+      "version": "0.4.21"
+    },
+    {
       "archive_sha256": "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b",
       "attribution_comments": [],
       "authors": [
@@ -6156,6 +6342,46 @@
       "version": "1.2.2"
     },
     {
+      "archive_sha256": "484be5657551d7868d67587df967fb4fcbe9d266a761cc855aaa148fda0b3cc7",
+      "attribution_comments": [],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+        },
+        {
+          "blob": "texts/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        },
+        {
+          "blob": "texts/7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c.txt",
+          "kind": "archive",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license_file": null,
+      "manifest_sha256": "79759aad7064b8d17841650e65f0b5352a26067b57a17c34837ac60a6fa1e74c",
+      "name": "ignore",
+      "repository": "https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "91f5d22ef48bde459d90a8c7dbeab416e97d0f2b"
+        },
+        "path_in_vcs": "crates/ignore"
+      },
+      "version": "0.4.34"
+    },
+    {
       "archive_sha256": "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104",
       "attribution_comments": [
         {
@@ -6803,10 +7029,10 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "87c2675ed90ca751d852afdefd9fe08fbf2bfd9de540195cd5730268cfb19b4b",
+      "manifest_sha256": "906c968c720eabdb1f289f4d5459a349c8313e7ba28fea3bf701ecd9dfcd4927",
       "name": "lazypencil",
       "source": "workspace",
-      "version": "0.2.11",
+      "version": "0.2.12",
       "workspace_path": "."
     },
     {
@@ -28723,6 +28949,45 @@
       "version": "1.2.0"
     },
     {
+      "archive_sha256": "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502",
+      "attribution_comments": [],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+        },
+        {
+          "blob": "texts/cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
+        },
+        {
+          "blob": "texts/7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c.txt",
+          "kind": "archive",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "license": "Unlicense/MIT",
+      "license_file": null,
+      "manifest_sha256": "991f8df8fa5a259801900a56908cf21a66c5cf7b238bc81ba9bdf348e233252e",
+      "name": "same-file",
+      "repository": "https://github.com/BurntSushi/same-file",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "5799cd323b8eefd17a089c950dac113f66c89c9e"
+        }
+      },
+      "version": "1.0.6"
+    },
+    {
       "archive_sha256": "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f",
       "attribution_comments": [
         {
@@ -32170,6 +32435,46 @@
       "version": "0.15.0"
     },
     {
+      "archive_sha256": "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b",
+      "attribution_comments": [],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+        },
+        {
+          "blob": "texts/0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+        },
+        {
+          "blob": "texts/7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c.txt",
+          "kind": "archive",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "license": "Unlicense/MIT",
+      "license_file": null,
+      "manifest_sha256": "425547c73a8eae93c39110869fd5ecac3a99a984c715ad7ab1d6a40b7efb0ee5",
+      "name": "walkdir",
+      "repository": "https://github.com/BurntSushi/walkdir",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "4f26be4d450910916ea11533b2efc52b9a6483bc"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "2.5.0"
+    },
+    {
       "archive_sha256": "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b",
       "attribution_comments": [
         {
@@ -32716,6 +33021,46 @@
       "supplement_reason": "The published archive declares MIT/Apache-2.0 and contains no license text or VCS revision. Preserve its original Cargo.toml license declaration and authors; do not invent a copyright holder.",
       "vcs": null,
       "version": "0.4.0"
+    },
+    {
+      "archive_sha256": "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22",
+      "attribution_comments": [],
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "files": [
+        {
+          "blob": "texts/01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f.txt",
+          "kind": "archive",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+        },
+        {
+          "blob": "texts/cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14.txt",
+          "kind": "archive",
+          "path": "LICENSE-MIT",
+          "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
+        },
+        {
+          "blob": "texts/7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c.txt",
+          "kind": "archive",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license_file": null,
+      "manifest_sha256": "90ba2d06ba1317a8807c94508ecf576a2c10ebc6b2445f3d842ba734415a6a68",
+      "name": "winapi-util",
+      "repository": "https://github.com/BurntSushi/winapi-util",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "vcs": {
+        "git": {
+          "sha1": "803874c57dc1f10ecd42f7c86d9de72f53818432"
+        },
+        "path_in_vcs": ""
+      },
+      "version": "0.1.11"
     },
     {
       "archive_sha256": "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",

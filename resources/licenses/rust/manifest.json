@@ -3,13 +3,13 @@
   "files": [
     {
       "path": "RUST-NOTICES.txt",
-      "bytes": 1170033,
-      "sha256": "1e0d549ea981907eed396371ab09262023a7ce692706845b0b37378ca49312d7"
+      "bytes": 1176157,
+      "sha256": "06fdfa14a8ad6cb2e4555c7f282b70bb44bc5218aa38f9b11fd75c87c83bf8ae"
     },
     {
       "path": "index.json",
-      "bytes": 1199449,
-      "sha256": "beece039fd6616eaa00be3bfb0633b13d3e208d444b241f35c0bce27d8327f92"
+      "bytes": 1212508,
+      "sha256": "396007e4b52ea24825be2918baf49bf07f4be691247ad7015ddfe2dacb09766f"
     },
     {
       "path": "texts/000b4962e6b27176a0ff89cce4be555b16472cafb5671eb2804a8fdac6854793.txt",
@@ -442,6 +442,11 @@
       "sha256": "5556dba493fc18e98ebf82f587011f76df6c8c26532613e4c8f904ee586d7cf0"
     },
     {
+      "path": "texts/5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab.txt",
+      "bytes": 1099,
+      "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab"
+    },
+    {
       "path": "texts/573f5227db835cd30bbdd3aed3f82615f80119a4d5c82b4daf642dbfe2b6afde.txt",
       "bytes": 1080,
       "sha256": "573f5227db835cd30bbdd3aed3f82615f80119a4d5c82b4daf642dbfe2b6afde"
@@ -532,6 +537,11 @@
       "sha256": "66e3ee1fa7f909ad3c612d556f2a0cdabcd809ad6e66f3b0605015ac64841b70"
     },
     {
+      "path": "texts/68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b.txt",
+      "bytes": 262,
+      "sha256": "68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b"
+    },
+    {
       "path": "texts/696759d65dfe558ff7d9f031c76db19ec5c0767470fb67c4e8d990820d1e99c9.txt",
       "bytes": 10832,
       "sha256": "696759d65dfe558ff7d9f031c76db19ec5c0767470fb67c4e8d990820d1e99c9"
@@ -545,6 +555,11 @@
       "path": "texts/6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9.txt",
       "bytes": 1069,
       "sha256": "6a2e0ade09a7d5f816f11566fee2b151b32235a7fad52b41d49cce96f833c1a9"
+    },
+    {
+      "path": "texts/6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715.txt",
+      "bytes": 1086,
+      "sha256": "6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715"
     },
     {
       "path": "texts/6df43f6f4b5d4587f3d8d71e45532c688fd168afa5fe89d571cb32fa09c4ef51.txt",
@@ -1080,6 +1095,11 @@
       "path": "texts/c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566.txt",
       "bytes": 1338,
       "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "texts/cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14.txt",
+      "bytes": 1081,
+      "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14"
     },
     {
       "path": "texts/cb5aedb296c5246d1f22e9099f925a65146f9f0d6b4eebba97fd27a6cdbbab2d.txt",

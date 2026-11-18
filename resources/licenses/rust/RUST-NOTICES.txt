@@ -128,6 +128,13 @@ Reference terms: MIT (not a package copyright notice)
 bs58@0.5.1
 Declared license: MIT/Apache-2.0
 
+bstr@1.13.1
+Declared license: MIT OR Apache-2.0
+Published package authors: Andrew Gallant <jamslam@gmail.com>
+Verbatim source attribution comments:
+([LICENSE-UNICODE](https://www.unicode.org/copyright.html#License)), although
+  Source: README.md:238
+
 bumpalo@3.20.3
 Declared license: MIT OR Apache-2.0
 Published package authors: Nick Fitzgerald <fitzgen@gmail.com>
@@ -283,6 +290,15 @@ Published package authors: RustCrypto Developers
 crc32fast@1.5.3
 Declared license: MIT OR Apache-2.0
 Published package authors: Sam Rijs <srijs@airpost.net>; Alex Crichton <alex@alexcrichton.com>
+
+crossbeam-deque@0.8.8
+Declared license: MIT OR Apache-2.0
+
+crossbeam-epoch@0.9.21
+Declared license: MIT OR Apache-2.0
+
+crossbeam-utils@0.8.23
+Declared license: MIT OR Apache-2.0
 
 crossterm@0.29.0
 Declared license: MIT
@@ -562,6 +578,10 @@ Verbatim source attribution comments:
 // http://rust-lang.org/COPYRIGHT.
   Source: src/lib.rs:3, tests/glob-std.rs:3
 
+globset@0.4.21
+Declared license: Unlicense OR MIT
+Published package authors: Andrew Gallant <jamslam@gmail.com>
+
 half@2.7.1
 Declared license: MIT OR Apache-2.0
 Published package authors: Kathryn Long <squeeself@gmail.com>
@@ -691,6 +711,10 @@ Verbatim source attribution comments:
 // Copyright The rust-url developers.
   Source: src/lib.rs:1
 
+ignore@0.4.34
+Declared license: Unlicense OR MIT
+Published package authors: Andrew Gallant <jamslam@gmail.com>
+
 image@0.25.10
 Declared license: MIT OR Apache-2.0
 Published package authors: The image-rs Developers
@@ -763,7 +787,7 @@ kasuari@0.4.13
 Declared license: MIT OR Apache-2.0
 Published package authors: Dylan Ede <dylanede@googlemail.com>; The Ratatui Developers
 
-lazypencil@0.2.11
+lazypencil@0.2.12
 Declared license: MIT
 
 libc@0.2.191
@@ -1642,6 +1666,10 @@ safe_arch@1.2.0
 Declared license: Zlib OR Apache-2.0 OR MIT
 Published package authors: Lokathor <zefria@gmail.com>
 
+same-file@1.0.6
+Declared license: Unlicense/MIT
+Published package authors: Andrew Gallant <jamslam@gmail.com>
+
 schemars@0.9.0
 Declared license: MIT
 Published package authors: Graham Esau <gesau@hotmail.co.uk>
@@ -2081,6 +2109,10 @@ Verbatim source attribution comments:
 // SPDX-License-Identifier: Apache-2.0
   Source: src/ansi.rs:1
 
+walkdir@2.5.0
+Declared license: Unlicense/MIT
+Published package authors: Andrew Gallant <jamslam@gmail.com>
+
 wasi@0.11.1+wasi-snapshot-preview1
 Declared license: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
 Published package authors: The Cranelift Project Developers
@@ -2156,6 +2188,10 @@ Verbatim source attribution comments:
   Source: src/lib.rs:1
 // Copyright © 2016-2018 winapi-rs developers
   Source: build.rs:1
+
+winapi-util@0.1.11
+Declared license: Unlicense OR MIT
+Published package authors: Andrew Gallant <jamslam@gmail.com>
 
 winapi-x86_64-pc-windows-gnu@0.4.0
 Declared license: MIT/Apache-2.0
@@ -2885,12 +2921,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ========================================================================
 aho-corasick@1.1.5 :: archive :: COPYING
+globset@0.4.21 :: archive :: COPYING
+ignore@0.4.34 :: archive :: COPYING
 jiff@0.2.38 :: archive :: COPYING
 jiff-core@0.1.1 :: archive :: COPYING
 jiff-static@0.2.38 :: archive :: COPYING
 jiff-tzdb@0.1.9 :: archive :: COPYING
 jiff-tzdb-platform@0.1.3 :: archive :: COPYING
 memchr@2.8.3 :: archive :: COPYING
+same-file@1.0.6 :: archive :: COPYING
+walkdir@2.5.0 :: archive :: COPYING
+winapi-util@0.1.11 :: archive :: COPYING
 SHA-256: 01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f
 
 This project is dual-licensed under the Unlicense and MIT licenses.
@@ -3915,12 +3956,15 @@ THE SOFTWARE.
 ========================================================================
 aho-corasick@1.1.5 :: archive :: LICENSE-MIT
 byteorder-lite@0.1.0 :: archive :: LICENSE-MIT
+globset@0.4.21 :: archive :: LICENSE-MIT
+ignore@0.4.34 :: archive :: LICENSE-MIT
 jiff@0.2.38 :: archive :: LICENSE-MIT
 jiff-core@0.1.1 :: archive :: LICENSE-MIT
 jiff-static@0.2.38 :: archive :: LICENSE-MIT
 jiff-tzdb@0.1.9 :: archive :: LICENSE-MIT
 jiff-tzdb-platform@0.1.3 :: archive :: LICENSE-MIT
 memchr@2.8.3 :: archive :: LICENSE-MIT
+walkdir@2.5.0 :: archive :: LICENSE-MIT
 SHA-256: 0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f
 
 The MIT License (MIT)
@@ -10531,6 +10575,40 @@ unreachable_pub = "warn"
 unsafe_op_in_unsafe_fn = "deny"
 
 ========================================================================
+crossbeam-deque@0.8.8 :: archive :: LICENSE-MIT
+crossbeam-epoch@0.9.21 :: archive :: LICENSE-MIT
+crossbeam-utils@0.8.23 :: archive :: LICENSE-MIT
+SHA-256: 5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab
+
+The MIT License (MIT)
+
+Copyright (c) 2019 The Crossbeam Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+========================================================================
 weezl@0.1.12 :: archive :: LICENSE-MIT
 SHA-256: 573f5227db835cd30bbdd3aed3f82615f80119a4d5c82b4daf642dbfe2b6afde
 
@@ -11756,6 +11834,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ========================================================================
+bstr@1.13.1 :: archive :: COPYING
+SHA-256: 68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b
+
+This project is licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+   https://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or
+   https://opensource.org/licenses/MIT)
+
+at your option.
+
+========================================================================
 iana-time-zone@0.1.65 :: archive :: LICENSE-APACHE
 iana-time-zone-haiku@0.1.2 :: archive :: LICENSE-APACHE
 SHA-256: 696759d65dfe558ff7d9f031c76db19ec5c0767470fb67c4e8d990820d1e99c9
@@ -12011,6 +12102,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+========================================================================
+bstr@1.13.1 :: archive :: LICENSE-MIT
+SHA-256: 6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715
+
+The MIT License (MIT)
+
+Copyright (c) 2018-2019 Andrew Gallant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ========================================================================
 rand_core@0.10.1 :: archive :: LICENSE-APACHE
@@ -13161,12 +13278,17 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 aho-corasick@1.1.5 :: archive :: UNLICENSE
 byteorder-lite@0.1.0 :: archive :: UNLICENSE
+globset@0.4.21 :: archive :: UNLICENSE
+ignore@0.4.34 :: archive :: UNLICENSE
 jiff@0.2.38 :: archive :: UNLICENSE
 jiff-core@0.1.1 :: archive :: UNLICENSE
 jiff-static@0.2.38 :: archive :: UNLICENSE
 jiff-tzdb@0.1.9 :: archive :: UNLICENSE
 jiff-tzdb-platform@0.1.3 :: archive :: UNLICENSE
 memchr@2.8.3 :: archive :: UNLICENSE
+same-file@1.0.6 :: archive :: UNLICENSE
+walkdir@2.5.0 :: archive :: UNLICENSE
+winapi-util@0.1.11 :: archive :: UNLICENSE
 SHA-256: 7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c
 
 This is free and unencumbered software released into the public domain.
@@ -16344,12 +16466,16 @@ base64@0.23.1 :: archive :: LICENSE-APACHE
 bitflags@1.3.2 :: archive :: LICENSE-APACHE
 bitflags@2.13.2 :: archive :: LICENSE-APACHE
 bs58@0.5.1 :: archive :: LICENSE-APACHE
+bstr@1.13.1 :: archive :: LICENSE-APACHE
 bumpalo@3.20.3 :: archive :: LICENSE-APACHE
 by_address@1.2.1 :: archive :: LICENSE-APACHE
 cc@1.9.0 :: archive :: LICENSE-APACHE
 cexpr@0.6.0 :: archive :: LICENSE-APACHE
 cfg-if@1.0.5 :: archive :: LICENSE-APACHE
 core-foundation-sys@0.8.7 :: archive :: LICENSE-APACHE
+crossbeam-deque@0.8.8 :: archive :: LICENSE-APACHE
+crossbeam-epoch@0.9.21 :: archive :: LICENSE-APACHE
+crossbeam-utils@0.8.23 :: archive :: LICENSE-APACHE
 displaydoc@0.2.7 :: archive :: LICENSE-APACHE
 either@1.19.0 :: archive :: LICENSE-APACHE
 equivalent@1.0.3 :: archive :: LICENSE-APACHE
@@ -19642,6 +19768,33 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ========================================================================
+same-file@1.0.6 :: archive :: LICENSE-MIT
+winapi-util@0.1.11 :: archive :: LICENSE-MIT
+SHA-256: cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14
+
+The MIT License (MIT)
+
+Copyright (c) 2017 Andrew Gallant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+========================================================================
 winnow@1.0.4 :: archive :: LICENSE-MIT
 SHA-256: cb5aedb296c5246d1f22e9099f925a65146f9f0d6b4eebba97fd27a6cdbbab2d
 
@@ -19719,7 +19872,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-lazypencil@0.2.11 :: workspace :: LICENSE
+lazypencil@0.2.12 :: workspace :: LICENSE
 SHA-256: ce8ad525282f9212bdc8d63a0c2f20100a567e77975fb6b368996602002c860d
 
 MIT License

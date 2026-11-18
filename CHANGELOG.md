@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.12
+
+- Speed up zoom and pan in large macOS previews by reusing static mesh frames, limiting work on shadow and text layers, and prioritizing the latest view during short pinch gestures.
+- Change the agent model and speed within a conversation, and configure individual Codex agent profiles to use a locally installed CLI.
+- Preserve user-message boundaries in restored conversations and use consistent Emacs editing bindings across TUI text inputs.
+- Find projects in shallow directories while respecting ignore rules, and improve contrast in node and search labels.
+- Validate public `.pen` values more precisely, preserve Pencil alignment and file tokens, and protect assets referenced by uppercase `.PEN` files.
+
 ## 0.2.11
 
 - Attach selected Preview nodes to the next prompt with `a`, including multiple selections, while preserving the draft and focusing the input.
