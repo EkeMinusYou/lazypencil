@@ -69,7 +69,8 @@ fn encoded_script_oracles_keep_default_rows_gaps_and_omitted_inputs() {
             .iter()
             .find(|c| c.name == "number-default")
             .unwrap()
-            .stored.get("value")
+            .stored
+            .get("value")
             .is_none()
     );
     let image = scripts::input_raster(2);

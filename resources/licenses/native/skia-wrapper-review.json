@@ -47,13 +47,13 @@
     },
     {
       "path": "build_support/skia_bindgen.rs",
-      "bytes": 34277,
-      "sha256": "532e6d71ddc552c46fa4849c24a51692af694cf65d500d1e47736a51cf8d0f14"
+      "bytes": 34346,
+      "sha256": "a1ec5c4672ea9563a9d76a368fa4791abf22460abf0a88e023a3a1314d8b6f4a"
     },
     {
       "path": "src/bindings.cpp",
-      "bytes": 135309,
-      "sha256": "4c2ff600af645ca64893297e0afef675def645cab75720fc08d0af1c066db7b8"
+      "bytes": 138748,
+      "sha256": "4fd8aa2508a5474211fc1a9444bae20a152beb644ced4a2d4511ab0ef45e95da"
     },
     {
       "path": "src/bindings.h",
