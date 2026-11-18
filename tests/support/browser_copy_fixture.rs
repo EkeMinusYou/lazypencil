@@ -50,8 +50,10 @@ pub fn apply(store: &Store, id: &str, operations: Value) -> Value {
         .unwrap_or_else(|error| panic!("request {id}: {error:?}"))
 }
 
-fn resources(path: &str) -> Value {
-    json!({"lazypencil":{"browser_resources":{"version":1,"roots":[{"url":BASE,"path":path}]}}})
+fn resource_node(path: &str) -> Value {
+    lazypencil::document::data_node(
+        json!({"browser_resources":{"version":1,"roots":[{"url":BASE,"path":path}]}}),
+    )
 }
 
 fn site(path: &Path, light: &str, dark: &str) {
@@ -84,8 +86,8 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
     write(
         &temp.path().join("library/base/base.lib.pen"),
         &json!({"version":version,
-        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"base_width":variable(32,40)},
-        "children":[reusable,{"id":"panel","type":"frame","reusable":true,"width":32,"height":16,"children":[page("inside")]}]}),
+        "themes":{"mode":["light","dark"]},"variables":{"base_width":variable(32,40)},
+        "children":[reusable,{"id":"panel","type":"frame","reusable":true,"width":32,"height":16,"children":[page("inside")]},resource_node("web")]}),
     );
     let mut inner = json!({"id":"inner","type":"ref","ref":"base:page"});
     match mode {
@@ -122,14 +124,14 @@ pub fn fixture(version: &str, mode: &str) -> (TempDir, Store) {
     write(
         &temp.path().join("library/ui.lib.pen"),
         &json!({"version":version,"imports":{"base":"base/base.lib.pen"},
-        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"variables":{"override_width":variable(48,56)},
-        "children":[{"id":"widget","type":"frame","reusable":true,"width":32,"height":16,"children":[inner]}]}),
+        "themes":{"mode":["light","dark"]},"variables":{"override_width":variable(48,56)},
+        "children":[{"id":"widget","type":"frame","reusable":true,"width":32,"height":16,"children":[inner]},resource_node("web")]}),
     );
     write(
         &temp.path().join("main.pen"),
         &json!({"version":version,"imports":{"ui":"library/ui.lib.pen"},
-        "metadata":resources("consumer-web"),"themes":{"mode":["light","dark"]},
-        "children":[{"id":"linked","type":"ref","ref":"ui:widget"}]}),
+        "themes":{"mode":["light","dark"]},
+        "children":[{"id":"linked","type":"ref","ref":"ui:widget"},resource_node("consumer-web")]}),
     );
     let store = Store::open(
         temp.path().join("main.pen"),
@@ -276,7 +278,7 @@ pub fn study(version: &str, mode: &str, detach_first: bool) -> (TempDir, Vec<Fra
     write(
         &second_dir.join("scene.pen"),
         &json!({"version":version,"imports":{"src":"../main.pen"},
-        "metadata":resources("web"),"themes":{"mode":["light","dark"]},"children":[]}),
+        "themes":{"mode":["light","dark"]},"children":[resource_node("web")]}),
     );
     let second = Store::open(
         second_dir.join("scene.pen"),

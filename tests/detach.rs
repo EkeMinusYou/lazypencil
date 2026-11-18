@@ -225,6 +225,9 @@ fn detaching_an_external_script_retains_its_execution_scope_without_changing_cod
         .set_property("/children/0/children/0", "type", &json!("script"))
         .unwrap();
     document
+        .remove_property("/children/0/children/0", "fill")
+        .unwrap();
+    document
         .set_property("/children/0/children/0", "scriptUri", &json!("code.js"))
         .unwrap();
     fs::write(library, document.text()).unwrap();
