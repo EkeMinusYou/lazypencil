@@ -53,6 +53,9 @@ impl AgentProcess {
             .stderr(Stdio::piped())
             // Unix guardians must survive long enough to reap their owned group.
             .kill_on_drop(!cfg!(unix));
+        if let Some(path) = &options.codex_path {
+            command.env("CODEX_PATH", path);
+        }
         if options.subscription {
             for key in [
                 "OPENAI_API_KEY",

@@ -55,6 +55,7 @@ impl AgentHost {
         // setup. A different project/profile must use its own fresh process.
         if original.command != options.command
             || original.args != options.args
+            || original.codex_path != options.codex_path
             || original.cwd != options.cwd
             || original.subscription != options.subscription
             || original.supervisor_executable != options.supervisor_executable
@@ -174,6 +175,9 @@ mod tests {
             prepared(&mut host).await;
             let mut changed = options.clone();
             changed.subscription = !changed.subscription;
+            assert!(!host.continue_prepared(changed));
+            let mut changed = options.clone();
+            changed.codex_path = Some(temp.path().join("external-codex"));
             assert!(!host.continue_prepared(changed));
             let other = tempfile::tempdir().unwrap();
             let mut changed = options;

@@ -103,6 +103,7 @@ fn preparation(args: &crate::prompt::PromptArgs) -> Result<crate::agent::AgentHo
     let root = crate::paths::canonical(std::env::current_dir().map_err(super::terminal::io)?)?;
     let mut options = crate::agent::AgentOptions::new(command, root);
     options.args = args.adapter_args.clone();
+    options.codex_path = args.codex_path.clone();
     options.subscription = args.auth == crate::prompt::AuthMode::Subscription;
     options.require_auth_status = args.require_auth_status;
     options.turn_timeout = Duration::from_secs(args.timeout);

@@ -126,6 +126,7 @@ timeout = 600
 document_tools = "allow"
 # model = "an-adapter-advertised-model"
 # fast = true
+# codex_path = "/opt/homebrew/bin/codex"
 # auth_method = "an-adapter-advertised-authentication-method"
 
 [agents.claude]
@@ -149,6 +150,12 @@ it. Omission uses the adapter's inherited setting. If Fast mode is unexpectedly
 cleared, pass the choice explicitly; see the upstream
 [inheritance issue](https://github.com/agentclientprotocol/codex-acp/issues/285).
 Fast mode is available only for Codex and follows the provider's account limits.
+
+Set `codex_path` in `[agents.codex]` to select the Codex CLI that the ACP adapter
+launches. lazypencil sets `CODEX_PATH` for that adapter process in `tui`, `prompt`
+and `doctor`. If omitted, the adapter uses its inherited environment and runtime
+defaults. Plain command names use `PATH`, and relative paths containing a
+directory resolve beside the configuration file that defines them.
 
 An explicit `--adapter` replaces both the configured executable and its argument
 list. Plain command names use `PATH`; relative adapter paths resolve beside their

@@ -123,6 +123,12 @@ impl Conversation {
                 "Fast mode is only supported with the Codex agent",
             ));
         }
+        if args.codex_path.is_some() && args.agent != crate::prompt::AgentName::Codex {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "codex_path is only supported with the Codex agent",
+            ));
+        }
         if args.restart_session && args.session.is_none() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -758,6 +764,7 @@ impl Conversation {
             self.store.path().parent().expect("document parent"),
         );
         options.args = self.args.adapter_args.clone();
+        options.codex_path = self.args.codex_path.clone();
         options.supervisor_executable = Some(self.executable.clone());
         options.subscription = self.args.auth == AuthMode::Subscription;
         options.require_auth_status = self.args.require_auth_status;

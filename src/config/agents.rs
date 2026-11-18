@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub(super) const TEMPLATE: &str = "\n# User-owned agent preferences; CLI options take precedence.\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# auth = \"subscription\"\n# require_auth_status = true\n# model = \"an-adapter-advertised-model\"\n# fast = true # Omit to inherit Codex speed; false disables Fast mode.\n# timeout = 600\n# [agents.claude]\n# adapter = \"claude-agent-acp\"\n# auth = \"subscription\"\n";
+pub(super) const TEMPLATE: &str = "\n# User-owned agent preferences; CLI options take precedence.\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# codex_path = \"/absolute/path/to/codex\"\n# auth = \"subscription\"\n# require_auth_status = true\n# model = \"an-adapter-advertised-model\"\n# fast = true # Omit to inherit Codex speed; false disables Fast mode.\n# timeout = 600\n# [agents.claude]\n# adapter = \"claude-agent-acp\"\n# auth = \"subscription\"\n";
 pub(super) const PROJECT_TEMPLATE: &str = "\n# Project agent settings override user preferences only after a separate local grant.\n# Review: lazypencil config show FILE --executables\n# Authorize: lazypencil config trust FILE --executables\n# [agents]\n# default = \"codex\"\n# [agents.codex]\n# adapter = \"codex-acp\"\n# adapter_args = []\n# fast = true # Omit to inherit Codex speed.\n";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -28,6 +28,9 @@ pub struct AgentProfile {
     pub adapter: Option<PathBuf>,
     #[schemars(length(max = 128))]
     pub adapter_args: Vec<String>,
+    /// Codex executable passed to the ACP adapter as CODEX_PATH.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_path: Option<PathBuf>,
     pub auth: Option<AuthMode>,
     #[schemars(length(min = 1, max = 256))]
     pub auth_method: Option<String>,
@@ -53,19 +56,25 @@ impl AgentSettings {
         if self.claude.fast.is_some() {
             return Err(invalid("Fast mode is only supported in agents.codex"));
         }
+        if self.claude.codex_path.is_some() {
+            return Err(invalid("codex_path is only supported in agents.codex"));
+        }
         for profile in [&self.codex, &self.claude] {
-            if let Some(adapter) = &profile.adapter {
-                let text = adapter
-                    .to_str()
-                    .ok_or_else(|| invalid("Agent adapter paths must be UTF-8"))?;
-                if text.is_empty()
-                    || text.len() > 4096
-                    || text.contains('\0')
-                    || text.contains("://")
+            for (name, command) in [
+                ("adapter", &profile.adapter),
+                ("codex_path", &profile.codex_path),
+            ] {
+                if let Some(command) = command
+                    && !command.to_str().is_some_and(|text| {
+                        !text.is_empty()
+                            && text.len() <= 4096
+                            && !text.contains('\0')
+                            && !text.contains("://")
+                    })
                 {
-                    return Err(invalid(
-                        "Agent adapters must be nonempty local commands or paths up to 4096 bytes",
-                    ));
+                    return Err(invalid(format!(
+                        "{name} must be a nonempty local UTF-8 command or path up to 4096 bytes"
+                    )));
                 }
             }
             if profile.adapter_args.len() > 128
@@ -108,16 +117,11 @@ impl AgentSettings {
     pub(super) fn resolved(&self, base: Option<&Path>) -> Self {
         let mut result = self.clone();
         for profile in [&mut result.codex, &mut result.claude] {
-            if let Some(adapter) = &profile.adapter
-                && adapter.is_relative()
-                && adapter
-                    .file_name()
-                    .is_none_or(|name| name != adapter.as_os_str())
+            for command in [&mut profile.adapter, &mut profile.codex_path]
+                .into_iter()
+                .flatten()
             {
-                profile.adapter = Some(
-                    base.expect("Configured profiles have a physical source")
-                        .join(adapter),
-                );
+                *command = resolve_command(command, base);
             }
         }
         result
@@ -151,20 +155,13 @@ impl AgentSettings {
         if inherited("adapter")
             && let Some(adapter) = &profile.adapter
         {
-            args.adapter = Some(
-                if adapter.is_relative()
-                    && adapter
-                        .file_name()
-                        .is_none_or(|name| name != adapter.as_os_str())
-                {
-                    base.expect("Configured adapters have a physical configuration source")
-                        .join(adapter)
-                } else {
-                    adapter.clone()
-                },
-            );
+            args.adapter = Some(resolve_command(adapter, base));
             args.adapter_args = profile.adapter_args.clone();
         }
+        args.codex_path = profile
+            .codex_path
+            .as_ref()
+            .map(|path| resolve_command(path, base));
         if inherited("auth")
             && let Some(value) = profile.auth
         {
@@ -206,6 +203,19 @@ impl AgentSettings {
     }
 }
 
+fn resolve_command(command: &Path, base: Option<&Path>) -> PathBuf {
+    if command.is_relative()
+        && command
+            .file_name()
+            .is_none_or(|name| name != command.as_os_str())
+    {
+        base.expect("Configured commands have a physical configuration source")
+            .join(command)
+    } else {
+        command.to_owned()
+    }
+}
+
 impl AgentProfile {
     fn overlay(&self, higher: &Self) -> Self {
         Self {
@@ -215,6 +225,10 @@ impl AgentProfile {
             } else {
                 self.adapter_args.clone()
             },
+            codex_path: higher
+                .codex_path
+                .clone()
+                .or_else(|| self.codex_path.clone()),
             auth: higher.auth.or(self.auth),
             auth_method: higher
                 .auth_method
@@ -234,6 +248,7 @@ fn same_preferences(a: &PromptArgs, b: &PromptArgs) -> bool {
     a.agent == b.agent
         && a.adapter == b.adapter
         && a.adapter_args == b.adapter_args
+        && a.codex_path == b.codex_path
         && a.auth == b.auth
         && a.auth_method == b.auth_method
         && a.require_auth_status == b.require_auth_status

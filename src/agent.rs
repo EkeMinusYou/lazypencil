@@ -55,6 +55,8 @@ use process::AgentProcess;
 pub struct AgentOptions {
     pub command: PathBuf,
     pub args: Vec<String>,
+    /// Override CODEX_PATH for this adapter process.
+    pub codex_path: Option<PathBuf>,
     /// Host binary implementing the private process supervisor entry point.
     /// Defaults to this executable; library hosts must supply the lazypencil binary.
     pub supervisor_executable: Option<PathBuf>,
@@ -88,6 +90,7 @@ impl AgentOptions {
         Self {
             command: command.into(),
             args: vec![],
+            codex_path: None,
             supervisor_executable: std::env::current_exe().ok(),
             cwd: cwd.into(),
             mcp_servers: vec![],

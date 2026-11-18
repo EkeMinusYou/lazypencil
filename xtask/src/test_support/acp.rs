@@ -282,6 +282,12 @@ impl<'a> Peer<'a> {
         }
         match message["method"].as_str().unwrap_or_default() {
             "initialize" => {
+                if mode == "auth-inspect-codex-path" {
+                    write_json(
+                        "received-codex-path.json",
+                        &json!(std::env::var("CODEX_PATH").ok()),
+                    )?;
+                }
                 #[cfg(unix)]
                 fs::write(
                     "fixture-agent-guardian.pid",

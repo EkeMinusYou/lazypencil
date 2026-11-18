@@ -131,6 +131,83 @@ fn fast_mode_resolves_user_project_and_cli_overrides_with_execution_trust() {
 }
 
 #[test]
+fn codex_path_reaches_the_adapter_from_user_and_trusted_project_settings() {
+    let f = Fixture::new();
+    let user_path = f.user.canonicalize().unwrap().join("bin/external codex");
+    let observed = |directory: &std::path::Path| {
+        let path = directory.join("received-codex-path.json");
+        serde_json::from_slice::<Value>(&fs::read(path).unwrap()).unwrap()
+    };
+    let cwd = f.document.parent().unwrap();
+    let run = || {
+        let output = f
+            .command()
+            .env("CODEX_PATH", "ambient-codex")
+            .arg("prompt")
+            .arg(&f.document)
+            .args([
+                "Check the configured runtime",
+                "--non-interactive",
+                "--timeout",
+                "5",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        observed(cwd)
+    };
+    f.settings(&f.peer("codex", "auth-inspect-codex-path", ""));
+    assert_eq!(run(), "ambient-codex");
+    f.settings(&f.peer(
+        "codex",
+        "auth-inspect-codex-path",
+        "codex_path='bin/external codex'",
+    ));
+    assert_eq!(run(), user_path.to_str().unwrap());
+
+    let doctor = f
+        .command()
+        .env("CODEX_PATH", "ambient-codex")
+        .args(["doctor", "--agent", "codex"])
+        .output()
+        .unwrap();
+    assert!(
+        doctor.status.success(),
+        "{}",
+        String::from_utf8_lossy(&doctor.stdout)
+    );
+    assert_eq!(observed(f.temp.path()), user_path.to_str().unwrap());
+
+    let project = f.temp.path().join("project/lazypencil.toml");
+    fs::write(&project, "[agents.codex]\ncodex_path='bin/project codex'\n").unwrap();
+    let denied = f.prompt(&[]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&denied.stdout).unwrap()["error"]["code"],
+        "PROJECT_NOT_TRUSTED"
+    );
+    assert_eq!(observed(cwd), user_path.to_str().unwrap());
+    let granted = f
+        .command()
+        .args(["config", "trust"])
+        .arg(&f.document)
+        .arg("--executables")
+        .output()
+        .unwrap();
+    assert!(granted.status.success(), "{granted:?}");
+    let project_path = project
+        .parent()
+        .unwrap()
+        .canonicalize()
+        .unwrap()
+        .join("bin/project codex");
+    assert_eq!(run(), project_path.to_str().unwrap());
+}
+
+#[test]
 fn bound_mcp_keeps_system_allocator_defaults_and_preserves_adapter_environment() {
     for (agent, explicit, medium) in [
         ("codex", None, None),
@@ -381,6 +458,8 @@ fn invalid_profiles_are_rejected_even_when_unselected_and_errors_do_not_quote_va
         "[agents.claude]\napi_key='SECRET_KEY'".into(),
         "[agents.claude]\nadapter_args=['SECRET_ARG']".into(),
         "[agents.claude]\nadapter='https://SECRET_HOST/peer'".into(),
+        "[agents.claude]\ncodex_path='SECRET_CODEX_PATH'".into(),
+        "[agents.codex]\ncodex_path='https://SECRET_HOST/codex'".into(),
         "[agents.claude]\nmodel=\"SECRET\\nVALUE\"".into(),
         "[agents.claude]\ntimeout=0".into(),
         "[agents.claude]\ntimeout=86401".into(),

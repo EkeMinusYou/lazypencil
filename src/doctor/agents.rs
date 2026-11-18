@@ -107,6 +107,10 @@ pub(super) fn diagnose(
         }
         let mut probe = AgentOptions::new(path, &cwd);
         probe.args = profile.adapter_args.clone();
+        probe.codex_path = profile.codex_path.clone();
+        if let Some(path) = &probe.codex_path {
+            entry["codex_path"] = json!(path);
+        }
         probe.supervisor_executable = Some(executable.clone());
         probe.subscription =
             profile.auth.unwrap_or(AuthMode::Subscription) == AuthMode::Subscription;
