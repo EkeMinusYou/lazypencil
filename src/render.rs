@@ -14,6 +14,7 @@ use skia_safe::{
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 const MAX_PIXELS: u64 = 32 * 1024 * 1024;
+const MAX_PICTURE_BYTES: usize = 32 * 1024 * 1024;
 
 mod atlas;
 mod backdrop;
@@ -206,6 +207,8 @@ struct RasterCache {
     background_nodes: Vec<bool>,
     padding: RefCell<BTreeMap<u32, u32>>,
     has_images: bool,
+    mesh_sizes: Vec<[f32; 2]>,
+    has_outer_shadows: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -235,6 +238,8 @@ impl RasterCache {
             background_nodes: self.background_nodes.clone(),
             padding: RefCell::new(self.padding.borrow().clone()),
             has_images: self.has_images,
+            mesh_sizes: self.mesh_sizes.clone(),
+            has_outer_shadows: self.has_outer_shadows,
         }
     }
     #[cfg(feature = "tui")]
@@ -249,6 +254,30 @@ impl RasterCache {
                 _ => false,
             }
         }
+        let mut mesh_sizes = Vec::new();
+        let mut has_outer_shadows = false;
+        for item in snapshot.items.iter().filter(|item| item.record.enabled) {
+            let properties = &item.node.properties;
+            let rect = item.record.rect;
+            if rect.width > 0.0 && rect.height > 0.0 {
+                for property in ["fill", "stroke"] {
+                    if let Some(fills) = properties.get(property) {
+                        mesh_sizes.extend(
+                            values(fills)
+                                .into_iter()
+                                .filter(|fill| {
+                                    fill["type"] == "mesh_gradient" && fill["enabled"] != false
+                                })
+                                .map(|_| [rect.width, rect.height]),
+                        );
+                    }
+                }
+            }
+            has_outer_shadows |= properties.get("effect").is_some_and(|effects| {
+                crate::effects::active(effects)
+                    .any(|effect| effect["type"] == "shadow" && effect["shadowType"] != "inner")
+            });
+        }
         Self {
             shapes: RefCell::default(),
             pictures: RefCell::default(),
@@ -261,7 +290,35 @@ impl RasterCache {
                 .items
                 .iter()
                 .any(|item| item.node.properties.values().any(image)),
+            mesh_sizes,
+            has_outer_shadows,
         }
+    }
+
+    fn mesh_picture_bytes(&self, scale: f32, size: (i32, i32)) -> Option<usize> {
+        if self.mesh_sizes.is_empty() {
+            return Some(0);
+        }
+        let parts = raster_pool::RasterPool::parts(size);
+        if !self.has_outer_shadows
+            || parts == 1
+            || size.0 as u64 * size.1 as u64 > atlas::MAX_ATLAS_PIXELS
+        {
+            return None;
+        }
+        // Each recorded band can hold a raster for every mesh until replay.
+        // Charge the upper bound and use direct rendering when it exceeds the cap.
+        self.mesh_sizes
+            .iter()
+            .try_fold(0_u64, |total, &[width, height]| {
+                let [width, height] = mesh::raster_size(width, height, scale);
+                let bytes = width
+                    .saturating_mul(height)
+                    .saturating_mul(4 * parts as u64);
+                let total = total.saturating_add(bytes);
+                (total <= MAX_PICTURE_BYTES as u64).then_some(total)
+            })
+            .map(|bytes| bytes as usize)
     }
 
     fn padding(&self, snapshot: &LayoutSnapshot, scale: f32) -> Result<u32> {
@@ -418,7 +475,6 @@ fn raster_impl_cached(
     viewport: Option<[u32; 2]>,
 ) -> Result<RenderedRaster> {
     let shapes = cache.map(|cache| &cache.shapes);
-    let pictures = cache.filter(|_| recordable).map(|cache| &cache.pictures);
     let pool = cache.map(|cache| &cache.pool);
     if let Some(runtime) = runtime.as_deref() {
         runtime.check()?;
@@ -450,7 +506,15 @@ fn raster_impl_cached(
     let viewport = Affine::translation(padding as f32, padding as f32)
         .then(Affine::scale(options.scale, options.scale))
         .then(Affine::translation(-region.x, -region.y));
-    let anchored = recordable && cache.is_some_and(|cache| cache.has_images);
+    let picture_cache = cache.filter(|_| recordable).and_then(|cache| {
+        cache
+            .mesh_picture_bytes(options.scale, (working_width, working_height))
+            .map(|mesh_bytes| (cache, mesh_bytes))
+    });
+    let pictures = picture_cache.map(|(cache, _)| &cache.pictures);
+    let mesh_bytes = picture_cache.map_or(0, |(_, bytes)| bytes);
+    let anchored =
+        picture_cache.is_some_and(|(cache, _)| cache.has_images || !cache.mesh_sizes.is_empty());
     let transform = matrix(viewport);
     let picture_key = PictureKey {
         scale: options.scale.to_bits(),
@@ -576,8 +640,8 @@ fn raster_impl_cached(
             pictures.borrow_mut().remove(&key);
         }
         if !pictures.borrow().contains_key(&key) {
-            // Image scenes retain the exact device origin. Reassociating their
-            // transforms through a later translation can change antialias pixels.
+            // Image and mesh scenes retain the exact device origin. Reassociating
+            // their transforms through a later translation can change sampling.
             let recording_viewport = if anchored {
                 viewport
             } else {
@@ -643,7 +707,8 @@ fn raster_impl_cached(
                         .values()
                         .map(|(_, image)| image.width() as u64 * image.height() as u64 * 4)
                         .sum::<u64>()
-                        <= 32 * 1024 * 1024
+                        .saturating_add(mesh_bytes as u64)
+                        <= MAX_PICTURE_BYTES as u64
                 {
                     pending_bands.push(raster_pool::PendingBand::start(
                         &picture,
@@ -662,13 +727,16 @@ fn raster_impl_cached(
                 .iter()
                 .map(|(_, picture)| picture.approximate_bytes_used())
                 .sum::<usize>();
-            let bytes = images.values().fold(command_bytes, |bytes, (_, image)| {
-                bytes.saturating_add(
-                    (image.width() as usize)
-                        .saturating_mul(image.height() as usize)
-                        .saturating_mul(4),
-                )
-            });
+            let bytes = images.values().fold(
+                command_bytes.saturating_add(mesh_bytes),
+                |bytes, (_, image)| {
+                    bytes.saturating_add(
+                        (image.width() as usize)
+                            .saturating_mul(image.height() as usize)
+                            .saturating_mul(4),
+                    )
+                },
+            );
             let picture = RecordedPicture {
                 used: std::cell::Cell::new(cache.map_or(0, |cache| cache.picture_clock.get())),
                 picture: if anchored {
@@ -695,7 +763,7 @@ fn raster_impl_cached(
                     .map(|p| p.bytes)
                     .sum::<usize>()
                     .saturating_add(picture.bytes)
-                    > 32 * 1024 * 1024
+                    > MAX_PICTURE_BYTES
             {
                 let Some(oldest) = pictures
                     .iter()
@@ -706,7 +774,7 @@ fn raster_impl_cached(
                 };
                 pictures.remove(&oldest);
             }
-            if picture.bytes <= 32 * 1024 * 1024 {
+            if picture.bytes <= MAX_PICTURE_BYTES {
                 pictures.insert(key, picture);
             }
         }

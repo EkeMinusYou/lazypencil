@@ -519,7 +519,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             let static_camera = image.retain_raw_pixels
                 && picker.protocol_type() == ratatui_image::picker::ProtocolType::Kitty
                 && !picker.tmux_detected();
-            let prepare_camera = static_camera && first_camera_frame;
+            // First show the scene when each neighbor needs a fresh raster.
+            // Recent frames and motion prediction can warm the cache afterward.
+            let prepare_camera =
+                static_camera && first_camera_frame && renderer.prepares_initial_frames();
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 hit: super::selection::HitGeometry {
@@ -994,6 +997,66 @@ mod tests {
                 }
             });
         worker.cancel();
+    }
+
+    #[test]
+    fn native_worker_reuses_completed_mesh_frames_after_a_camera_round_trip() {
+        let directory = TempDir::new().unwrap();
+        let document = directory.path().join("design.pen");
+        std::fs::write(
+            &document,
+            json!({"version":"2.22","children":[{
+                "type":"rectangle","id":"mesh","width":200,"height":120,
+                "fill":{"type":"mesh_gradient","columns":2,"rows":2,
+                        "colors":["#334489","#5577BB","#A57A9F","#EACB90"]}
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        let store = Store::open(&document, Some(directory.path().join("data"))).unwrap();
+        let worker = Worker::start(store, vec![], Backend::native_for_test(), 175).unwrap();
+        let original = View {
+            center: [100.25, 60.75],
+            zoom: Some(1.375),
+            ..View::default()
+        };
+        let mut panned = original;
+        panned.pan([18.625, -13.25]);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut original_pixels = None;
+                for (index, view) in [original, panned, original, panned].into_iter().enumerate() {
+                    let generation = index as u64 + 1;
+                    worker.request(Request {
+                        generation,
+                        cells: Size::new(32, 12),
+                        view,
+                        refresh: false,
+                        refresh_pages: false,
+                        check_only: false,
+                        attachment: None,
+                    });
+                    let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                        .await
+                        .unwrap();
+                    assert_eq!(output.generation, generation);
+                    let preview = output.result.unwrap();
+                    assert_eq!(preview.view, view);
+                    assert!(matches!(preview.image, PreviewImage::Pixels(_)));
+                    assert_eq!(preview.frame_time.is_zero(), index >= 2);
+                    if index == 0 {
+                        original_pixels = Some(preview.image.bitmap().unwrap());
+                    } else if index == 2 {
+                        assert_eq!(
+                            preview.image.bitmap().unwrap(),
+                            original_pixels.take().unwrap()
+                        );
+                    }
+                }
+            });
     }
 
     #[test]

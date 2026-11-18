@@ -146,15 +146,22 @@ pub(crate) struct RenderedPreview {
 #[derive(Default)]
 pub(crate) struct PreviewRenderer {
     cache: Option<RasterCache>,
-    recordable: Option<bool>,
+    scene: Option<Scene>,
     viewport: Option<[u32; 2]>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scene {
+    Recorded,
+    Mesh,
+    Dynamic,
 }
 
 impl PreviewRenderer {
     pub(crate) fn fork(&self) -> Self {
         Self {
             cache: self.cache.as_ref().map(RasterCache::fork),
-            recordable: self.recordable,
+            scene: self.scene,
             viewport: self.viewport,
         }
     }
@@ -162,9 +169,14 @@ impl PreviewRenderer {
     pub(crate) fn set_viewport(&mut self, pixels: [u32; 2]) {
         self.viewport = Some(pixels);
     }
+
+    pub(crate) fn prepares_initial_frames(&self) -> bool {
+        self.scene == Some(Scene::Recorded)
+    }
+
     pub(crate) fn retain_prepared_commands(&mut self, prepared: &Self) {
         if let (Some(cache), Some(prepared)) = (&self.cache, &prepared.cache) {
-            // Commands are keyed by exact scale and, for image scenes, viewport.
+            // Commands are keyed by exact scale and, for images and meshes, viewport.
             // Keep atlas origins from actual display order: speculative raster
             // origins can change f32 antialias rounding on a later camera move.
             let mut pictures = cache.pictures.borrow_mut();
@@ -178,7 +190,7 @@ impl PreviewRenderer {
             for (key, picture) in entries {
                 if pictures.contains_key(key)
                     || pictures.len() >= if key.viewport.is_some() { 8 } else { 48 }
-                    || bytes.saturating_add(picture.bytes) > 32 * 1024 * 1024
+                    || bytes.saturating_add(picture.bytes) > MAX_PICTURE_BYTES
                 {
                     continue;
                 }
@@ -206,7 +218,7 @@ impl PreviewRenderer {
     }
     pub(crate) fn clear(&mut self) {
         self.cache = None;
-        self.recordable = None;
+        self.scene = None;
     }
 
     pub(crate) fn release_working_buffers(&self) {
@@ -230,7 +242,7 @@ impl PreviewRenderer {
             options,
             runtime,
             cancel,
-            |raster, recordable| {
+            |raster, retain_raw_pixels| {
                 if let Some(observer) = observer.as_mut() {
                     observer("render_raster_ms");
                 }
@@ -242,7 +254,7 @@ impl PreviewRenderer {
                     pixels,
                     bitmap,
                     dynamic_artifacts: raster.dynamic_artifacts,
-                    retain_raw_pixels: recordable,
+                    retain_raw_pixels,
                 })
             },
         )
@@ -257,11 +269,17 @@ impl PreviewRenderer {
         cancel: Option<tokio_util::sync::CancellationToken>,
     ) -> Result<()> {
         crate::cancel::check(cancel.as_ref())?;
+        if self.scene == Some(Scene::Mesh) {
+            // Mesh recordings are anchored to a viewport. Revisiting a frame
+            // cannot change the device origin used by a later render.
+            project.verify_unchanged()?;
+            return Ok(());
+        }
         let large_viewport = self
             .viewport
             .is_some_and(|[width, height]| u64::from(width) * u64::from(height) >= 2 * 1024 * 1024);
         if large_viewport
-            && self.recordable == Some(true)
+            && self.scene == Some(Scene::Recorded)
             && self.cache.as_ref().is_some_and(|cache| cache.has_images)
         {
             // Image commands and rasters already carry their exact device
@@ -270,7 +288,7 @@ impl PreviewRenderer {
             project.verify_unchanged()?;
             return Ok(());
         }
-        if self.recordable == Some(true)
+        if self.scene == Some(Scene::Recorded)
             && self.cache.as_ref().is_some_and(|cache| !cache.has_images)
         {
             let plan =
@@ -300,23 +318,34 @@ impl PreviewRenderer {
         if options.refresh_pages {
             runtime.refresh_pages();
         }
-        fn static_value(value: &Value) -> bool {
+        fn uses_dynamic_paint(value: &Value) -> bool {
             match value {
                 Value::Object(fields) => {
-                    !matches!(
+                    matches!(
                         fields.get("type").and_then(Value::as_str),
-                        Some("shader" | "mesh_gradient" | "background_blur")
-                    ) && fields.values().all(static_value)
+                        Some("shader" | "background_blur")
+                    ) || fields.values().any(uses_dynamic_paint)
                 }
-                Value::Array(values) => values.iter().all(static_value),
-                _ => true,
+                Value::Array(values) => values.iter().any(uses_dynamic_paint),
+                _ => false,
             }
         }
         let cache = self.cache.get_or_insert_with(|| RasterCache::new(snapshot));
-        let recordable = *self.recordable.get_or_insert_with(|| {
-            snapshot.items.iter().all(|item| {
-                item.node.kind() != "browser" && item.node.properties.values().all(static_value)
-            }) && !cache.background_nodes.iter().any(|flag| *flag)
+        let scene = *self.scene.get_or_insert_with(|| {
+            if cache.background_nodes.iter().any(|flag| *flag)
+                || snapshot.items.iter().any(|item| {
+                    item.node.kind() == "browser"
+                        || item.node.properties.values().any(uses_dynamic_paint)
+                })
+            {
+                Scene::Dynamic
+            } else if !cache.mesh_sizes.is_empty() {
+                // Static mesh scenes can retain completed viewports.
+                // Recording their scale-dependent rasters has a separate budget.
+                Scene::Mesh
+            } else {
+                Scene::Recorded
+            }
         });
         let result = (|| {
             let raster = raster_impl_cached(
@@ -325,10 +354,10 @@ impl PreviewRenderer {
                 options,
                 Some(&mut *runtime),
                 Some(cache),
-                recordable,
+                scene != Scene::Dynamic,
                 self.viewport,
             )?;
-            let output = finish(raster, recordable)?;
+            let output = finish(raster, scene != Scene::Dynamic)?;
             runtime.check()?;
             Ok(output)
         })();
@@ -351,6 +380,94 @@ pub(crate) fn preview_with_runtime_observed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn static_mesh_frames_can_be_retained_without_changing_native_pixels() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("design.pen");
+        let mesh = json!({
+                "type":"frame","id":"mesh","x":36.625,"y":24.375,"width":103.25,"height":58,
+                "rotation":13,"clip":true,"cornerRadius":9,"opacity":0.8,
+                "effect":{"type":"shadow","color":"#27335270","blur":13,
+                          "offset":{"x":-5.25,"y":4.375}},
+                "fill":{"type":"mesh_gradient","columns":2,"rows":2,
+                        "colors":["#F0C882C0","#8A9CF1","#36A2AA","#DC8CDD"],
+                        "points":[[0,0],[1,0],[0,1],[1,1]]},
+                "children":[
+                    {"type":"text","id":"label","x":10.5,"y":7.625,"content":"Fractional",
+                     "fontSize":14,"fill":"#243655"},
+                    {"type":"rectangle","id":"card","x":38.625,"y":26.75,"width":60,"height":23,
+                     "cornerRadius":4,"fill":"#F6F8FFA0","effect":{"type":"shadow",
+                     "color":"#17254070","blur":5.5,"offset":{"x":2.25,"y":2.875}}}
+                ]
+        });
+        let document = json!({"version":"2.22","children":[{
+            "type":"frame","id":"parent","x":-5.625,"y":7.375,"width":179,"height":122,
+            "clip":true,"fill":"#F8FAFCC0","cornerRadius":11,"children":[mesh]
+        }]});
+        std::fs::write(&path, document.to_string()).unwrap();
+        let store = crate::store::Store::open(&path, Some(directory.path().join("data"))).unwrap();
+        let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
+        let mut runtime = crate::dynamic::DynamicRuntime::new(store.data_dir());
+        for viewport @ [width, height] in [[193, 147], [640, 480]] {
+            let mut preview = PreviewRenderer::default();
+            preview.set_viewport(viewport);
+            for background in [Color::TRANSPARENT, Color::WHITE] {
+                for scale in [0.575, 1.25, 2.125] {
+                    for (x, y) in [(-25.75, -17.375), (16.375, 12.625), (108.25, 33.5)] {
+                        let options = RenderOptions {
+                            region: Some(Rect::new(
+                                x,
+                                y,
+                                width as f32 / scale,
+                                height as f32 / scale,
+                            )),
+                            scale,
+                            background,
+                            ..Default::default()
+                        };
+                        let native = raster_impl_cached(
+                            &project,
+                            &snapshot,
+                            &options,
+                            None,
+                            None,
+                            false,
+                            Some(viewport),
+                        )
+                        .unwrap();
+                        let (expected, _) = PreviewPixels::from_image(&native.image).unwrap();
+                        let frame = preview
+                            .render(&project, &snapshot, &options, &mut runtime, None, None)
+                            .unwrap();
+                        assert!(frame.retain_raw_pixels);
+                        assert!(!preview.prepares_initial_frames());
+                        assert_eq!(
+                            crate::document::hash(&frame.pixels.rgba),
+                            crate::document::hash(&expected.rgba),
+                            "viewport={viewport:?}, scale={scale}, camera=({x}, {y}), background={background:?}"
+                        );
+                    }
+                }
+            }
+            let cache = preview.cache.unwrap();
+            let size = (width as i32, height as i32);
+            let parallel = raster_pool::RasterPool::parts(size) > 1;
+            assert_eq!(!cache.pictures.borrow().is_empty(), parallel);
+            if parallel {
+                let bytes = cache.mesh_picture_bytes(2.125, size).unwrap();
+                assert!(bytes > 0);
+                assert!(cache.mesh_picture_bytes(64.0, size).is_none());
+                assert!(
+                    cache
+                        .pictures
+                        .borrow()
+                        .values()
+                        .all(|picture| picture.bytes > 0)
+                );
+            }
+        }
+    }
 
     #[test]
     fn preview_viewport_preserves_pixels_at_fractional_zoom_without_resampling() {
@@ -522,7 +639,7 @@ mod tests {
         let (project, snapshot) = crate::service::layout_snapshot(&store, &[], None, None).unwrap();
         let mut retained = PreviewRenderer {
             cache: Some(RasterCache::new(&snapshot)),
-            recordable: Some(true),
+            scene: Some(Scene::Recorded),
             viewport: None,
         };
         let options = RenderOptions {
@@ -694,7 +811,7 @@ mod tests {
                     )
                     .unwrap();
                     let anchored_clock = retained.cache.as_ref().and_then(|cache| {
-                        (images && retained.recordable == Some(true))
+                        (images && retained.scene == Some(Scene::Recorded))
                             .then(|| cache.picture_clock.get())
                     });
                     let mut replayed = retained.fork();

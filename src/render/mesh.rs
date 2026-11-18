@@ -368,6 +368,10 @@ fn complexity() -> Error {
         .details(json!({"max_subdivisions":MAX_SUBDIVISIONS,"max_vertices":MAX_VERTICES}))
 }
 
+pub(super) fn raster_size(width: f32, height: f32, scale: f32) -> [u64; 2] {
+    [width, height].map(|extent| (f64::from(extent) * f64::from(scale)).ceil().max(1.0) as u64)
+}
+
 pub(super) fn draw(
     renderer: &mut Renderer<'_>,
     node: &ResolvedNode,
@@ -399,14 +403,8 @@ pub(super) fn paint(
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
         return Ok(());
     }
-    let (width, height) = raster_dimensions(
-        (rect.width() as f64 * renderer.raster_scale as f64)
-            .ceil()
-            .max(1.0) as u64,
-        (rect.height() as f64 * renderer.raster_scale as f64)
-            .ceil()
-            .max(1.0) as u64,
-    )?;
+    let [width, height] = raster_size(rect.width(), rect.height(), renderer.raster_scale);
+    let (width, height) = raster_dimensions(width, height)?;
     let mut columns = vec![1; mesh.columns - 1];
     let mut rows = vec![1; mesh.rows - 1];
     let mut patches = Vec::with_capacity(columns.len() * rows.len());
