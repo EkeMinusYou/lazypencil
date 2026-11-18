@@ -372,7 +372,7 @@ fn paint(value: &Value, path: &str, authored: bool) -> Result<()> {
         }
     };
     let properties = fields(value, path, allowed)?;
-    blend(properties.get("blendMode"), path)?;
+    blend(properties.get("blendMode"), path, authored)?;
     for key in ["opacity", "rotation", "columns", "rows"] {
         if let Some(value) = properties.get(key) {
             number(value, &format!("{path}.{key}"), authored)?;
@@ -471,7 +471,7 @@ fn effect(value: &Value, path: &str, authored: bool) -> Result<()> {
         }
     };
     let properties = fields(value, path, allowed)?;
-    blend(properties.get("blendMode"), path)?;
+    blend(properties.get("blendMode"), path, authored)?;
     for key in ["radius", "blur"] {
         if let Some(value) = properties.get(key) {
             number(value, &format!("{path}.{key}"), authored)?;
@@ -492,32 +492,39 @@ fn effect(value: &Value, path: &str, authored: bool) -> Result<()> {
     Ok(())
 }
 
-fn blend(value: Option<&Value>, path: &str) -> Result<()> {
-    if let Some(value) = value {
-        choice(
-            value,
-            &format!("{path}.blendMode"),
-            &[
-                "normal",
-                "darken",
-                "multiply",
-                "linearBurn",
-                "colorBurn",
-                "light",
-                "screen",
-                "linearDodge",
-                "colorDodge",
-                "overlay",
-                "softLight",
-                "hardLight",
-                "difference",
-                "exclusion",
-                "hue",
-                "saturation",
-                "color",
-                "luminosity",
-            ],
-        )?;
+fn blend(value: Option<&Value>, path: &str, authored: bool) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if authored
+        && value
+            .as_str()
+            .is_some_and(|value| value.starts_with('$') && value.len() > 1)
+    {
+        return Ok(());
     }
-    Ok(())
+    choice(
+        value,
+        &format!("{path}.blendMode"),
+        &[
+            "normal",
+            "darken",
+            "multiply",
+            "linearBurn",
+            "colorBurn",
+            "light",
+            "screen",
+            "linearDodge",
+            "colorDodge",
+            "overlay",
+            "softLight",
+            "hardLight",
+            "difference",
+            "exclusion",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity",
+        ],
+    )
 }

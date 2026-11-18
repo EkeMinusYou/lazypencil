@@ -334,24 +334,16 @@ fn blended_shadow_after_background_blur_does_not_reapply_transparent_background_
 }
 
 #[test]
-fn invalid_active_blend_modes_fail_but_disabled_effects_do_not_evaluate_them() {
+fn invalid_blend_modes_are_rejected_even_in_disabled_effects() {
     for mode in [json!(17), Value::Null, json!("not-a-mode")] {
         for shadow_type in ["inner", "outer"] {
-            let effect = json!({"type":"shadow","shadowType":shadow_type,"blendMode":mode});
-            let error=try_render(json!([{"id":"box","type":"rectangle","width":20,"height":20,"fill":"#FFFFFF","effect":effect}]),Default::default()).err().unwrap();
-            assert_eq!(
-                error.code,
-                if mode.is_string() {
-                    "UNSUPPORTED_FEATURE"
-                } else {
-                    "INVALID_DOCUMENT"
-                }
-            );
-            assert_eq!(error.details.as_ref().unwrap()["node_id"], "box");
-            assert_eq!(error.details.as_ref().unwrap()["property"], "effect");
-            let mut disabled = effect;
-            disabled["enabled"] = json!(false);
-            try_render(json!([{"id":"box","type":"rectangle","width":20,"height":20,"fill":"#FFFFFF","effect":disabled}]),Default::default()).unwrap();
+            for enabled in [true, false] {
+                let effect = json!({"type":"shadow","shadowType":shadow_type,"blendMode":mode,"enabled":enabled});
+                let error=try_render(json!([{"id":"box","type":"rectangle","width":20,"height":20,"fill":"#FFFFFF","effect":effect}]),Default::default()).err().unwrap();
+                assert_eq!(error.code, "INVALID_DOCUMENT");
+                assert_eq!(error.details.as_ref().unwrap()["node_id"], "box");
+                assert_eq!(error.details.as_ref().unwrap()["property"], "effect");
+            }
         }
     }
     for kind in [json!("unknown"), json!(17), Value::Null] {
