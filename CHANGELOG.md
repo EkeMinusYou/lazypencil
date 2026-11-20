@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.13
+
+- Configure the TUI preview frame cache with `tui.preview.cache_mib` and the retained MCP payload per connection with `mcp.retained_mib`.
+- Speed up large macOS previews by reusing decoded images and exact mesh rasters, rendering static meshes in parallel bands, drawing opaque text with one glyph mask, and completing fast camera frames during pinch gestures.
+
 ## 0.2.12
 
 - Speed up zoom and pan in large macOS previews by reusing static mesh frames, limiting work on shadow and text layers, and prioritizing the latest view during short pinch gestures.
