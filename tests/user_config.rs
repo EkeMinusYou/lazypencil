@@ -656,6 +656,47 @@ fn user_configuration_rejects_unsupported_scopes_and_reports_no_source_secrets()
 }
 
 #[test]
+fn mcp_retention_settings_are_user_owned_and_validated() {
+    let f = Fixture::new();
+    let show = ["config", "show", "--user"];
+    assert_eq!(f.data(&show)["settings"]["mcp"]["retained_mib"], 256);
+    f.data(&["config", "init", "--user"]);
+    let template = fs::read_to_string(f.user.join("config.toml")).unwrap();
+    assert!(template.contains("# [mcp]"));
+    assert!(template.contains("# retained_mib = 256"));
+    let schema = f.data(&["config", "schema", "--user"]);
+    let limit = &schema["$defs"]["McpSettings"]["properties"]["retained_mib"];
+    assert_eq!(limit["minimum"].as_f64(), Some(1.0));
+    assert_eq!(limit["maximum"].as_f64(), Some(2048.0));
+    assert!(
+        f.data(&["config", "schema"])["properties"]
+            .get("mcp")
+            .is_none()
+    );
+
+    for value in [1, 512, 2048] {
+        f.settings(&format!("[mcp]\nretained_mib = {value}\n"));
+        assert_eq!(f.data(&show)["settings"]["mcp"]["retained_mib"], value);
+    }
+    for invalid in ["0", "2049", "-1", "1.5", "'large'"] {
+        f.settings(&format!("[mcp]\nretained_mib = {invalid}\n"));
+        let output = f.cli(&["mcp"]);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("CONFIGURATION_ERROR"), "{stderr}");
+    }
+
+    f.settings("[mcp]\nretained_mib = 512\n");
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[mcp]\nretained_mib = 2\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn native_user_configuration_commands_create_once_and_project_defaults_inherit() {
     let f = Fixture::new();
     let missing = f.data(&["config", "show", "--user"]);

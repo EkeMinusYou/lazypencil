@@ -75,20 +75,17 @@ pub struct Options {
 }
 
 pub fn serve(options: Options) -> Result<()> {
-    let prepared = workspace::Workspace::new(options)?;
-    let has_preview = prepared.has_preview();
-    let server_usage = prepared.usage();
-    let options = prepared.into_options();
+    let mut documents = workspace::Workspace::new(options)?;
+    let has_preview = documents.has_preview();
+    let server_usage = documents.usage();
     let (sender, mut receiver) = mpsc::channel::<Job>(16);
     let connection = tokio_util::sync::CancellationToken::new();
     let worker = std::thread::Builder::new()
         .name("lazypencil-workspace".into())
-        .spawn(move || -> Result<()> {
-            let mut documents = workspace::Workspace::new(options)?;
+        .spawn(move || {
             while let Some(job) = receiver.blocking_recv() {
                 documents.dispatch(job);
             }
-            Ok(())
         })
         .map_err(|e| Error::new("IO_ERROR", format!("Cannot start document worker: {e}")))?;
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -119,7 +116,7 @@ pub fn serve(options: Options) -> Result<()> {
     runtime.shutdown_timeout(Duration::from_secs(1));
     worker
         .join()
-        .map_err(|_| Error::new("INTERNAL_ERROR", "Document worker terminated unexpectedly"))??;
+        .map_err(|_| Error::new("INTERNAL_ERROR", "Document worker terminated unexpectedly"))?;
     result
 }
 

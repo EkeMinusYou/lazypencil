@@ -31,7 +31,8 @@ For each field, precedence is **explicit project value > explicit user value >
 built-in default**. Command-line options take precedence where available. Arrays
 replace inherited arrays: `files = []`, for example, clears inherited font files.
 
-TUI controls, attachment budgets and conversation retention belong in user settings.
+TUI controls, attachment budgets, conversation retention and MCP connection limits
+belong in user settings.
 Projects can set fonts, runtime policy, agent defaults and design resources.
 Project-supplied agent executables and design instructions each require a local
 trust decision, described below.
@@ -361,6 +362,21 @@ can commit some deletions before a later failure; completed deletions stay appli
 Repeat `cleanup --all` for interrupted file removal. Maintenance can operate even
 when an original document has moved or disappeared. Each pass has a 30-second
 budget and limits of 10,000 records and 100,000 scanned entries.
+
+## MCP connection retention
+
+Set the total budget for retained calculations, failure captures, document
+listings and dynamic caches in the user `config.toml`.
+
+```toml
+[mcp]
+retained_mib = 512
+```
+
+The default is 256 MiB, and accepted values are whole MiB from 1 to 2,048.
+All documents in a connection share this budget. Start a new MCP connection to
+apply changes. The budget accounts for retained payload. Queued requests and
+document expansion have their own limits. See [MCP limits](mcp.md#snapshots-limits-and-cancellation).
 
 ## Document expansion budget
 

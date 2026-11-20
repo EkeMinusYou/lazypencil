@@ -18,6 +18,7 @@ pub mod agents;
 pub mod attachments;
 pub mod conversations;
 pub mod keys;
+pub mod mcp;
 pub mod mode;
 pub mod runtime;
 pub(crate) mod trust;
@@ -89,6 +90,7 @@ pub struct UserConfig {
     pub tui: keys::TuiSettings,
     pub conversations: conversations::ConversationSettings,
     pub attachments: attachments::AttachmentSettings,
+    pub mcp: mcp::McpSettings,
 }
 impl Default for UserConfig {
     fn default() -> Self {
@@ -100,6 +102,7 @@ impl Default for UserConfig {
             tui: Default::default(),
             conversations: Default::default(),
             attachments: Default::default(),
+            mcp: Default::default(),
         }
     }
 }
@@ -176,6 +179,7 @@ struct UserFile {
     tui: keys::TuiSettings,
     conversations: conversations::ConversationSettings,
     attachments: attachments::AttachmentSettings,
+    mcp: mcp::McpSettings,
 }
 impl Default for UserFile {
     fn default() -> Self {
@@ -187,6 +191,7 @@ impl Default for UserFile {
             tui: Default::default(),
             conversations: Default::default(),
             attachments: Default::default(),
+            mcp: Default::default(),
         }
     }
 }
@@ -664,6 +669,8 @@ impl UserSource {
                     result.settings.conversations = parsed.conversations;
                     parsed.attachments.validate()?;
                     result.settings.attachments = parsed.attachments;
+                    parsed.mcp.validate()?;
+                    result.settings.mcp = parsed.mcp;
                     result.fonts = parsed.fonts;
                     result.runtime = parsed.runtime;
                     result.source = Some((path, bytes));
@@ -1150,12 +1157,13 @@ fn write_configuration(path: &Path, scope: &str) -> Result<Value> {
         tempfile::NamedTempFile::new_in(parent).map_err(|error| Error::io(parent, error))?;
     let template = if scope == "user" {
         format!(
-            "{TEMPLATE}{}{}{}{}{}",
+            "{TEMPLATE}{}{}{}{}{}{}",
             runtime::TEMPLATE,
             agents::TEMPLATE,
             keys::TEMPLATE,
             conversations::TEMPLATE,
-            attachments::TEMPLATE
+            attachments::TEMPLATE,
+            mcp::TEMPLATE
         )
     } else {
         format!(

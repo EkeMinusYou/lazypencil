@@ -30,6 +30,54 @@ mod http_image_reference;
 mod scheduling;
 
 #[test]
+fn mcp_retention_budget_is_captured_per_connection() {
+    let temp = TempDir::new().unwrap();
+    let user = temp.path().join("user");
+    let directory = temp.path().join("documents");
+    fs::create_dir(&user).unwrap();
+    fs::create_dir(&directory).unwrap();
+    let config = user.join("config.toml");
+    fs::write(&config, "[mcp]\nretained_mib = 1\n").unwrap();
+
+    // Each listing fits in 1 MiB, while two listings together need more.
+    let padding = "x".repeat(220);
+    for index in 0..2_000 {
+        fs::write(directory.join(format!("{padding}-{index:04}.pen")), "").unwrap();
+    }
+    let connect = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lazypencil"));
+        command
+            .env("LAZYPENCIL_CONFIG_DIR", &user)
+            .arg("--data-dir")
+            .arg(temp.path().join("data"))
+            .arg("mcp");
+        Client::from_command(command)
+    };
+    let list = || json!({"directory":directory,"limit":1});
+    let page = |cursor: &Value| json!({"directory":directory,"limit":1,"cursor":cursor});
+
+    let mut client = connect();
+    let first = client.data("list_documents", list());
+    assert_eq!(first["total_matches"], 2_000);
+    fs::write(&config, "[mcp]\nretained_mib = 2\n").unwrap();
+    client.data("list_documents", list());
+    let evicted = client.call("list_documents", page(&first["next_cursor"]));
+    assert_eq!(
+        evicted["structuredContent"]["error"]["code"],
+        "SNAPSHOT_UNAVAILABLE"
+    );
+    client.finish();
+
+    let mut client = connect();
+    let first = client.data("list_documents", list());
+    client.data("list_documents", list());
+    let next = client.data("list_documents", page(&first["next_cursor"]));
+    assert_eq!(next["total_matches"], 2_000);
+    assert_ne!(next["documents"], first["documents"]);
+    client.finish();
+}
+
+#[test]
 fn mcp_property_typos_reject_edits_without_changing_source_or_history() {
     let (_temp, file, data) = fixture();
     let source = json!({"version":"2.22","children":[

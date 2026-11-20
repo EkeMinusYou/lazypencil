@@ -128,19 +128,17 @@ impl Workspace {
                 path,
             )?;
         }
+        let settings = crate::config::mcp::load()?;
         Ok(Self {
             options,
             documents: HashMap::new(),
             retired: Vec::new(),
-            resources: std::sync::Arc::new(resources::Resources::default()),
+            resources: std::sync::Arc::new(resources::Resources::new(settings.retained_bytes())),
             paths: HashMap::new(),
             listings: vec![],
             owned,
             usage,
         })
-    }
-    pub fn into_options(self) -> Options {
-        self.options
     }
     pub fn usage(&self) -> Option<crate::guidance::usage::UsageAccess> {
         self.usage.clone()

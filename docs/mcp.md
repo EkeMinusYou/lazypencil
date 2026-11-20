@@ -694,14 +694,15 @@ inputs before continuing.
 | --- | --- |
 | Tool arguments or structured results over 4 MiB | Reduce the request or page the result |
 | PNG content over 8 MiB | Reduce scale or export a smaller region |
-| Retained connection payload over 256 MiB | Close unused documents or calculate after earlier work is released |
+| Retained connection payload over the configured limit (256 MiB by default) | Close unused documents or calculate after earlier work is released |
 | More than 64 open/retiring handles | Close documents before opening more |
 | More than four document owners with persistent runtimes | Wait for idle cleanup or close an unused document |
 
 Rendering and runtime limits also apply; see [graphics](graphics.md#large-exports)
 and [runtime settings](configuration.md#browser-shader-and-raster-cache-limits).
-Retained payload accounting covers caches and captured inputs, while native and
-browser-process memory have separate limits.
+Retained payload accounting covers caches and captured inputs. Configure this
+budget in user settings with [`mcp.retained_mib`](configuration.md#mcp-connection-retention).
+Native and browser-process memory have separate limits.
 
 MCP cancellation stops queued work before execution and checks running work at
 safe boundaries. Cancellation before document replacement keeps the original

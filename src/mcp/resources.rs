@@ -164,7 +164,6 @@ async fn acquire(
     }
 }
 
-pub(super) const MAX_RETAINED_BYTES: usize = 256 * 1024 * 1024;
 #[cfg(feature = "rendering")]
 pub(super) const MAX_RUNTIME_OWNERS: usize = 4;
 pub(super) struct Resources {
@@ -173,14 +172,20 @@ pub(super) struct Resources {
     #[cfg(feature = "rendering")]
     pub runtimes: Arc<Budget>,
 }
-impl Default for Resources {
-    fn default() -> Self {
+impl Resources {
+    pub fn new(retained_bytes: usize) -> Self {
         Self {
             execution: Arc::new(tokio::sync::Semaphore::new(2)),
-            retained: Budget::new(MAX_RETAINED_BYTES),
+            retained: Budget::new(retained_bytes),
             #[cfg(feature = "rendering")]
             runtimes: Budget::new(MAX_RUNTIME_OWNERS),
         }
+    }
+}
+#[cfg(test)]
+impl Default for Resources {
+    fn default() -> Self {
+        Self::new(crate::config::mcp::McpSettings::default().retained_bytes())
     }
 }
 pub(super) struct Budget {
@@ -535,7 +540,7 @@ mod tests {
         // Simulate other retained owners filling all remaining connection capacity.
         let pressure = resources
             .retained
-            .reserve(MAX_RETAINED_BYTES - retained)
+            .reserve(resources.retained.limit - retained)
             .unwrap();
         let denied = request(
             &mut actors[1],
