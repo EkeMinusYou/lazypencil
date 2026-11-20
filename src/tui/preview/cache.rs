@@ -1,8 +1,6 @@
 //! Exact completed native frames, invalidated with the captured project.
 use super::*;
 
-// Two raw HiDPI viewports must fit alongside prepared compressed neighbors.
-const MAX_BYTES: usize = 256 * 1024 * 1024;
 const MAX_ENTRIES: usize = 64;
 const MAX_RECENT: usize = 2;
 
@@ -16,6 +14,7 @@ struct Entry {
 pub(super) struct Frames {
     entries: Vec<Entry>,
     bytes: usize,
+    capacity: usize,
     font: ratatui_image::FontSize,
 }
 
@@ -23,12 +22,17 @@ impl Frames {
     pub(super) fn retained(&self) -> (usize, usize) {
         (self.entries.len(), self.bytes)
     }
-    pub(super) fn new(font: ratatui_image::FontSize) -> Self {
+    pub(super) fn new(font: ratatui_image::FontSize, capacity: usize) -> Self {
         Self {
             entries: Vec::new(),
             bytes: 0,
+            capacity,
             font,
         }
+    }
+
+    pub(super) fn enabled(&self) -> bool {
+        self.capacity != 0
     }
 
     pub(super) fn clear(&mut self) {
@@ -90,6 +94,9 @@ impl Frames {
         let Some(encoded) = preview.protocol.native_bytes() else {
             return;
         };
+        if encoded >= self.capacity {
+            return;
+        }
         let pixels = self.pixels(cells);
         if let Some(index) = self.entries.iter().position(|entry| {
             entry.cells == cells
@@ -117,7 +124,7 @@ impl Frames {
             (preview.image.clone(), pixels.retained_bytes())
         };
         let bytes = source_bytes.saturating_add(encoded);
-        if bytes > MAX_BYTES {
+        if bytes > self.capacity {
             return;
         }
         if !compress {
@@ -136,7 +143,7 @@ impl Frames {
                 self.bytes -= self.entries.remove(index).bytes;
             }
         }
-        while self.entries.len() >= MAX_ENTRIES || self.bytes + bytes > MAX_BYTES {
+        while self.entries.len() >= MAX_ENTRIES || self.bytes + bytes > self.capacity {
             self.bytes -= self.entries.remove(0).bytes;
         }
         self.bytes += bytes;

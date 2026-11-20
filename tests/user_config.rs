@@ -89,6 +89,37 @@ fn preview_node_names_default_to_visible_and_are_user_owned() {
 }
 
 #[test]
+fn preview_cache_budget_is_user_owned_and_validated() {
+    let f = Fixture::new();
+    let show = ["config", "show", "--user"];
+    let cache = || f.data(&show)["settings"]["tui"]["preview"]["cache_mib"].clone();
+    assert_eq!(cache(), 256);
+    f.data(&["config", "init", "--user"]);
+    let template = fs::read_to_string(f.user.join("config.toml")).unwrap();
+    assert!(template.contains("# cache_mib = 256"));
+    let schema = f.data(&["config", "schema", "--user"]);
+    let limit = &schema["$defs"]["PreviewSettings"]["properties"]["cache_mib"];
+    assert_eq!(limit["minimum"].as_f64(), Some(0.0));
+    assert_eq!(limit["maximum"].as_f64(), Some(256.0));
+
+    for value in [0, 64, 256] {
+        f.settings(&format!("[tui.preview]\ncache_mib = {value}\n"));
+        assert_eq!(cache(), value);
+    }
+    for value in ["-1", "257", "1.5", "'large'"] {
+        f.settings(&format!("[tui.preview]\ncache_mib = {value}\n"));
+        assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+    }
+    f.settings("");
+    fs::write(
+        f.project.join("lazypencil.toml"),
+        "[tui.preview]\ncache_mib = 64\n",
+    )
+    .unwrap();
+    assert_eq!(f.snapshot().err().unwrap().code, "CONFIGURATION_ERROR");
+}
+
+#[test]
 fn mouse_settings_are_user_owned_and_reserve_preview_space_only_when_enabled() {
     let f = Fixture::new();
     let shown = f.data(&["config", "show", "--user"]);

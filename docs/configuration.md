@@ -91,18 +91,24 @@ appear in `font_diagnostics`; repair or remove them before rendering. See
 [fonts](fonts.md) for coverage, formats and the project-level
 `font_lock = "fonts.lock.json"` option.
 
-## Preview node names
+## Preview preferences
 
-Set the initial visibility of root names in user settings:
+Set initial preview preferences in the user configuration.
 
 ```toml
 [tui.preview]
 show_node_names = true
+cache_mib = 256
 ```
 
-The default is `true`. Toggle names for the current session with **View · Toggle
+Node names default to visible. Toggle names for the current session with **View · Toggle
 node names** in the command palette. This changes the preview, while exported
 images contain only the design.
+
+`cache_mib` accepts whole MiB from 0 to 256 and defaults to 256. The setting
+covers the prepared and recent frames used for zoom and pan. Smaller budgets
+keep fewer frames and may increase redraws. Zero disables frame reuse and
+preparation. Restart the TUI to apply changes.
 
 Set `[tui] theme` to `auto`, `dark`, `light` or `monochrome`. `auto` follows the
 terminal background. `tui --theme NAME` selects a theme for one launch. See

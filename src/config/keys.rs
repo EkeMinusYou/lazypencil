@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const TEMPLATE: &str = "\n[tui]\n# auto, dark, light, or monochrome; auto follows the terminal background.\n# theme = \"auto\"\n\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.preview]\n# show_node_names = true\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# resize_panels = [\"Alt+r\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# native_pinch = true\n# native_scroll = true\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
+pub const TEMPLATE: &str = "\n[tui]\n# auto, dark, light, or monochrome; auto follows the terminal background.\n# theme = \"auto\"\n\n[tui.layout]\n# Positive relative widths; they do not need to sum to 100.\n# nodes = 22\n# preview = 53\n# agent = 25\n\n[tui.preview]\n# show_node_names = true\n# cache_mib = 256\n\n[tui.keys]\n# Each explicit list replaces that action's defaults.\n# submit = [\"Enter\", \"Ctrl+Enter\", \"Ctrl+s\"]\n# paste = [\"Ctrl+v\", \"Alt+v\"]\n\n[tui.navigation]\n# next_panel = [\"Tab\"]\n# previous_panel = [\"Shift+Tab\"]\n# help = [\"F1\", \"?\"]\n# commands = [\"Alt+p\"]\n# resize_panels = [\"Alt+r\"]\n# pan_left = [\"Left\", \"h\"]\n# pan_right = [\"Right\", \"l\"]\n# zoom_in = [\"+\", \"=\"]\n# zoom_out = [\"-\"]\n# play_pause = [\"p\"]\n\n[tui.mouse]\n# enabled = true\n# show_controls = false\n# native_pinch = true\n# native_scroll = true\n# wheel_zoom = false\n# scroll_step = 2\n# zoom_step = 1.1\n";
 
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, clap::ValueEnum,
@@ -39,19 +39,38 @@ pub struct TuiSettings {
 #[serde(default, deny_unknown_fields)]
 pub struct PreviewSettings {
     pub show_node_names: bool,
+    /// Budget for retaining prepared and recent preview frames. Zero disables reuse.
+    #[schemars(range(min = 0, max = 256))]
+    pub cache_mib: usize,
 }
 
 impl Default for PreviewSettings {
     fn default() -> Self {
         Self {
             show_node_names: true,
+            cache_mib: 256,
         }
+    }
+}
+
+impl PreviewSettings {
+    fn validate(&self) -> Result<()> {
+        if self.cache_mib > 256 {
+            return Err(invalid("tui.preview.cache_mib must be within 0..=256"));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "tui")]
+    pub(crate) fn cache_bytes(&self) -> usize {
+        self.cache_mib * 1024 * 1024
     }
 }
 
 impl TuiSettings {
     pub fn validate(&self) -> Result<()> {
         self.layout.validate()?;
+        self.preview.validate()?;
         self.keys.validate()?;
         self.mouse.validate()?;
         self.navigation.validate_pointer(self.mouse.enabled)?;

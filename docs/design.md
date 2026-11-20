@@ -153,7 +153,7 @@ changes invalidate incompatible entries.
 
 | Cache | Default budget | Contents |
 | --- | --- | --- |
-| Prepared frames and upload sources | 256 MiB | Exact camera frames and up to two recent raw sources |
+| Prepared frames and upload sources | 256 MiB, configurable | Exact camera frames and up to two recent raw sources |
 | Native raster cache | 128 MiB, eight entries | Premultiplied device-pixel rasters |
 | Local Kitty transfer files | 256 MiB | Immutable RGBA payloads for negotiated file uploads |
 

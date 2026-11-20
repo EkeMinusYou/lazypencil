@@ -207,11 +207,12 @@ pub fn run_with_selection(
             args.theme.unwrap_or(settings.theme),
         )?,
     };
-    let worker = Worker::start(
+    let worker = Worker::start_with_cache(
         app.conversation.store().clone(),
         args.prompt.fonts.clone(),
         screen.picker.clone(),
         id,
+        settings.preview.cache_bytes(),
     )?;
     worker.set_canvas_background(theme::canvas_background());
     let runtime = tokio::runtime::Builder::new_current_thread()

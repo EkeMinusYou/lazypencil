@@ -185,11 +185,28 @@ pub struct Worker {
     thread: Option<JoinHandle<()>>,
 }
 impl Worker {
+    #[cfg(test)]
     pub fn start(
         store: Store,
         fonts: Vec<PathBuf>,
         picker: Backend,
         image_id: u32,
+    ) -> Result<Self> {
+        Self::start_with_cache(
+            store,
+            fonts,
+            picker,
+            image_id,
+            crate::config::keys::PreviewSettings::default().cache_bytes(),
+        )
+    }
+
+    pub(super) fn start_with_cache(
+        store: Store,
+        fonts: Vec<PathBuf>,
+        picker: Backend,
+        image_id: u32,
+        cache_bytes: usize,
     ) -> Result<Self> {
         let shared = Arc::new(Shared {
             canvas_background: Mutex::new(picker.canvas_background()),
@@ -212,7 +229,7 @@ impl Worker {
             .stack_size(crate::project::SCENE_WORKER_STACK_BYTES)
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    work(&state, &store, &fonts, &picker, image_id)
+                    work(&state, &store, &fonts, &picker, image_id, cache_bytes)
                 }));
                 if result.is_err() {
                     let generation = state.generation.load(Ordering::Relaxed);
@@ -356,7 +373,14 @@ impl Drop for Worker {
     }
 }
 
-fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, image_id: u32) {
+fn work(
+    shared: &Shared,
+    store: &Store,
+    fonts: &[PathBuf],
+    picker: &Backend,
+    image_id: u32,
+    cache_bytes: usize,
+) {
     let _thread_pool = crate::native_memory::AutoreleasePool::new();
     let mut cached: Option<(Project, crate::layout::LayoutSnapshot)> = None;
     let mut document_preview_time = None;
@@ -364,7 +388,7 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
     let mut renderer = crate::render::PreviewRenderer::default();
     let mut prepared_camera = None;
     let mut first_camera_frame = true;
-    let mut frames = cache::Frames::new(picker.font_size());
+    let mut frames = cache::Frames::new(picker.font_size(), cache_bytes);
     let mut previous_view = None;
     let mut predicted_view = None;
     let mut speculation: Option<(View, crate::render::PreviewRenderer)> = None;
@@ -562,8 +586,10 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
                 && !picker.tmux_detected();
             // First show the scene when each neighbor needs a fresh raster.
             // Recent frames and motion prediction can warm the cache afterward.
-            let prepare_camera =
-                static_camera && first_camera_frame && renderer.prepares_initial_frames();
+            let prepare_camera = frames.enabled()
+                && static_camera
+                && first_camera_frame
+                && renderer.prepares_initial_frames();
             let nodes = navigation.get_or_insert_with(|| layout.items.iter().map(|item| Node {
                 id: item.record.id.clone(), name: item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id).into(), display_name: super::nodes::node_label(item.node.properties.get("name").and_then(Value::as_str).unwrap_or(&item.record.id)), bounds: item.record.visual_bounds,
                 hit: super::selection::HitGeometry {
@@ -697,7 +723,8 @@ fn work(shared: &Shared, store: &Store, fonts: &[PathBuf], picker: &Backend, ima
             .as_ref()
             .ok()
             .filter(|preview| {
-                !preview.attachment
+                frames.enabled()
+                    && !preview.attachment
                     && !preview.time_dependent
                     && !preview.live_pages
                     && preview.protocol.native_bytes().is_some()
@@ -1046,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn native_worker_reuses_completed_mesh_frames_after_a_camera_round_trip() {
+    fn native_worker_respects_the_frame_cache_budget_on_camera_round_trips() {
         let directory = TempDir::new().unwrap();
         let document = directory.path().join("design.pen");
         std::fs::write(
@@ -1060,7 +1087,6 @@ mod tests {
         )
         .unwrap();
         let store = Store::open(&document, Some(directory.path().join("data"))).unwrap();
-        let worker = Worker::start(store, vec![], Backend::native_for_test(), 175).unwrap();
         let original = View {
             center: [100.25, 60.75],
             zoom: Some(1.375),
@@ -1073,33 +1099,46 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async {
-                let mut original_pixels = None;
-                for (index, view) in [original, panned, original, panned].into_iter().enumerate() {
-                    let generation = index as u64 + 1;
-                    worker.request(Request {
-                        generation,
-                        cells: Size::new(32, 12),
-                        view,
-                        refresh: false,
-                        refresh_pages: false,
-                        check_only: false,
-                        attachment: None,
-                    });
-                    let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
-                        .await
-                        .unwrap();
-                    assert_eq!(output.generation, generation);
-                    let preview = output.result.unwrap();
-                    assert_eq!(preview.view, view);
-                    assert!(matches!(preview.image, PreviewImage::Pixels(_)));
-                    assert_eq!(preview.frame_time.is_zero(), index >= 2);
-                    if index == 0 {
-                        original_pixels = Some(preview.image.bitmap().unwrap());
-                    } else if index == 2 {
-                        assert_eq!(
-                            preview.image.bitmap().unwrap(),
-                            original_pixels.take().unwrap()
-                        );
+                let default = crate::config::keys::PreviewSettings::default().cache_bytes();
+                for (budget, reuses_frames) in [(default, true), (0, false), (1, false)] {
+                    let worker = Worker::start_with_cache(
+                        store.clone(),
+                        vec![],
+                        Backend::native_for_test(),
+                        175,
+                        budget,
+                    )
+                    .unwrap();
+                    let mut original_pixels = None;
+                    for (index, view) in
+                        [original, panned, original, panned].into_iter().enumerate()
+                    {
+                        let generation = index as u64 + 1;
+                        worker.request(Request {
+                            generation,
+                            cells: Size::new(32, 12),
+                            view,
+                            refresh: false,
+                            refresh_pages: false,
+                            check_only: false,
+                            attachment: None,
+                        });
+                        let output = tokio::time::timeout(Duration::from_secs(15), worker.next())
+                            .await
+                            .unwrap();
+                        assert_eq!(output.generation, generation);
+                        let preview = output.result.unwrap();
+                        assert_eq!(preview.view, view);
+                        assert!(matches!(preview.image, PreviewImage::Pixels(_)));
+                        assert_eq!(preview.frame_time.is_zero(), reuses_frames && index >= 2);
+                        if index == 0 {
+                            original_pixels = Some(preview.image.bitmap().unwrap());
+                        } else if index == 2 {
+                            assert_eq!(
+                                preview.image.bitmap().unwrap(),
+                                original_pixels.take().unwrap()
+                            );
+                        }
                     }
                 }
             });
@@ -1338,7 +1377,10 @@ mod tests {
                     .result
                     .unwrap();
                 assert_eq!(resized.protocol.size(), Size::new(41, 16));
-                let mut recent = cache::Frames::new(Backend::native_for_test().font_size());
+                let mut recent = cache::Frames::new(
+                    Backend::native_for_test().font_size(),
+                    crate::config::keys::PreviewSettings::default().cache_bytes(),
+                );
                 let cells = Size::new(40, 16);
                 let background = Backend::native_for_test().canvas_background();
                 let dark_background = image::Rgba([20, 30, 40, 255]);
