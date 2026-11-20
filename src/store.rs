@@ -192,9 +192,12 @@ impl Store {
     }
 
     /// Verify the complete file contents without rebuilding the document tree.
-    #[cfg(any(feature = "tui", test))]
-    pub(crate) fn verify_revision(&self, expected: &str) -> Result<()> {
-        let actual = content::file_hash(&self.path, MAX_DOCUMENT_BYTES, None)?;
+    pub(crate) fn verify_revision(
+        &self,
+        expected: &str,
+        cancel: Option<&tokio_util::sync::CancellationToken>,
+    ) -> Result<()> {
+        let actual = content::file_hash(&self.path, MAX_DOCUMENT_BYTES, cancel)?;
         if actual == expected {
             Ok(())
         } else {
@@ -677,12 +680,18 @@ fn conflict(expected: &str, actual: &str) -> Error {
 }
 
 pub fn read_text(path: &Path) -> Result<String> {
-    let bytes = content::read_bounded(
-        open_regular_file(path)?,
+    let (file, metadata) = open_regular_file_with_metadata(path)?;
+    let limit_error = Error::new("INVALID_DOCUMENT", "File exceeds the size limit");
+    if metadata.len() > MAX_DOCUMENT_BYTES as u64 {
+        return Err(limit_error);
+    }
+    let bytes = content::read_bounded_with_capacity(
+        file,
         path,
         MAX_DOCUMENT_BYTES,
         None,
-        Error::new("INVALID_DOCUMENT", "File exceeds the size limit"),
+        limit_error,
+        metadata.len() as usize,
     )?;
     String::from_utf8(bytes).map_err(|e| {
         Error::new(
@@ -708,6 +717,10 @@ pub(crate) fn read_bounded_regular_file(
 }
 
 pub(crate) fn open_regular_file(path: &Path) -> Result<File> {
+    open_regular_file_with_metadata(path).map(|(file, _)| file)
+}
+
+fn open_regular_file_with_metadata(path: &Path) -> Result<(File, fs::Metadata)> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -716,17 +729,14 @@ pub(crate) fn open_regular_file(path: &Path) -> Result<File> {
         options.custom_flags(libc::O_NONBLOCK);
     }
     let file = options.open(path).map_err(|error| Error::io(path, error))?;
-    if !file
-        .metadata()
-        .map_err(|error| Error::io(path, error))?
-        .is_file()
-    {
+    let metadata = file.metadata().map_err(|error| Error::io(path, error))?;
+    if !metadata.is_file() {
         return Err(Error::new(
             "INVALID_DOCUMENT",
             "Document and asset input must be a regular file",
         ));
     }
-    Ok(file)
+    Ok((file, metadata))
 }
 
 pub fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -811,6 +821,21 @@ pub(crate) fn valid_checkpoint_id(id: &str) -> bool {
 #[cfg(test)]
 mod lock_error_tests {
     #[test]
+    fn document_reads_size_the_buffer_from_the_open_file() {
+        use super::*;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        let length = 128 * 1024 + 11;
+        file.write_all(&vec![b'a'; length]).unwrap();
+        let text = read_text(file.path()).unwrap();
+        assert_eq!(text.len(), length);
+        assert!(text.capacity() < length + 64 * 1024);
+        file.as_file()
+            .set_len(MAX_DOCUMENT_BYTES as u64 + 1)
+            .unwrap();
+        assert_eq!(read_text(file.path()).unwrap_err().code, "INVALID_DOCUMENT");
+    }
+
+    #[test]
     fn streaming_revision_checks_cover_same_length_edits_and_file_replacement() {
         use super::*;
         let directory = tempfile::TempDir::new().unwrap();
@@ -820,20 +845,29 @@ mod lock_error_tests {
         fs::write(&path, original).unwrap();
         let store = Store::open(&path, Some(directory.path().join("data"))).unwrap();
         let expected = store.read().unwrap().revision();
-        store.verify_revision(&expected).unwrap();
+        store.verify_revision(&expected, None).unwrap();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            store
+                .verify_revision(&expected, Some(&cancel))
+                .unwrap_err()
+                .code,
+            "CANCELLED"
+        );
 
         let changed = original.replace("#FF0000", "#0000FF");
         assert_eq!(changed.len(), original.len());
         fs::write(&path, &changed).unwrap();
         assert_eq!(
-            store.verify_revision(&expected).unwrap_err().code,
+            store.verify_revision(&expected, None).unwrap_err().code,
             "REVISION_CONFLICT"
         );
         atomic_replace(&path, original.as_bytes()).unwrap();
-        store.verify_revision(&expected).unwrap();
+        store.verify_revision(&expected, None).unwrap();
         fs::remove_file(&path).unwrap();
         assert_eq!(
-            store.verify_revision(&expected).unwrap_err().code,
+            store.verify_revision(&expected, None).unwrap_err().code,
             "IO_ERROR"
         );
     }

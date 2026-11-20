@@ -38,7 +38,18 @@ pub(crate) fn read_bounded(
     cancel: Option<&CancellationToken>,
     limit_error: Error,
 ) -> Result<Vec<u8>> {
-    let mut output = Vec::new();
+    read_bounded_with_capacity(reader, path, limit, cancel, limit_error, 0)
+}
+
+pub(super) fn read_bounded_with_capacity(
+    reader: impl Read,
+    path: &Path,
+    limit: usize,
+    cancel: Option<&CancellationToken>,
+    limit_error: Error,
+    capacity: usize,
+) -> Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(capacity.min(limit));
     read_chunks(reader, path, limit, cancel, limit_error, |bytes| {
         output.extend_from_slice(bytes);
     })?;

@@ -723,10 +723,12 @@ waits for calculations, caches and owned processes to be released. It allows up
 to eight close requests with 4 KiB input each. Reopening creates a new ID.
 Closing stdin ends the server and releases all document owners.
 
-New calculations can evict that document's oldest snapshots. Other documents'
-current snapshots stay intact; close unused documents if they occupy the shared
-budget. Idle runtime processes close after 60 seconds by default, while cached
-images and unexpired calculations can remain available.
+When a new calculation needs more room, the server reclaims space from that
+document's least recently used dynamic cache entries before evicting its oldest
+calculations. Calculations in other documents remain available until their own
+expiry or eviction. Close unused documents to release their share of the budget.
+Idle runtime processes close after 60 seconds by default, while cached images
+and unexpired calculations can remain available.
 
 For implementation and protocol tests, see [architecture](design.md),
 [MCP tests](../tests/mcp.rs) and [focused checks](development.md#focused-development-checks).

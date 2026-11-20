@@ -51,7 +51,7 @@ pub fn get_variables(
     if let Some(error) = project.resolution_error() {
         result["resolution_error"] = json!(error);
     }
-    store::require_revision(&store.read()?, &project.root_document().revision())?;
+    store.verify_revision(&project.root_document().revision(), cancel)?;
     crate::cancel::check(cancel)?;
     crate::query::response(result)
 }
@@ -816,7 +816,7 @@ fn layout_snapshot_with_text_policy(
         }
     };
     fonts.release_unused_pages();
-    store::require_revision(&store.read()?, &snapshot.revision)?;
+    store.verify_revision(&snapshot.revision, cancel.as_ref())?;
     project.verify_unchanged()?;
     crate::cancel::check(cancel.as_ref())?;
     // Retained snapshots must not inherit the lifetime of a finished request.
@@ -1036,7 +1036,7 @@ pub fn inspect_store_nodes_with_images(
             let (project, snapshot) =
                 layout_snapshot_with_runtime(store, fonts, None, None, &mut runtime)?;
             let result = inspect_calculated_nodes(&project, &snapshot, request, cancel)?;
-            store::require_revision(&store.read()?, &snapshot.revision)?;
+            store.verify_revision(&snapshot.revision, cancel)?;
             return Ok(result);
         }
     }
@@ -1087,7 +1087,7 @@ pub fn inspect_store_nodes_with_images(
         asset_status(&mut result, &project);
         result
     };
-    store::require_revision(&store.read()?, &document.revision())?;
+    store.verify_revision(&document.revision(), cancel)?;
     Ok(result)
 }
 

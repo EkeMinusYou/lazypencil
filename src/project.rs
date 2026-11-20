@@ -1,7 +1,7 @@
 use crate::{
     Error, Result,
-    document::{Document, MAX_NODES, hash},
-    store::{Store, read_text},
+    document::{Document, MAX_DOCUMENT_BYTES, MAX_NODES, hash},
+    store::Store,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -896,7 +896,9 @@ impl Project {
                 continue;
             }
             self.verify_published_overlay(path)?;
-            if hash(read_text(path)?.as_bytes()) != document.revision() {
+            let revision =
+                crate::store::content::file_hash(path, MAX_DOCUMENT_BYTES, self.cancel.as_ref())?;
+            if revision != document.revision() {
                 return Err(Error::new(
                     "REVISION_CONFLICT",
                     format!(

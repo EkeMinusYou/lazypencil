@@ -211,8 +211,19 @@ impl Budget {
         lease.resize(bytes)?;
         Ok(lease)
     }
+
+    #[cfg(feature = "rendering")]
+    pub fn shortfall(&self, requested: usize) -> usize {
+        let used = *self.used.lock().expect("resource budget");
+        requested.saturating_sub(self.limit - used)
+    }
 }
 impl Lease {
+    #[cfg(feature = "rendering")]
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
     pub fn resize(&mut self, bytes: usize) -> Result<()> {
         let mut used = self.budget.used.lock().expect("resource budget");
         let next = used.saturating_sub(self.bytes).saturating_add(bytes);
@@ -476,6 +487,27 @@ mod tests {
                 .any(|block| block.as_image().is_some())
         );
         assert_eq!(*resources.retained.used.lock().unwrap(), retained);
+        // Model a dynamic cache that fills the remainder of the connection budget.
+        worker.runtime_bytes = Some(resources.retained.reserve(48 * 1024 - retained).unwrap());
+        let oversized = worker.reserve_snapshot(48 * 1024 + 1).err().unwrap();
+        assert_eq!(oversized.code, "RESOURCE_LIMIT");
+        assert_eq!(*resources.retained.used.lock().unwrap(), 48 * 1024);
+        assert_eq!(worker.snapshots.len(), 1);
+
+        let extra = worker.reserve_snapshot(1).unwrap();
+        assert_eq!(worker.snapshots.len(), 1);
+        assert!(worker.dynamic.is_some());
+        assert_eq!(*resources.retained.used.lock().unwrap(), retained + 1);
+        drop(extra);
+
+        let other = resources
+            .retained
+            .reserve(48 * 1024 - retained - 1)
+            .unwrap();
+        let blocked = worker.reserve_snapshot(retained + 2).err().unwrap();
+        assert_eq!(blocked.code, "RESOURCE_LIMIT");
+        assert_eq!(worker.snapshots.len(), 1);
+        drop(other);
         drop(worker);
         assert_eq!(*resources.retained.used.lock().unwrap(), 0);
     }

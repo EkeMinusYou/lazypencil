@@ -19,6 +19,31 @@ impl Cache {
         self.order.retain(|key| self.entries.contains_key(key));
     }
 
+    fn retained_entry(key_capacity: usize, entry: &Cached) -> usize {
+        key_capacity + 128 + entry.bytes()
+    }
+
+    pub(super) fn retained_bytes(&self) -> usize {
+        self.entries
+            .iter()
+            .map(|(key, entry)| Self::retained_entry(key.capacity(), entry))
+            .sum()
+    }
+
+    pub(super) fn trim_retained(&mut self, limit: usize) -> usize {
+        let mut retained = self.retained_bytes();
+        while retained > limit {
+            let (key, entry) = self.remove_oldest();
+            retained -= Self::retained_entry(key.capacity(), &entry);
+        }
+        retained
+    }
+
+    fn remove_oldest(&mut self) -> (String, Cached) {
+        let oldest = self.order.pop_front().expect("cache eviction order");
+        self.entries.remove_entry(&oldest).expect("cached entry")
+    }
+
     pub(super) fn insert(&mut self, key: String, entry: Cached, settings: DynamicSettings) {
         let capacity = settings.cache_mib as usize * 1024 * 1024;
         if settings.cache_entries == 0 || capacity == 0 || entry.bytes() > capacity {
@@ -28,10 +53,8 @@ impl Cache {
         self.order.retain(|existing| existing != &key);
         let mut total = self.entries.values().map(Cached::bytes).sum::<usize>();
         while self.entries.len() >= settings.cache_entries || total + entry.bytes() > capacity {
-            let oldest = self.order.pop_front().expect("cache eviction order");
-            if let Some(evicted) = self.entries.remove(&oldest) {
-                total -= evicted.bytes();
-            }
+            let (_, evicted) = self.remove_oldest();
+            total -= evicted.bytes();
         }
         self.order.push_back(key.clone());
         self.entries.insert(key, entry);

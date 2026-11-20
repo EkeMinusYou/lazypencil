@@ -1,6 +1,7 @@
 //! Capture immutable project inputs and declared document dependencies.
 
 use super::*;
+use crate::store::read_text;
 
 impl Project {
     pub fn load(store: &Store) -> Result<Self> {

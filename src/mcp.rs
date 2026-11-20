@@ -407,7 +407,7 @@ struct CachedSnapshot {
     project: Project,
     layout: crate::layout::LayoutSnapshot,
     created: Instant,
-    _lease: resources::Lease,
+    lease: resources::Lease,
 }
 #[cfg(feature = "rendering")]
 struct CachedFailure {
@@ -468,12 +468,40 @@ impl DocumentWorker {
     #[cfg(feature = "rendering")]
     fn reserve_snapshot(&mut self, bytes: usize) -> Result<resources::Lease> {
         loop {
-            match self.resources.retained.reserve(bytes) {
+            let error = match self.resources.retained.reserve(bytes) {
                 Ok(lease) => return Ok(lease),
-                Err(_) if !self.snapshots.is_empty() => {
-                    self.snapshots.pop_front();
-                }
-                Err(error) => return Err(error),
+                Err(error) => error,
+            };
+            let missing = self.resources.retained.shortfall(bytes);
+            if missing == 0 {
+                continue;
+            }
+            let cache_bytes = self
+                .runtime_bytes
+                .as_ref()
+                .map_or(0, resources::Lease::bytes);
+            let snapshot_bytes = self
+                .snapshots
+                .iter()
+                .map(|s| s.lease.bytes())
+                .sum::<usize>();
+            // Preserve existing results if this document cannot free enough space.
+            if missing > cache_bytes + snapshot_bytes {
+                return Err(error);
+            }
+            if let Some(lease) = &mut self.runtime_bytes
+                && cache_bytes != 0
+            {
+                let retained = self
+                    .dynamic
+                    .as_mut()
+                    .expect("accounted dynamic cache")
+                    .trim_cached_results(cache_bytes.saturating_sub(missing));
+                lease
+                    .resize(retained)
+                    .expect("shrinking dynamic cache lease");
+            } else {
+                self.snapshots.pop_front();
             }
         }
     }
@@ -759,7 +787,8 @@ impl DocumentWorker {
                     let cached = &self.snapshots[index];
                     let value =
                         service::validation_from_snapshot(&cached.project, &cached.layout, &args)?;
-                    crate::store::require_revision(&self.store.read()?, &cached.layout.revision)?;
+                    self.store
+                        .verify_revision(&cached.layout.revision, Some(cancel))?;
                     crate::cancel::check(Some(cancel))?;
                     return structured(value);
                 }
@@ -860,7 +889,7 @@ impl DocumentWorker {
         if kind.checks_revision()
             && let Some(revision) = value.get("revision").and_then(Value::as_str)
         {
-            crate::store::require_revision(&self.store.read()?, revision)?;
+            self.store.verify_revision(revision, Some(cancel))?;
         }
         structured(value)
     }
@@ -969,7 +998,8 @@ impl DocumentWorker {
                     )
                 })?;
             let cached = &self.snapshots[index];
-            crate::store::require_revision(&self.store.read()?, &cached.layout.revision)?;
+            self.store
+                .verify_revision(&cached.layout.revision, Some(cancel))?;
             if let Some(revision) = revision {
                 crate::store::require_revision(cached.project.root_document(), revision)?;
             }
@@ -1028,16 +1058,16 @@ impl DocumentWorker {
         if let Some(index) = self.snapshots.iter().position(|s| s.layout.id == layout.id) {
             return Ok(index);
         }
-        if self.snapshots.len() >= 4 {
-            self.snapshots.pop_front();
-        }
         let lease = self.reserve_snapshot(
             project
                 .retained_bytes()
                 .saturating_add(layout.retained_bytes()),
         )?;
+        if self.snapshots.len() >= 4 {
+            self.snapshots.pop_front();
+        }
         self.snapshots.push_back(CachedSnapshot {
-            _lease: lease,
+            lease,
             project,
             layout,
             created: Instant::now(),
@@ -1121,7 +1151,8 @@ impl DocumentWorker {
             self.dynamic.as_mut().expect("dynamic runtime"),
             Some(cancel.clone()),
         )?;
-        crate::store::require_revision(&self.store.read()?, &cached.layout.revision)?;
+        self.store
+            .verify_revision(&cached.layout.revision, Some(cancel))?;
         if image.png.len() > 8 * 1024 * 1024 {
             return Err(Error::new(
                 "INVALID_ARGUMENT",

@@ -22,7 +22,7 @@ impl RevisionGuard {
             // Register before hashing, so a write during verification cannot
             // silently establish a cached revision. Failure keeps full hashing.
             self.watcher = macos::Watcher::new(store).ok();
-            store.verify_revision(expected)?;
+            store.verify_revision(expected, None)?;
             if let Some(watcher) = &mut self.watcher {
                 match watcher.changed() {
                     Ok(false) => {
@@ -42,7 +42,7 @@ impl RevisionGuard {
             Ok(())
         }
         #[cfg(not(target_os = "macos"))]
-        store.verify_revision(expected)
+        store.verify_revision(expected, None)
     }
 }
 

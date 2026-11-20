@@ -74,11 +74,11 @@ pub struct DynamicRuntime {
 
 impl DynamicRuntime {
     pub(crate) fn retained_bytes(&self) -> usize {
-        self.cache
-            .entries
-            .iter()
-            .map(|(key, entry)| key.capacity() + 128 + entry.bytes())
-            .sum()
+        self.cache.retained_bytes()
+    }
+
+    pub(crate) fn trim_cached_results(&mut self, bytes: usize) -> usize {
+        self.cache.trim_retained(bytes)
     }
 
     pub fn new(data: impl Into<PathBuf>) -> Self {
@@ -834,6 +834,15 @@ mod tests {
             runtime.idle_deadline().is_none(),
             "Cached reads do not launch or extend runtime processes"
         );
+        let entries = runtime.cache.entries.len();
+        assert!(entries > 1);
+        let before = runtime.retained_bytes();
+        let after = runtime.trim_cached_results(before - 1);
+        assert!(after < before);
+        assert_eq!(after, runtime.retained_bytes());
+        assert_eq!(runtime.cache.entries.len(), entries - 1);
+        assert_eq!(runtime.cache.order.len(), runtime.cache.entries.len());
+        assert!(runtime.cached("page").is_some());
         runtime.begin_render(None, true);
         assert!(runtime.cache.entries.is_empty());
         assert!(runtime.cache.order.is_empty());
