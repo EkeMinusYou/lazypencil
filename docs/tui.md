@@ -9,8 +9,13 @@ in one terminal. For installation and agent setup, start with the
 ```sh
 lazypencil
 lazypencil tui design.pen
+lazypencil tui design.pen --node header
 lazypencil tui new.pen --create --agent codex
 ```
+
+`--node ID` centers the initial preview on an exact calculated node ID at the
+document's fitted zoom. Use `lazypencil inspect design.pen --calculated` to look
+up IDs. If the ID is missing, the preview fits the document and shows a notice.
 
 Running without a file opens a document picker. Type to filter, use arrows or
 `j`/`k` to select, and press Enter to open. Ctrl+L switches between filtering and
@@ -284,8 +289,8 @@ command palette.
 | Prompt: `/paste-image [WIDTHxHEIGHT\|original]` then Enter | Invoke clipboard input with an optional explicit send size |
 | Prompt: `/clear-images` then Enter | Remove pending images |
 | Preview: `hjkl` / arrows | Pan |
-| Preview: `/` | Search text, names and IDs (case-insensitive); select and fit the first matching element while typing |
-| Nodes / Preview search: Enter / Esc | Keep the filter and return to navigation / clear the search. Both panes show the query in their title; Preview uses `n` / `N` to select and fit the next / previous result after Enter |
+| Preview: `/` | Search text, names and IDs (case-insensitive). Select and center the first match at the current zoom while typing |
+| Nodes / Preview search: Enter / Esc | Keep the filter and return to navigation / clear the search. Both panes show the query in their title. In Preview, `n` / `N` selects and centers the next / previous result at the current zoom after Enter |
 | All search fields / file paths: `Ctrl+H` / `Ctrl+D`, `Ctrl+A` / `Ctrl+E`, `Ctrl+B` / `Ctrl+F` | Delete backward/forward, move to the start/end, or move one character backward/forward. Left/Right and Backspace/Delete also edit the query; Home/End edit queries except in the command palette, where they select the first/last result |
 | All search fields / file paths: `Alt+B` / `Alt+F`, `Ctrl+U` / `Ctrl+K`, `Ctrl+W` / `Alt+D`, `Ctrl+Y`, `Ctrl+_` / `Ctrl+/` | Move by word, kill to the start/end, kill the previous/next word, yank, or undo; pasted text inserts at the cursor |
 | Preview: `+` / `-`, `0` | Zoom or fit the document, including negative coordinates |

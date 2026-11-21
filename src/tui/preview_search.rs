@@ -121,6 +121,14 @@ impl App {
         let Some(id) = self.preview_search.step(backwards) else {
             return Ok(());
         };
+        let Some(preview) = &self.preview else {
+            return Ok(());
+        };
+        let Some(node) = preview.nodes.iter().find(|node| node.id == id) else {
+            return Ok(());
+        };
+        self.view.zoom = self.view.zoom.or(preview.view.zoom);
+        self.view.center_on(node.bounds);
         self.pause_playback();
         self.selection.cancel();
         self.selection.ids = vec![id.clone()];
@@ -131,7 +139,6 @@ impl App {
         self.pointer.reattach(mouse::ListTarget::Nodes);
         self.selection.presentation = None;
         self.selection.invalidate();
-        self.fit_selected(picker)?;
         self.request(worker, false, false);
         self.camera_feedback(picker)?;
         Ok(())

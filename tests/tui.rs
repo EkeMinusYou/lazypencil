@@ -241,6 +241,12 @@ fn real_pty_startup_focus_opens_existing_documents_at_preview_and_new_documents_
 }
 
 #[test]
+fn real_pty_startup_node_centers_the_first_preview_and_handles_missing_ids() {
+    run_pty_case("startup-node");
+    run_pty_case("startup-node-missing");
+}
+
+#[test]
 fn real_pty_preview_search_preserves_japanese_input_and_navigates_matches() {
     run_pty_case("preview-search");
     run_pty_case("preview-search-light");

@@ -87,6 +87,9 @@ pub enum ImageProtocol {
 pub struct TuiArgs {
     #[command(flatten)]
     pub prompt: PromptArgs,
+    /// Center the initial preview on this calculated node ID at the document's fitted zoom.
+    #[arg(long, value_name = "ID", value_parser = clap::builder::NonEmptyStringValueParser::new())]
+    pub node: Option<String>,
     /// Start an empty conversation instead of restoring the previous one.
     #[arg(long, conflicts_with_all = ["session", "restart_session"])]
     pub new_conversation: bool,
@@ -214,6 +217,7 @@ pub fn run_with_selection(
         screen.picker.clone(),
         id,
         settings.preview.cache_bytes(),
+        args.node.clone(),
     )?;
     worker.set_canvas_background(theme::canvas_background());
     let runtime = tokio::runtime::Builder::new_current_thread()

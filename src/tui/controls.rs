@@ -22,8 +22,19 @@ impl App {
     ) -> bool {
         let current = output.generation == self.generation;
         let accepted = self.accept_preview(output);
-        if accepted && let Err(error) = self.refresh_selection_presentation(picker, worker) {
-            self.set_preview_error_status(&error);
+        if accepted {
+            // Keep the startup target through cancelled renders and retries until
+            // the first complete document view reaches the app.
+            if let Some(preview) = self.preview.as_ref().filter(|preview| !preview.attachment)
+                && !self.preview_stale
+                && let Some(id) = worker.take_initial_node()
+                && !preview.nodes.iter().any(|node| node.id == id)
+            {
+                self.set_status(format!("Initial preview node not found: {id}"));
+            }
+            if let Err(error) = self.refresh_selection_presentation(picker, worker) {
+                self.set_preview_error_status(&error);
+            }
         }
         // Both the normal event and the camera deadline can consume an exact
         // frame. Acknowledgements must follow either path exactly once.

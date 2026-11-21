@@ -166,6 +166,8 @@ impl Harness {
             "resizable-panels",
             "oversized-preview",
             "ime-commit",
+            "startup-node",
+            "startup-node-missing",
             "kitty-no-color",
             "kitty-placements",
             "kitty-placements-no-color",

@@ -151,6 +151,14 @@ pub fn run(
             {"type":"text","id":"second","x":1000,"content":"日本語の対象","width":200,"height":40}
         ]});
     }
+    if matches!(case, "startup-node" | "startup-node-missing") {
+        design = json!({"version":"2.21","children":[
+            {"type":"rectangle","id":"red","x":-800,"width":180,"height":90,"fill":"#FF0000"},
+            {"type":"frame","id":"frame","x":600,"width":180,"height":90,"layout":"none","children":[
+                {"type":"rectangle","id":"blue","x":30,"y":20,"width":120,"height":40,"fill":"#0000FF"}
+            ]}
+        ]});
+    }
     if case == "kitty-progressive" {
         design = json!({"version":"2.21","children":[
             {"type":"rectangle","id":"red","name":"Red source","x":-80,"y":-30,"width":180,"height":90,"fill":"#FF0000"},
@@ -379,7 +387,20 @@ pub fn run(
             }
         }
     }
-    let mut h = Harness::start(binary, root, &document, environment, case, configuration)?;
+    let arguments: &[&std::ffi::OsStr] = match case {
+        "startup-node" => &["--node".as_ref(), "blue".as_ref()],
+        "startup-node-missing" => &["--node".as_ref(), "missing".as_ref()],
+        _ => &[],
+    };
+    let mut h = Harness::start_with_arguments(
+        binary,
+        root,
+        &document,
+        environment,
+        case,
+        configuration,
+        arguments,
+    )?;
     let mut picker_open_offset = None;
     if case.starts_with("picker-") {
         h.visible("Find a .pen file…")?;
@@ -549,6 +570,10 @@ pub fn run(
                     design.clone()
                 }
             );
+            Value::Null
+        }
+        "startup-node" | "startup-node-missing" => {
+            startup_node(&mut h)?;
             Value::Null
         }
         case if case.starts_with("theme-") => {
@@ -901,6 +926,37 @@ pub fn run(
     Ok(())
 }
 
+fn startup_node(h: &mut Harness) -> Result {
+    let blue = [0, 0, 255, 255];
+    let center_is_blue = |image: &super::observer::Frame| {
+        let offset = 4 * (image.height / 2 * image.width + image.width / 2);
+        image.rgba()[offset..offset + 4] == blue
+    };
+    h.wait("initial preview frame", 15.0, |h| {
+        !h.frames.images.is_empty() && mouse::zoom(h).is_some()
+    })?;
+    let first = &h.frames.images[0];
+    assert!(first.has_color(blue));
+    if h.case == "startup-node-missing" {
+        assert!(!center_is_blue(first));
+        h.visible("Initial preview node not found: missing")?;
+    } else {
+        assert!(center_is_blue(first));
+        let zoom = mouse::zoom(h);
+        h.key(b"\x1b[Z")?;
+        h.visible(" pan")?;
+        h.key(b"0")?;
+        h.wait("fit the full document after startup", 15.0, |h| {
+            h.frames
+                .images
+                .last()
+                .is_some_and(|image| !center_is_blue(image) && image.has_color([255, 0, 0, 255]))
+        })?;
+        assert_eq!(mouse::zoom(h), zoom);
+    }
+    Ok(())
+}
+
 fn preview_search(h: &mut Harness) -> Result {
     let original = fs::read(&h.document)?;
     h.visible("2 nodes · 0 diagnostics")?;
@@ -909,6 +965,7 @@ fn preview_search(h: &mut Harness) -> Result {
     h.draft(draft)?;
     h.key(b"\x1b[Z")?;
     h.visible("/ search")?;
+    let zoom = mouse::zoom(h).ok_or("Missing initial preview zoom")?;
     let start = h.output.len();
     h.key(b"/")?;
     h.visible("Enter keep")?;
@@ -925,6 +982,7 @@ fn preview_search(h: &mut Harness) -> Result {
             .is_some_and(|(_, y)| y == 1)
     );
     h.visible("1/2")?;
+    assert_eq!(mouse::zoom(h), Some(zoom));
     h.wait("IME cursor follows the Japanese query", 15.0, |h| {
         h.screen
             .find_text("/日本語")
@@ -957,8 +1015,10 @@ fn preview_search(h: &mut Harness) -> Result {
     h.visible("1/2")?;
     h.key(b"n")?;
     h.visible("2/2")?;
+    assert_eq!(mouse::zoom(h), Some(zoom));
     h.key(b"N")?;
     h.visible("1/2")?;
+    assert_eq!(mouse::zoom(h), Some(zoom));
     h.key(b"\x1b")?;
     h.hidden("/日本語")?;
     h.key(b"/")?;

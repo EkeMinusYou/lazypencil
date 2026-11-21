@@ -42,11 +42,14 @@ impl View {
         self.time = time;
         Ok(())
     }
-    pub fn fit(&mut self, bounds: Rect, pixels: [u32; 2]) {
+    pub(super) fn center_on(&mut self, bounds: Rect) {
         self.center = [
             f64::from(bounds.x + bounds.width / 2.0),
             f64::from(bounds.y + bounds.height / 2.0),
         ];
+    }
+    pub fn fit(&mut self, bounds: Rect, pixels: [u32; 2]) {
+        self.center_on(bounds);
         self.zoom = Some(
             ((pixels[0] as f32 / bounds.width.max(1.0))
                 .min(pixels[1] as f32 / bounds.height.max(1.0))
@@ -166,6 +169,7 @@ impl Request {
 }
 
 struct Shared {
+    initial_node: Mutex<Option<String>>,
     canvas_background: Mutex<image::Rgba<u8>>,
     show_node_names: Mutex<bool>,
     selection: Mutex<super::selection::render::State>,
@@ -198,6 +202,7 @@ impl Worker {
             picker,
             image_id,
             crate::config::keys::PreviewSettings::default().cache_bytes(),
+            None,
         )
     }
 
@@ -207,8 +212,10 @@ impl Worker {
         picker: Backend,
         image_id: u32,
         cache_bytes: usize,
+        initial_node: Option<String>,
     ) -> Result<Self> {
         let shared = Arc::new(Shared {
+            initial_node: Mutex::new(initial_node),
             canvas_background: Mutex::new(picker.canvas_background()),
             show_node_names: Mutex::new(true),
             selection: Mutex::default(),
@@ -251,6 +258,9 @@ impl Worker {
     }
     pub(super) fn set_canvas_background(&self, background: image::Rgba<u8>) {
         *self.shared.canvas_background.lock().unwrap() = background;
+    }
+    pub(super) fn take_initial_node(&self) -> Option<String> {
+        self.shared.initial_node.lock().unwrap().take()
     }
     pub(super) fn set_show_node_names(&self, visible: bool) {
         *self.shared.show_node_names.lock().unwrap() = visible;
@@ -529,6 +539,11 @@ fn work(
             let mut view = request.view;
             if view.zoom.is_none() {
                 view.fit_canvas(layout.bounds, pixels, labels.top_padding());
+                if let Some(id) = shared.initial_node.lock().unwrap().as_deref()
+                    && let Some(item) = layout.items.iter().find(|item| item.record.id == id)
+                {
+                    view.center_on(item.record.visual_bounds);
+                }
             }
             if let Some((predicted, prepared)) = speculation.take()
                 && cache::same_pixels(predicted, view, pixels)
@@ -1107,6 +1122,7 @@ mod tests {
                         Backend::native_for_test(),
                         175,
                         budget,
+                        None,
                     )
                     .unwrap();
                     let mut original_pixels = None;
@@ -1686,6 +1702,7 @@ mod tests {
     fn predictions_accept_exact_queued_pixels_but_yield_to_different_work() {
         let background = Backend::halfblocks().canvas_background();
         let shared = Shared {
+            initial_node: Mutex::default(),
             canvas_background: Mutex::new(background),
             show_node_names: Mutex::new(true),
             selection: Mutex::default(),
@@ -1741,6 +1758,7 @@ mod tests {
     #[test]
     fn automatic_frames_do_not_cancel_work_overwrite_pending_output_or_queue_a_backlog() {
         let shared = Arc::new(Shared {
+            initial_node: Mutex::default(),
             canvas_background: Mutex::new(Backend::halfblocks().canvas_background()),
             show_node_names: Mutex::new(true),
             selection: Mutex::default(),

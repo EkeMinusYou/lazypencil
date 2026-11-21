@@ -44,7 +44,7 @@ fn button(h: &mut Harness, label: &str) -> Result {
     Ok(())
 }
 
-fn zoom(h: &Harness) -> Option<u32> {
+pub(super) fn zoom(h: &Harness) -> Option<u32> {
     let text = h.screen.text();
     let prefix = text.split('%').next()?;
     let digits = prefix

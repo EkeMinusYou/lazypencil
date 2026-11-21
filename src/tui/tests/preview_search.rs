@@ -169,6 +169,8 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         preview_search_screen(&mut app);
         app.focus = Focus::Preview;
         app.nodes_collapsed = true;
+        press(&mut app, KeyCode::Char('+'), KeyModifiers::NONE, &worker).await;
+        let zoom = app.view.zoom.unwrap();
         press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
         assert!(app.preview_search.editing && app.has_modal());
         for c in "hello".chars() {
@@ -178,7 +180,7 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         assert_eq!(app.selection.ids, ["first"]);
         assert_eq!(app.selected_node().unwrap().id, "first");
         assert!(!app.node_tree.rows().is_empty());
-        assert!(app.view.zoom.is_some());
+        assert_eq!(app.view.zoom, Some(zoom));
         let (screen, cursor) = preview_search_screen(&mut app);
         assert!(screen.contains("/hello") && screen.contains("1/4"), "{screen}");
         assert!(screen.contains("Enter keep filter · Esc clear"));
@@ -189,6 +191,7 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE, &worker).await;
         assert_eq!(app.selection.ids, ["second"]);
         assert!(app.view.center[0] > 900.0);
+        assert_eq!(app.view.zoom, Some(zoom));
         assert!(!app.preview_search.editing && !app.has_modal());
         assert!(preview_search_screen(&mut app).1.is_none());
         for expected in ["named", "hello-id", "first"] {
@@ -197,6 +200,8 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         }
         press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT, &worker).await;
         assert_eq!(app.selection.ids, ["hello-id"]);
+        assert_eq!(app.view.center, [240.0, 470.0]);
+        assert_eq!(app.view.zoom, Some(zoom));
         assert!(preview_search_screen(&mut app).0.contains("4/4"));
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         assert!(app.preview_search.query.is_empty());
@@ -214,6 +219,7 @@ fn preview_search_finds_full_text_names_and_ids_and_cycles_visible_matches() {
         press(&mut app, KeyCode::Char('/'), KeyModifiers::NONE, &worker).await;
         app.paste_preview_search("末尾の文字列", &picker, &worker).unwrap();
         assert_eq!(app.selection.ids, ["long"]);
+        assert_eq!(app.view.zoom, Some(zoom));
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE, &worker).await;
         assert_eq!(app.editor.lines(), draft);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), document);
