@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.14
+
+- Open **Agent commands…** from the TUI command palette to find and run skills advertised by Codex or Claude Code, with images and node references in the same design request.
+- Replace or remove a selected agent command on a paused request while keeping its draft, images, and node references.
+- Update the URL parser to address [RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592.html).
+
 ## 0.2.13
 
 - Configure the TUI preview frame cache with `tui.preview.cache_mib` and the retained MCP payload per connection with `mcp.retained_mib`.
