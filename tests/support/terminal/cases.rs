@@ -413,7 +413,7 @@ pub fn run(
             h.resize(width, height)?;
             h.wait("resized picker footer", 10.0, |h| {
                 let text = h.screen.text();
-                text.contains("Ctrl+C") && text.contains("[Enter Open]")
+                text.contains("Ctrl+C Quit") && text.contains("Enter Open")
             })?;
             h.visible("Find a .pen file…")?;
         }
@@ -484,7 +484,6 @@ pub fn run(
         } else if case != "picker-mouse" {
             h.key(b"/broken")?;
             h.key(b"\r")?;
-            h.visible("Files")?;
             h.visible("INVALID_DOCUMENT")?;
             h.key(b"\x1b")?;
             h.key(b"\x0c")?;

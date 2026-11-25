@@ -32,6 +32,18 @@ pub(super) fn rule(frame: &mut Frame, area: Rect) {
     );
 }
 
+pub(super) fn surface(frame: &mut Frame, popup: Rect) -> Rect {
+    dim(frame);
+    frame.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_set(ratatui::symbols::border::ROUNDED)
+        .border_style(Style::default().fg(theme::colors().frame))
+        .style(theme::base());
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    inner
+}
+
 pub(super) struct Shell {
     pub header: Rect,
     pub context: Rect,
@@ -42,15 +54,8 @@ pub(super) struct Shell {
 
 impl Shell {
     pub fn draw(frame: &mut Frame, popup: Rect, mode: &str, title: &str, footer_rows: u16) -> Self {
-        dim(frame);
-        frame.render_widget(Clear, popup);
+        let inner = surface(frame, popup);
         let colors = theme::colors();
-        let block = Block::bordered()
-            .border_set(ratatui::symbols::border::ROUNDED)
-            .border_style(Style::default().fg(colors.frame))
-            .style(theme::base());
-        let inner = block.inner(popup);
-        frame.render_widget(block, popup);
         let sections = Layout::vertical([
             Constraint::Length(if popup.height >= 12 { 2 } else { 1 }),
             Constraint::Length(1),

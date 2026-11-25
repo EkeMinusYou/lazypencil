@@ -56,6 +56,14 @@ pub(super) fn zoom(h: &Harness) -> Option<u32> {
 }
 
 pub fn picker(h: &mut Harness) -> Result {
+    button(h, "Ctrl+L Type path")?;
+    h.visible("Enter a file or folder path…")?;
+    button(h, "Ctrl+L Search files")?;
+    h.visible("Find a .pen file…")?;
+    h.key(b"/unmatched")?;
+    h.visible("No matching .pen files")?;
+    button(h, "Esc Clear")?;
+    h.visible("Find a .pen file…")?;
     let point = h
         .screen
         .find_text("selected.pen")
@@ -64,7 +72,7 @@ pub fn picker(h: &mut Harness) -> Result {
     h.pump_for(0.12)?;
     assert!(h.screen.text().contains("Find a .pen file…"));
     assert!(files(&h.root, |name| name == "session.json").is_empty());
-    button(h, "[Enter Open]")?;
+    button(h, "Enter Open")?;
     h.hidden("Find a .pen file…")
 }
 
