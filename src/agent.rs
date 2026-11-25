@@ -38,6 +38,7 @@ fn validate_prompt(content: &[ContentBlock]) -> Result<()> {
 }
 
 pub mod auth;
+pub(crate) mod available_commands;
 mod diagnostics;
 pub mod permissions;
 mod preparation;
@@ -137,6 +138,7 @@ struct Turn {
     content: Vec<ContentBlock>,
     cancel: CancellationToken,
     generation: u64,
+    agent_command: Option<String>,
 }
 
 enum SettingChange {
@@ -150,6 +152,7 @@ struct Commands {
     steering: mpsc::Receiver<steering::Request>,
     steering_supported: Arc<AtomicBool>,
     steering_turn: Arc<Mutex<Option<u64>>>,
+    catalogue: watch::Sender<available_commands::Catalogue>,
 }
 
 /// Owns one adapter connection and one session. Sequential prompts reuse both.
@@ -164,6 +167,8 @@ pub struct AgentHost {
     shutdown: CancellationToken,
     task: Option<tokio::task::JoinHandle<Result<()>>>,
     authentication: watch::Receiver<Option<AuthReport>>,
+    #[cfg(feature = "tui")]
+    catalogue: watch::Receiver<available_commands::Catalogue>,
     deferred_options: Option<oneshot::Sender<AgentOptions>>,
     prepared_options: Option<AgentOptions>,
 }
@@ -216,12 +221,17 @@ impl AgentHost {
         let (steering, steering_receiver) = mpsc::channel(1);
         let steering_supported = Arc::new(AtomicBool::new(false));
         let steering_turn = Arc::new(Mutex::new(None));
+        let (catalogue_sender, catalogue) =
+            watch::channel(available_commands::Catalogue::default());
+        #[cfg(not(feature = "tui"))]
+        drop(catalogue);
         let controls = Commands {
             turns: receiver,
             settings: settings_receiver,
             steering: steering_receiver,
             steering_supported: steering_supported.clone(),
             steering_turn: steering_turn.clone(),
+            catalogue: catalogue_sender,
         };
         let (sender, events) = mpsc::channel(32);
         let shutdown = CancellationToken::new();
@@ -262,6 +272,8 @@ impl AgentHost {
             shutdown,
             task: Some(task),
             authentication,
+            #[cfg(feature = "tui")]
+            catalogue,
             deferred_options: None,
             prepared_options: None,
         })
@@ -269,6 +281,11 @@ impl AgentHost {
 
     pub fn authentication(&self) -> Option<AuthReport> {
         self.authentication.borrow().clone()
+    }
+
+    #[cfg(feature = "tui")]
+    pub(crate) fn available_commands(&self) -> Option<Arc<[AvailableCommand]>> {
+        self.catalogue.borrow().snapshot()
     }
 
     /// Initialize the selected runtime without a session, tools, login or prompt.
@@ -351,7 +368,7 @@ impl AgentHost {
         content: Vec<ContentBlock>,
         cancel: CancellationToken,
     ) -> Result<()> {
-        let (commands, turn) = self.prepare_turn(content, cancel)?;
+        let (commands, turn) = self.prepare_turn(content, cancel, None)?;
         commands
             .send(turn)
             .await
@@ -361,6 +378,7 @@ impl AgentHost {
         &self,
         content: Vec<ContentBlock>,
         cancel: CancellationToken,
+        agent_command: Option<String>,
     ) -> Result<(mpsc::Sender<Turn>, Turn)> {
         if self.deferred_options.is_some() {
             return Err(agent_error("Choose a document before submitting a prompt"));
@@ -377,6 +395,7 @@ impl AgentHost {
                 content,
                 cancel,
                 generation: self.generation.fetch_add(1, Ordering::Relaxed) + 1,
+                agent_command,
             },
         ))
     }
@@ -388,8 +407,9 @@ impl AgentHost {
         content: Vec<ContentBlock>,
         cancel: CancellationToken,
         ready: oneshot::Receiver<Result<()>>,
+        agent_command: Option<String>,
     ) -> Result<oneshot::Receiver<Result<()>>> {
-        let (commands, turn) = self.prepare_turn(content, cancel.clone())?;
+        let (commands, turn) = self.prepare_turn(content, cancel.clone(), agent_command)?;
         let (reply, receiver) = oneshot::channel();
         tokio::spawn(async move {
             let sent = async {
@@ -515,6 +535,7 @@ async fn run(
     let notification_events = events.clone();
     let mode_updates = Arc::new(Mutex::new(Value::Null));
     let notification_modes = mode_updates.clone();
+    let notification_catalogue = commands.catalogue.clone();
     let permission_shutdown = shutdown.clone();
     let auth_receiver = auth_sender.subscribe();
     // Host errors cross the SDK boundary out of band. Adapter-controlled error
@@ -532,6 +553,9 @@ async fn run(
                 json!({"type":"auth_status","authentication":report})
             } else if notification.method == "session/update" {
                 let update=&notification.params["update"];
+                if update["sessionUpdate"] == "available_commands_update" {
+                    notification_catalogue.send_modify(|catalogue| catalogue.observe(&notification.params));
+                }
                 if matches!(update["sessionUpdate"].as_str(),Some("config_option_update"|"current_mode_update")) {
                     let mut snapshot=notification_modes.lock().expect("mode updates");
                     if snapshot["sessionId"]!=notification.params["sessionId"] { *snapshot=json!({"sessionId":notification.params["sessionId"]}); }
@@ -648,7 +672,9 @@ async fn conversation(
         mut steering,
         steering_supported,
         steering_turn,
+        catalogue,
     } = commands;
+    let mut command_updates = catalogue.subscribe();
     let setup = async {
         let initialized = connection
             .send_request(
@@ -771,6 +797,7 @@ async fn conversation(
                 })?;
             (response.session_id.clone(), serde_json::to_value(response))
         };
+        catalogue.send_modify(|catalogue| catalogue.bind(&session.to_string()));
         let mut response = response.map_err(|e| agent_error(e.to_string()))?;
         if let Err(error) = settings::apply(
             connection,
@@ -884,6 +911,18 @@ async fn conversation(
         if turn.cancel.is_cancelled() {
             emit(events, json!({"type":"turn_error","error":Error::new("CANCELLED", "The queued prompt was cancelled before sending")})).await?;
             continue;
+        }
+        if let Some(name) = &turn.agent_command {
+            let result = tokio::select! {
+                _ = shutdown.cancelled() => return Ok(()),
+                result = available_commands::require_advertised(
+                    &mut command_updates, name, options.setup_timeout, &turn.cancel,
+                ) => result,
+            };
+            if let Err(error) = result {
+                emit(events, json!({"type":"turn_error","error":error})).await?;
+                continue;
+            }
         }
         let reported_auth = authentication.borrow().clone();
         if let Err(error) = auth_policy.check(reported_auth.as_ref()) {

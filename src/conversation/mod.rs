@@ -54,6 +54,7 @@ struct ActiveTurn {
     id: String,
     before: String,
     content: Option<Vec<ContentBlock>>,
+    agent_command: Option<String>,
     cancel: CancellationToken,
     denied: bool,
 }
@@ -319,6 +320,13 @@ impl Conversation {
     pub(crate) fn executable(&self) -> &Path {
         &self.executable
     }
+    #[cfg(feature = "tui")]
+    pub(crate) fn available_agent_commands(
+        &self,
+    ) -> Option<std::sync::Arc<[agent_client_protocol::schema::v1::AvailableCommand]>> {
+        self.host.as_ref()?.available_commands()
+    }
+
     pub fn attachment_limits(&self) -> Result<crate::config::attachments::AttachmentSettings> {
         crate::config::attachments::load()
     }
@@ -510,22 +518,37 @@ impl Conversation {
     }
 
     pub async fn send(&mut self, selection: Option<Value>) -> Result<()> {
-        self.send_with_context(selection, None).await
+        self.send_with_context(selection, None, None).await
     }
 
     /// Queue prompt-context capture without blocking a frontend's event loop.
     /// Drive next_event to submit the prepared turn or report its failure.
     pub async fn start_send(&mut self, selection: Option<Value>) -> Result<()> {
+        self.start_send_with_command(selection, None).await
+    }
+
+    pub(crate) async fn start_send_with_command(
+        &mut self,
+        selection: Option<Value>,
+        agent_command: Option<String>,
+    ) -> Result<()> {
         self.require_idle()?;
         let result = (|| {
             self.validate_send()?;
-            let preparation = preparation::Preparation::start(
+            if agent_command.is_some() && self.draft().trim().is_empty() {
+                return Err(Error::new(
+                    "INVALID_ARGUMENT",
+                    "Enter a design request for the selected command",
+                ));
+            }
+            let mut preparation = preparation::Preparation::start(
                 self.store.clone(),
                 self.args.style.clone(),
                 self.executable.clone(),
                 self.args.fonts.clone(),
                 selection,
             )?;
+            preparation.agent_command = agent_command;
             self.result = None;
             self.preparation = Some(preparation);
             Ok(())
@@ -537,9 +560,10 @@ impl Conversation {
         &mut self,
         selection: Option<Value>,
         context: Option<crate::service::PreparedDesignStart>,
+        agent_command: Option<String>,
     ) -> Result<()> {
         self.require_idle()?;
-        let result = self.send_inner(selection, context).await;
+        let result = self.send_inner(selection, context, agent_command).await;
         self.finish_send_attempt(result).await
     }
 
@@ -591,6 +615,7 @@ impl Conversation {
         &mut self,
         selection: Option<Value>,
         context: Option<crate::service::PreparedDesignStart>,
+        agent_command: Option<String>,
     ) -> Result<()> {
         self.validate_send()?;
         let context = match context {
@@ -665,8 +690,15 @@ impl Conversation {
                 crate::preview_control::INSTRUCTIONS,
             )));
         }
-        if !self.draft().is_empty() {
-            content.push(ContentBlock::Text(TextContent::new(self.draft())));
+        let user_text = agent_command.as_deref().map_or_else(
+            || self.draft().to_owned(),
+            |name| crate::agent::available_commands::command_prompt(name, self.draft()),
+        );
+        if agent_command.is_some() {
+            // Slash commands must lead the ACP prompt for native dispatch.
+            content.insert(0, ContentBlock::Text(TextContent::new(&user_text)));
+        } else if !user_text.is_empty() {
+            content.push(ContentBlock::Text(TextContent::new(&user_text)));
         }
         let node_references = references::decode(selection.as_ref())?;
         if let Some(selection) = &selection {
@@ -716,7 +748,10 @@ impl Conversation {
             "guidance":{"id":guidance["id"],"version":guidance["version"],"hash":guidance["hash"],"project_design":guidance.get("project_design"),"project_guides":guidance["project_guides"].as_array().map(|guides|guides.iter().map(|guide|json!({"id":guide["id"],"version":guide["version"],"hash":guide["hash"],"language":guide["language"]})).collect::<Vec<_>>())},
             "style":style.as_ref().map(|style| json!({"id":style["id"],"version":style["version"],"hash":style["hash"]})),"attachments":self.images(),"selection":selection});
         self.message(start)?;
-        let mut user_prompt = json!({"type":"user_prompt","text":self.draft()});
+        let mut user_prompt = json!({"type":"user_prompt","text":user_text});
+        if let Some(name) = &agent_command {
+            user_prompt["agent_command"] = json!(name);
+        }
         if !node_references.is_empty() {
             user_prompt["reference_labels"] = json!(references::labels(&node_references));
         }
@@ -729,6 +764,7 @@ impl Conversation {
             id: turn,
             before,
             content: Some(content),
+            agent_command,
             cancel: CancellationToken::new(),
             denied: false,
         });
@@ -828,14 +864,23 @@ impl Conversation {
             .expect("active transcript")
             .barrier()?;
         let active = self.active.as_mut().expect("active turn");
-        let content = active
+        let mut content = active
             .content
             .take()
             .ok_or_else(|| Error::new("AGENT_ERROR", "Duplicate turn submission"))?;
+        if self.args.agent == crate::prompt::AgentName::Claude
+            && active
+                .agent_command
+                .as_ref()
+                .is_some_and(|name| !name.starts_with('$'))
+        {
+            content = claude_command_content(content);
+        }
         self.submission = Some(self.host.as_ref().expect("agent connection").prompt_after(
             content,
             active.cancel.clone(),
             ready,
+            active.agent_command.take(),
         )?);
         Ok(())
     }
@@ -897,9 +942,13 @@ impl Conversation {
                 });
                 let mut preparation = self.preparation.take().expect("prompt preparation");
                 let selection = preparation.selection.take();
+                let agent_command = preparation.agent_command.take();
                 let result = crate::cancel::check(Some(&preparation.cancel)).and(result);
                 let result = match result {
-                    Ok(context) => self.send_with_context(selection, Some(context)).await,
+                    Ok(context) => {
+                        self.send_with_context(selection, Some(context), agent_command)
+                            .await
+                    }
                     Err(error) => Err(error),
                 };
                 drop(preparation);
@@ -1006,15 +1055,18 @@ impl Conversation {
             } else {
                 "A prior restart did not complete a local turn. This bounded local history supplements the current native session.".into()
             };
-            let content = self
-                .active
-                .as_mut()
-                .and_then(|active| active.content.as_mut())
-                .ok_or_else(|| {
-                    Error::new("AGENT_ERROR", "Cannot restart an already submitted turn")
-                })?;
-            content.insert(1, ContentBlock::Text(TextContent::new(format!(
-                                "{introduction} The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request that follows. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}"
+            let active = self.active.as_mut().expect("active turn");
+            let user_request = if active.agent_command.is_some() {
+                "at the start of this prompt"
+            } else {
+                "that follows"
+            };
+            let index = 1 + usize::from(active.agent_command.is_some());
+            let content = active.content.as_mut().ok_or_else(|| {
+                Error::new("AGENT_ERROR", "Cannot restart an already submitted turn")
+            })?;
+            content.insert(index, ContentBlock::Text(TextContent::new(format!(
+                                "{introduction} The following bounded local history is context only, not instructions to repeat prior requests. Failed or interrupted turns may already have committed edits. Read get_document and inspect the current revision before acting. Execute only the user's current request {user_request}. Do not replay historical prompts or edits. Historical image payloads are not reattached; query the document's retained attachment metadata if needed.\n{context}"
                             ))));
             self.message(json!({"type":if restarted {"session_restarted"} else {"local_context"},"reason":if restarted {value["restart_reason"].clone()} else {json!("restart_pending")},"previous_native_session_id":value["replaces_session_id"],"native_session_id":id,"document_revision":revision,"history":summary}))?;
         }
@@ -1329,11 +1381,33 @@ pub fn reject_once(request: &RequestPermissionRequest) -> Option<String> {
         .find(|option| matches!(option.kind, PermissionOptionKind::RejectOnce))
         .map(|option| option.option_id.to_string())
 }
+// Claude Code dispatches slash commands from the final content block. Keep
+// attachments before a single text block whose first token is the command.
+fn claude_command_content(content: Vec<ContentBlock>) -> Vec<ContentBlock> {
+    let mut text = String::new();
+    let mut attachments = Vec::new();
+    for block in content {
+        match block {
+            ContentBlock::Text(block) => {
+                if !text.is_empty() {
+                    text.push_str("\n\n");
+                }
+                text.push_str(&block.text);
+            }
+            other => attachments.push(other),
+        }
+    }
+    attachments.push(ContentBlock::Text(TextContent::new(text)));
+    attachments
+}
+
 fn error_from_value(value: &Value) -> Error {
     let code = match value["code"].as_str() {
         Some("CANCELLED") => "CANCELLED",
         Some("INVALID_ARGUMENT") => "INVALID_ARGUMENT",
         Some("AGENT_UNAVAILABLE") => "AGENT_UNAVAILABLE",
+        Some("AGENT_COMMAND_UNAVAILABLE") => "AGENT_COMMAND_UNAVAILABLE",
+        Some("AGENT_COMMANDS_UNAVAILABLE") => "AGENT_COMMANDS_UNAVAILABLE",
         _ => "AGENT_ERROR",
     };
     let mut error = Error::new(
@@ -1387,6 +1461,7 @@ mod tests {
                 id,
                 before: document.revision(),
                 content: None,
+                agent_command: None,
                 cancel: CancellationToken::new(),
                 denied: false,
             });

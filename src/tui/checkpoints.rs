@@ -131,6 +131,7 @@ pub enum Modal {
     Commands { selected: usize },
     CommandInput(Box<super::commands::Input>),
     AgentOptions(super::agent_status::Picker),
+    AgentCommands(Box<super::agent_commands::Picker>),
     Loading { message: &'static str },
     History(Page),
     Confirm(Page),
@@ -292,6 +293,13 @@ impl super::App {
                 }
             }
             Modal::AgentOptions(picker) => picker.apply(self)?,
+            Modal::AgentCommands(picker) => {
+                let result = picker.apply(self);
+                if !matches!(result, Ok(true)) {
+                    self.modal = Some(Modal::AgentCommands(picker));
+                }
+                result?;
+            }
             Modal::History(page) if !page.entries.is_empty() => {
                 self.modal = Some(Modal::Confirm(page))
             }
@@ -395,6 +403,14 @@ impl super::App {
                 }
                 picker.key(key.code);
             }
+            Modal::AgentCommands(picker) => {
+                if key.code == KeyCode::Esc {
+                    return Ok(false);
+                }
+                picker.key(key);
+                self.pointer
+                    .reattach(super::mouse::ListTarget::AgentCommands);
+            }
             Modal::Loading { .. } => {
                 if key.code == KeyCode::Esc {
                     self.saved_return = None;
@@ -491,6 +507,11 @@ impl super::App {
                 return;
             }
             Modal::AgentOptions(picker) => {
+                picker.draw(frame, popup, &mut self.pointer);
+                return;
+            }
+            Modal::AgentCommands(picker) => {
+                picker.refresh(self.conversation.available_agent_commands());
                 picker.draw(frame, popup, &mut self.pointer);
                 return;
             }

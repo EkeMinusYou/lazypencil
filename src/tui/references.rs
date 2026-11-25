@@ -154,6 +154,7 @@ impl App {
         }
         if self.editor.lines().iter().all(String::is_empty)
             && self.outbox.references.is_empty()
+            && self.outbox.draft_command.is_none()
             && self.outbox.queued.is_empty()
             && self.pending_images().is_empty()
             && self.input.is_none()
@@ -161,6 +162,7 @@ impl App {
             self.editor = editor(&prompt.text);
             self.outbox.references = prompt.references;
             self.outbox.draft = Some(prompt.text);
+            self.outbox.draft_command = prompt.agent_command;
             self.outbox.draft_images = Some(prompt.images);
         } else {
             // Keep the next draft intact. Recovery remains paused and explicit.

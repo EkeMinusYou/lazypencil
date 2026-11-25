@@ -1,5 +1,6 @@
 //! Terminal viewing and prompting, sharing the same document and ACP services as CLI.
 
+mod agent_commands;
 mod agent_status;
 mod camera;
 mod checkpoints;
@@ -348,6 +349,7 @@ impl App {
     fn apply_startup_prompt(&mut self, prompt: &str) -> Result<()> {
         if !prompt.is_empty() {
             self.editor = editor(prompt);
+            self.outbox.draft_command = None;
             self.draft_changed = true;
             self.save_draft()?;
         }
@@ -748,6 +750,16 @@ impl App {
                     && matches!(self.modal, Some(checkpoints::Modal::Commands { .. })) =>
             {
                 self.paste_command_filter(&text);
+                self.dirty = true;
+            }
+            Event::Paste(text)
+                if self.permissions.is_empty()
+                    && matches!(self.modal, Some(checkpoints::Modal::AgentCommands(_))) =>
+            {
+                if let Some(checkpoints::Modal::AgentCommands(picker)) = &mut self.modal {
+                    picker.paste(&text);
+                }
+                self.pointer.reattach(mouse::ListTarget::AgentCommands);
                 self.dirty = true;
             }
             Event::Paste(text)
@@ -1470,6 +1482,7 @@ impl App {
             return Ok(());
         }
         if self.outbox.steering.is_some()
+            && self.outbox.draft_command.is_none()
             && self.outbox.references.is_empty()
             && self.pending_images().is_empty()
         {
@@ -1479,6 +1492,7 @@ impl App {
             ));
         }
         if self.conversation.can_steer()
+            && self.outbox.draft_command.is_none()
             && self.outbox.references.is_empty()
             && self.pending_images().is_empty()
         {
@@ -1486,7 +1500,10 @@ impl App {
         }
         if self.conversation.active() || !self.outbox.queued.is_empty() {
             let text = self.editor.lines().join("\n");
-            if !text.trim().is_empty() || !self.pending_images().is_empty() {
+            if !text.trim().is_empty()
+                || !self.pending_images().is_empty()
+                || self.outbox.draft_command.is_some()
+            {
                 self.queue_prompt(text)?;
             } else if self.conversation.active() {
                 return Err(Error::new("INVALID_ARGUMENT", "Enter a follow-up prompt"));

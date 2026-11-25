@@ -193,6 +193,7 @@ mod tests {
             id: uuid::Uuid::new_v4().to_string(),
             before: conversation.store.read().unwrap().revision(),
             content: None,
+            agent_command: None,
             cancel: CancellationToken::new(),
             denied: false,
         });

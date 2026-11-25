@@ -7,8 +7,19 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub(super) struct Prompt {
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_command: Option<String>,
     pub references: Vec<crate::conversation::references::Reference>,
     pub images: Vec<Attachment>,
+}
+
+impl Prompt {
+    pub fn display_text(&self) -> std::borrow::Cow<'_, str> {
+        self.agent_command.as_deref().map_or_else(
+            || std::borrow::Cow::Borrowed(self.text.as_str()),
+            |name| crate::agent::available_commands::command_prompt(name, &self.text).into(),
+        )
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -21,6 +32,7 @@ pub(super) struct SteeringPrompt {
 #[serde(default)]
 pub(super) struct Outbox {
     pub draft: Option<String>,
+    pub draft_command: Option<String>,
     // None uses the conversation's initial inputs until its draft is captured.
     pub draft_images: Option<Vec<Attachment>>,
     pub queued: VecDeque<Prompt>,
@@ -45,6 +57,7 @@ impl Outbox {
                     // Preserve the text for review without automatically replaying it.
                     outbox.queued.push_front(Prompt {
                         text: input.text,
+                        agent_command: None,
                         references: vec![],
                         images: vec![],
                     });
@@ -90,6 +103,9 @@ impl Outbox {
 
 impl App {
     pub(super) fn queue_command(&mut self) -> Result<bool> {
+        if self.outbox.draft_command.is_some() {
+            return Ok(false);
+        }
         let line = self.editor.lines().join("\n");
         let name = line
             .split_once(char::is_whitespace)
@@ -105,10 +121,21 @@ impl App {
 
     pub(super) fn enqueue_prompt(&mut self, text: String) -> Result<()> {
         // The separate queue dialog preserves the prompt's draft attachments.
-        self.enqueue_input(text, vec![])
+        self.enqueue_input(text, vec![], None)
     }
 
-    fn enqueue_input(&mut self, text: String, images: Vec<Attachment>) -> Result<()> {
+    fn enqueue_input(
+        &mut self,
+        text: String,
+        images: Vec<Attachment>,
+        agent_command: Option<String>,
+    ) -> Result<()> {
+        if agent_command.is_some() && text.trim().is_empty() {
+            return Err(Error::new(
+                "INVALID_ARGUMENT",
+                "Enter a design request for the selected command",
+            ));
+        }
         if self.input.is_some() {
             return Err(Error::new(
                 "INVALID_ARGUMENT",
@@ -117,6 +144,7 @@ impl App {
         }
         self.outbox.push(Prompt {
             text,
+            agent_command,
             references: self.outbox.references.clone(),
             images,
         })?;
@@ -127,7 +155,12 @@ impl App {
     }
 
     pub(super) fn queue_prompt(&mut self, text: String) -> Result<()> {
-        self.enqueue_input(text, self.pending_images().to_vec())?;
+        self.enqueue_input(
+            text,
+            self.pending_images().to_vec(),
+            self.outbox.draft_command.clone(),
+        )?;
+        self.outbox.draft_command = None;
         self.outbox.draft_images = Some(vec![]);
         self.editor = editor("");
         self.save_draft()
@@ -208,6 +241,7 @@ impl App {
         } else {
             self.outbox.queued.push_front(Prompt {
                 text: input.text,
+                agent_command: None,
                 references: vec![],
                 images: vec![],
             });
@@ -230,6 +264,7 @@ impl App {
             Ok(outbox) => {
                 if let Some(draft) = &outbox.draft
                     && (outbox.in_flight.is_some()
+                        || outbox.draft_command.is_some()
                         || !draft.is_empty()
                         || self.conversation.draft().is_empty())
                 {
@@ -281,7 +316,11 @@ impl App {
             self.outbox.paused = true;
             return Err(error);
         }
-        if let Err(error) = self.conversation.start_send(selection).await {
+        if let Err(error) = self
+            .conversation
+            .start_send_with_command(selection, prompt.agent_command.clone())
+            .await
+        {
             self.outbox.paused = true;
             self.finish_prompt(true);
             self.draft_changed = true;
@@ -299,7 +338,7 @@ impl App {
         self.outbox.save(self.conversation.directory())?;
         self.append_user(&format!(
             "{}{}",
-            prompt.text,
+            prompt.display_text(),
             references::history(&prompt.references)
         ));
         if !prompt.images.is_empty() {

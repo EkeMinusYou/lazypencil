@@ -60,9 +60,11 @@ impl State {
 
 impl App {
     fn command_candidates(&mut self) -> Vec<&'static Command> {
-        let prefix = (self.focus == Focus::Prompt && !self.has_modal())
-            .then(|| query(&self.editor))
-            .flatten();
+        let prefix = (self.focus == Focus::Prompt
+            && !self.has_modal()
+            && self.outbox.draft_command.is_none())
+        .then(|| query(&self.editor))
+        .flatten();
         self.completion.sync(prefix);
         if self.completion.dismissed {
             return vec![];

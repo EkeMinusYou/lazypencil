@@ -11,6 +11,7 @@ enum Requirement {
     Idle,
     AgentModel,
     AgentSpeed,
+    PausedAgentCommand,
     Checkpoints,
     LocalRead,
     ImageInput,
@@ -58,6 +59,10 @@ commands! {
         "model", [], "", 0, 0, AgentModel;
     Speed, "Conversation", "Agent speed…", "Choose Standard, Fast or Ultrafast when offered by the connected model.",
         "speed", ["fast"], "", 0, 0, AgentSpeed;
+    AgentCommands, "Conversation", "Agent commands…", "Choose a skill or command advertised by the connected agent.",
+        "agent-commands", [], "", 0, 0, Always;
+    QueuedAgentCommand, "Send queue", "Edit queued agent command…", "Replace or remove the command on the first paused request.",
+        "queued-agent-command", [], "", 0, 0, PausedAgentCommand;
     NewConversation, "Conversation", "New empty conversation…", "Save the current draft and start an empty local conversation.",
         "new-conversation", [], "", 0, 0, Idle;
     Logs, "Conversation", "Current conversation logs…", "Read saved turns of the current conversation without sending a request.",
@@ -384,6 +389,17 @@ impl App {
             {
                 Some("This model or adapter does not offer speed selection")
             }
+            PausedAgentCommand
+                if !self.outbox.paused
+                    || self.outbox.in_flight.is_some()
+                    || !self
+                        .outbox
+                        .queued
+                        .front()
+                        .is_some_and(|prompt| prompt.agent_command.is_some()) =>
+            {
+                Some("Pause a queued request with an agent command first")
+            }
             Idle if busy || self.input.is_some() => {
                 Some("Finish or cancel the active operation before selecting a conversation")
             }
@@ -443,6 +459,22 @@ impl App {
                     selector,
                     self.agent.options(),
                 )));
+            }
+            Action::AgentCommands | Action::QueuedAgentCommand => {
+                let queued = action == Action::QueuedAgentCommand;
+                let current = if queued {
+                    self.outbox
+                        .queued
+                        .front()
+                        .and_then(|prompt| prompt.agent_command.clone())
+                } else {
+                    self.outbox.draft_command.clone()
+                };
+                let mut picker = agent_commands::Picker::new(queued, current);
+                picker.refresh(self.conversation.available_agent_commands());
+                self.connect_pending = true;
+                self.pointer.reset_modal_list();
+                self.modal = Some(checkpoints::Modal::AgentCommands(Box::new(picker)));
             }
             Action::NewConversation => self.pending_session = Some(saved::SessionChange::New),
             Action::Logs => {

@@ -79,7 +79,13 @@ fn read_turn(path: &Path, session: &str, document: &Path, turn: &str) -> Option<
     }
     let request = initial_records.find(|value| value["type"] == "user_prompt")
         .and_then(|value| value["text"].as_str().map(|text| {
-            json!({"text":text.chars().take(1024).collect::<String>(),"truncated":text.chars().count() > 1024})
+            // Codex scans prompt blocks for explicit skill mentions. History must
+            // not reactivate the selected command from an earlier turn.
+            let argument = value["agent_command"].as_str().and_then(|name| {
+                let prefix = format!("{} ", crate::agent::available_commands::invocation(name));
+                text.strip_prefix(&prefix)
+            }).unwrap_or(text);
+            json!({"text":argument.chars().take(1024).collect::<String>(),"truncated":argument.chars().count() > 1024})
         }));
     let offset = metadata.len().saturating_sub(WINDOW);
     let tail = window(&mut file, offset)?;
@@ -152,6 +158,28 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::TempDir;
+
+    #[test]
+    fn agent_command_is_descriptive_in_saved_history_but_does_not_reactivate_on_restart() {
+        let temp = TempDir::new().unwrap();
+        let document = temp.path().join("design.pen");
+        let turn = uuid::Uuid::new_v4().to_string();
+        let path = temp.path().join(format!("turn-{turn}.jsonl"));
+        let mut file = File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({"type":"start","session":"local","turn":turn,"document":document})
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({"type":"user_prompt","agent_command":"$review","text":"$review Check the layout"})
+        ).unwrap();
+        let summary = read_turn(&path, "local", &document, &turn).unwrap();
+        assert_eq!(summary["request"]["text"], "Check the layout");
+    }
 
     fn write_turn(directory: &Path, document: &Path, status: Option<&str>, long: bool) -> String {
         let id = uuid::Uuid::new_v4().to_string();

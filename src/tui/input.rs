@@ -49,7 +49,11 @@ impl App {
             || self.preview_search.editing
             || matches!(
                 self.modal,
-                Some(checkpoints::Modal::CommandInput(_) | checkpoints::Modal::Commands { .. })
+                Some(
+                    checkpoints::Modal::CommandInput(_)
+                        | checkpoints::Modal::Commands { .. }
+                        | checkpoints::Modal::AgentCommands(_)
+                )
             )
             || matches!(&self.modal, Some(checkpoints::Modal::Saved(page)) if page.editing_filter());
         let global = |navigation: &crate::config::keys::NavigationKeys, action| {
@@ -263,6 +267,7 @@ impl App {
     }
     async fn prompt_input(&mut self, key: KeyEvent, worker: &Worker) -> Result<bool> {
         if ((key.code == KeyCode::Enter && key.modifiers.is_empty()) || self.keys.submits(key))
+            && self.outbox.draft_command.is_none()
             && self.editor.lines().len() == 1
             && self.editor.lines()[0].starts_with('/')
         {

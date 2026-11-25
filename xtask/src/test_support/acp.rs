@@ -451,7 +451,21 @@ impl<'a> Peer<'a> {
                 if mode == "restore-history" {
                     result["configOptions"] = self.config();
                 }
+                if mode == "agent-commands-codex" {
+                    self.notify(json!({"sessionUpdate":"available_commands_update","availableCommands":[
+                        {"name":"$layout-review","description":"Review the layout","input":null}
+                    ]}))?;
+                }
                 self.response(&message, result)?;
+                if matches!(mode, "agent-commands-claude" | "agent-commands-queue") {
+                    self.notify(json!({"sessionUpdate":"available_commands_update","availableCommands":[
+                        {"name":"fixture:layout-review","description":"Review the layout","input":{"hint":"design question"}},
+                        {"name":"model","description":"Agent model command","input":null}
+                    ]}))?;
+                    self.send(json!({"method":"session/update","params":{"sessionId":"unrelated-session","update":{
+                        "sessionUpdate":"available_commands_update","availableCommands":[{"name":"other-command","description":"Other session"}]
+                    }}}))?;
+                }
                 if mode == "grandchild" {
                     let child = spawn(&["sleep".into()], false)?;
                     let temporary = "fixture-child.pid.tmp";
@@ -633,6 +647,16 @@ impl<'a> Peer<'a> {
                 )?;
             }
             return Ok(());
+        }
+        if mode.starts_with("agent-commands-") {
+            append_json("received-prompts.jsonl", params)?;
+            if mode == "agent-commands-queue" && self.turns == 1 {
+                self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working"}}))?;
+                self.resource_barrier("release-agent-command-turn")?;
+                self.notify(json!({"sessionUpdate":"available_commands_update","availableCommands":[
+                    {"name":"replacement","description":"New layout review"}
+                ]}))?;
+            }
         }
         if mode == "queued-followups" {
             append_json("received-prompts.jsonl", params)?;
