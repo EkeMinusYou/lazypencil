@@ -87,7 +87,7 @@ pub enum ImageProtocol {
 pub struct TuiArgs {
     #[command(flatten)]
     pub prompt: PromptArgs,
-    /// Center the initial preview on this calculated node ID at the document's fitted zoom.
+    /// Fit the initial preview to this calculated node ID.
     #[arg(long, value_name = "ID", value_parser = clap::builder::NonEmptyStringValueParser::new())]
     pub node: Option<String>,
     /// Start an empty conversation instead of restoring the previous one.

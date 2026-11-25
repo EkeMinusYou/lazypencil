@@ -13,9 +13,10 @@ lazypencil tui design.pen --node header
 lazypencil tui new.pen --create --agent codex
 ```
 
-`--node ID` centers the initial preview on an exact calculated node ID at the
-document's fitted zoom. Use `lazypencil inspect design.pen --calculated` to look
-up IDs. If the ID is missing, the preview fits the document and shows a notice.
+`--node ID` fits the initial preview to the bounds of an exact calculated node ID.
+Use `lazypencil inspect design.pen --calculated` to look up IDs. Press `0` in the
+preview to fit the full document. If the ID is missing, the preview fits the
+document and shows a notice.
 
 Running without a file opens a document picker. Type to filter, use arrows or
 `j`/`k` to select, and press Enter to open. Ctrl+L switches between filtering and

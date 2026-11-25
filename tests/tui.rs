@@ -241,7 +241,7 @@ fn real_pty_startup_focus_opens_existing_documents_at_preview_and_new_documents_
 }
 
 #[test]
-fn real_pty_startup_node_centers_the_first_preview_and_handles_missing_ids() {
+fn real_pty_startup_node_fits_the_first_preview_and_handles_missing_ids() {
     run_pty_case("startup-node");
     run_pty_case("startup-node-missing");
 }

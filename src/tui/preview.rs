@@ -538,11 +538,16 @@ fn work(
             let pixels = viewport.display;
             let mut view = request.view;
             if view.zoom.is_none() {
-                view.fit_canvas(layout.bounds, pixels, labels.top_padding());
-                if let Some(id) = shared.initial_node.lock().unwrap().as_deref()
-                    && let Some(item) = layout.items.iter().find(|item| item.record.id == id)
-                {
-                    view.center_on(item.record.visual_bounds);
+                let target = shared
+                    .initial_node
+                    .lock()
+                    .unwrap()
+                    .as_deref()
+                    .and_then(|id| layout.items.iter().find(|item| item.record.id == id));
+                if let Some(item) = target {
+                    view.fit(item.record.visual_bounds, pixels);
+                } else {
+                    view.fit_canvas(layout.bounds, pixels, labels.top_padding());
                 }
             }
             if let Some((predicted, prepared)) = speculation.take()

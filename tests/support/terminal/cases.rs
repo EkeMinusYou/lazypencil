@@ -942,7 +942,7 @@ fn startup_node(h: &mut Harness) -> Result {
         h.visible("Initial preview node not found: missing")?;
     } else {
         assert!(center_is_blue(first));
-        let zoom = mouse::zoom(h);
+        let zoom = mouse::zoom(h).unwrap();
         h.key(b"\x1b[Z")?;
         h.visible(" pan")?;
         h.key(b"0")?;
@@ -952,7 +952,9 @@ fn startup_node(h: &mut Harness) -> Result {
                 .last()
                 .is_some_and(|image| !center_is_blue(image) && image.has_color([255, 0, 0, 255]))
         })?;
-        assert_eq!(mouse::zoom(h), zoom);
+        h.wait("zoom out to fit the full document", 15.0, |h| {
+            mouse::zoom(h).is_some_and(|current| current < zoom)
+        })?;
     }
     Ok(())
 }
