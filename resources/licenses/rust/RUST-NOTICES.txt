@@ -490,7 +490,7 @@ Verbatim source attribution comments:
     /// Such information should be based on legal advice. This is distinctly separate from the copyright.
   Source: src/name_id.rs:66
 
-form_urlencoded@1.2.2
+form_urlencoded@1.2.3
 Declared license: MIT OR Apache-2.0
 Published package authors: The rust-url developers
 Verbatim source attribution comments:
@@ -2048,7 +2048,7 @@ ureq-proto@0.6.5
 Declared license: MIT OR Apache-2.0
 Published package authors: Martin Algesten <martin@algesten.se>
 
-url@2.5.8
+url@2.5.9
 Declared license: MIT OR Apache-2.0
 Published package authors: The rust-url developers
 Verbatim source attribution comments:
@@ -7013,7 +7013,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-form_urlencoded@1.2.2 :: archive :: LICENSE-MIT
+form_urlencoded@1.2.3 :: archive :: LICENSE-MIT
 SHA-256: 20c7855c364d57ea4c97889a5e8d98470a9952dade37bd9248b9a54431670e5e
 
 Copyright (c) 2013-2016 The rust-url developers
@@ -16485,7 +16485,7 @@ filetime@0.2.29 :: archive :: LICENSE-APACHE
 find-msvc-tools@0.1.15 :: archive :: LICENSE-APACHE
 fixedbitset@0.5.7 :: archive :: LICENSE-APACHE
 flate2@1.1.10 :: archive :: LICENSE-APACHE
-form_urlencoded@1.2.2 :: archive :: LICENSE-APACHE
+form_urlencoded@1.2.3 :: archive :: LICENSE-APACHE
 fs2@0.4.3 :: archive :: LICENSE-APACHE
 futures-lite@2.6.1 :: archive :: LICENSE-APACHE
 gethostname@1.1.0 :: archive :: LICENSE
@@ -16546,7 +16546,7 @@ unicode-segmentation@1.13.3 :: archive :: LICENSE-APACHE
 unicode-truncate@2.0.1 :: archive :: LICENSE-APACHE
 unicode-width@0.2.2 :: archive :: LICENSE-APACHE
 unicode-xid@0.2.6 :: archive :: LICENSE-APACHE
-url@2.5.8 :: archive :: LICENSE-APACHE
+url@2.5.9 :: archive :: LICENSE-APACHE
 uuid@1.28.0 :: archive :: LICENSE-APACHE
 wasi@0.11.1+wasi-snapshot-preview1 :: archive :: LICENSE-APACHE
 wasm-bindgen@0.2.129 :: archive :: LICENSE-APACHE
@@ -17884,7 +17884,7 @@ THIS SOFTWARE.
 ========================================================================
 idna@1.1.0 :: archive :: LICENSE-MIT
 percent-encoding@2.3.2 :: archive :: LICENSE-MIT
-url@2.5.8 :: archive :: LICENSE-MIT
+url@2.5.9 :: archive :: LICENSE-MIT
 SHA-256: b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5
 
 Copyright (c) 2013-2025 The rust-url developers

@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "1caa0e70bce2cad0b006d4be33285289c249f99e59dbed69161dcffef8ef2d25",
+  "cargo_lock_sha256": "4d975e2e1627383dfc639b662649b6c02f2a1993583e345f960b58d4ad9c6003",
   "format_version": 1,
   "license_references": [
     {
@@ -4213,7 +4213,7 @@
       "version": "0.12.7"
     },
     {
-      "archive_sha256": "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf",
+      "archive_sha256": "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e",
       "attribution_comments": [
         {
           "lines": [
@@ -4244,18 +4244,17 @@
       ],
       "license": "MIT OR Apache-2.0",
       "license_file": null,
-      "manifest_sha256": "118b1d87e862ea329b8bc84b389085a2f8e049d4c0b8b3c38ac2bffbe3501928",
+      "manifest_sha256": "47a39fced5fea0239010d6cc5e65bdd6312ef348e029be8389e4be8a14b5ce99",
       "name": "form_urlencoded",
       "repository": "https://github.com/servo/rust-url",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "dirty": true,
-          "sha1": "91377f48bf35011d042aa5abef9e7f2a0a625aaa"
+          "sha1": "ad1c66cbff6e318393d872641e30589ff9687b9c"
         },
         "path_in_vcs": "form_urlencoded"
       },
-      "version": "1.2.2"
+      "version": "1.2.3"
     },
     {
       "archive_sha256": "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213",
@@ -7029,7 +7028,7 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "de7b7697991f9a67d3f073870d9c7f1fdc8efc4d27823422b339fb944f2e0fd2",
+      "manifest_sha256": "91f1ff785b846be8ced5645e235c8830dc9312731b1e31eb44509fc881ebc2ad",
       "name": "lazypencil",
       "source": "workspace",
       "version": "0.2.13",
@@ -31920,7 +31919,7 @@
       "version": "0.6.5"
     },
     {
-      "archive_sha256": "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
+      "archive_sha256": "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a",
       "attribution_comments": [
         {
           "lines": [
@@ -32023,17 +32022,17 @@
       ],
       "license": "MIT OR Apache-2.0",
       "license_file": null,
-      "manifest_sha256": "7003e5562b5ab8454b9d78376303151af79011f5dd684c1891e0f46bc9112016",
+      "manifest_sha256": "8f084b776440d30dd3c1334d0a35126ecf2d2fa8ef18d3ac6c4318ec747adbbd",
       "name": "url",
       "repository": "https://github.com/servo/rust-url",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "vcs": {
         "git": {
-          "sha1": "d6ea13c5f8e7e6e627f6390161b3e185bda5e5ce"
+          "sha1": "ad1c66cbff6e318393d872641e30589ff9687b9c"
         },
         "path_in_vcs": "url"
       },
-      "version": "2.5.8"
+      "version": "2.5.9"
     },
     {
       "archive_sha256": "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e",
