@@ -452,9 +452,11 @@ impl<'a> Peer<'a> {
                     result["configOptions"] = self.config();
                 }
                 if mode == "agent-commands-codex" {
-                    self.notify(json!({"sessionUpdate":"available_commands_update","availableCommands":[
-                        {"name":"$layout-review","description":"Review the layout","input":null}
-                    ]}))?;
+                    self.notify(
+                        json!({"sessionUpdate":"available_commands_update","availableCommands":[
+                            {"name":"$layout-review","description":"Review the layout","input":null}
+                        ]}),
+                    )?;
                 }
                 self.response(&message, result)?;
                 if matches!(mode, "agent-commands-claude" | "agent-commands-queue") {
@@ -653,9 +655,11 @@ impl<'a> Peer<'a> {
             if mode == "agent-commands-queue" && self.turns == 1 {
                 self.notify(json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working"}}))?;
                 self.resource_barrier("release-agent-command-turn")?;
-                self.notify(json!({"sessionUpdate":"available_commands_update","availableCommands":[
-                    {"name":"replacement","description":"New layout review"}
-                ]}))?;
+                self.notify(
+                    json!({"sessionUpdate":"available_commands_update","availableCommands":[
+                        {"name":"replacement","description":"New layout review"}
+                    ]}),
+                )?;
             }
         }
         if mode == "queued-followups" {
