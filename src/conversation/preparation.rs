@@ -5,6 +5,7 @@ use crate::service::{PreparedDesignStart, prepare_design_start};
 
 pub(super) struct Preparation {
     pub selection: Option<Value>,
+    pub agent_command: Option<String>,
     pub cancel: CancellationToken,
     pub receiver: oneshot::Receiver<Result<PreparedDesignStart>>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -41,6 +42,7 @@ impl Preparation {
             .map_err(|error| Error::new("IO_ERROR", error.to_string()))?;
         Ok(Self {
             selection,
+            agent_command: None,
             cancel,
             receiver,
             thread: Some(thread),

@@ -417,7 +417,7 @@ impl App {
                                 } else {
                                     format!("[{} images] ", prompt.images.len())
                                 },
-                                prompt.text.replace('\n', " ")
+                                prompt.display_text().replace('\n', " ")
                             ),
                             Style::default().fg(theme::colors().secondary),
                         )
@@ -462,8 +462,14 @@ impl App {
             .bg(theme::colors().prompt_background);
         frame.render_widget(Block::default().style(input_style), prompt);
         self.editor.set_style(input_style);
-        self.editor
-            .set_block(prompt_block(self.focus == Focus::Prompt));
+        let mut block = prompt_block(self.focus == Focus::Prompt);
+        if let Some(name) = &self.outbox.draft_command {
+            block = block.title(Span::styled(
+                format!(" {} ", crate::agent::available_commands::invocation(name)),
+                Style::default().fg(theme::colors().preview),
+            ));
+        }
+        self.editor.set_block(block);
         let input = self.editor.block().unwrap().inner(prompt);
         let placeholder = if self.conversation.active() {
             "Add a follow-up…"

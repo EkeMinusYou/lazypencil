@@ -73,6 +73,20 @@ Queued prompts wait for the adapter to confirm the change.
 when the adapter offers them for the selected model. Ultrafast requires a Codex
 ACP adapter that advertises the `ultrafast` value in its speed options.
 
+### Use an agent skill
+
+Open **Agent commands…** from the command palette to search the commands
+advertised by the connected Codex or Claude Code session. Select a skill, add
+your design request and send it with any images or node references. The agent
+loads its own installed skill. The selection appears above the prompt and
+**Remove command** clears it in the picker.
+
+A request with a selected command waits for the next turn while the agent is
+working. If the command disappears, open **Edit queued agent command…** to
+replace or remove it on the first paused request, then use **Resume queued
+prompts**. A failed request restored to the draft can be fixed in **Agent
+commands…**.
+
 ### Refer to nodes and diagnostics
 
 Select nodes in Preview or a node in Nodes and press `a` to add them to the next

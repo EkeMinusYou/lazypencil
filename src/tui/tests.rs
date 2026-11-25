@@ -17,11 +17,17 @@ mod footer_tests;
 mod http_image_reference;
 
 fn app(temp: &TempDir, mode: &str) -> App {
+    app_with_agent(temp, mode, "codex")
+}
+
+fn app_with_agent(temp: &TempDir, mode: &str, agent: &str) -> App {
     let args = crate::cli::Arguments::try_parse_from([
         "lazypencil".into(),
         "tui".into(),
         temp.path().join("design.pen").into_os_string(),
         "--create".into(),
+        "--agent".into(),
+        agent.into(),
         "--adapter".into(),
         fixture_support::helper().into_os_string(),
         "--adapter-arg=acp".into(),
@@ -213,6 +219,7 @@ include!("tests/saved.rs");
 include!("tests/resume.rs");
 
 include!("tests/commands.rs");
+include!("tests/agent_commands.rs");
 include!("tests/slash.rs");
 
 include!("tests/permissions.rs");
