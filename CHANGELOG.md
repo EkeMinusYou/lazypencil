@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.15
+
+- Open the TUI with `--node ID` to fit the initial preview to a known node, and keep the current zoom while searching the preview.
+- Choose documents with a simpler file picker that puts search, results, and keyboard hints in one view.
+- Reduce memory pressure during large MCP calculations by reclaiming older dynamic cache entries from the current document before evicting calculations.
+- Speed up integration and release verification by running independent macOS checks in parallel and reusing native dependencies across version bumps.
+
 ## 0.2.14
 
 - Open **Agent commands…** from the TUI command palette to find and run skills advertised by Codex or Claude Code, with images and node references in the same design request.
