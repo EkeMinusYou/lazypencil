@@ -392,11 +392,11 @@ impl App {
             PausedAgentCommand
                 if !self.outbox.paused
                     || self.outbox.in_flight.is_some()
-                    || !self
+                    || self
                         .outbox
                         .queued
                         .front()
-                        .is_some_and(|prompt| prompt.agent_command.is_some()) =>
+                        .is_none_or(|prompt| prompt.agent_command.is_none()) =>
             {
                 Some("Pause a queued request with an agent command first")
             }
