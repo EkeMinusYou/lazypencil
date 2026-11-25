@@ -5,7 +5,7 @@ inputs:
     description: Same-run native tool artifact for compiled test consumers
     default: ''
   verify:
-    description: Run the tool test and lint gate for this verification job
+    description: Run tool tests and lint (true) or run them when the exact verified executable cache misses (on-cache-miss)
     default: 'false'
   retire-old-tools:
     description: Retire replaced compatible tool caches after verification with actions write permission
@@ -91,7 +91,7 @@ runs:
       shell: bash
       run: xtask/target/debug/xtask ci tools prepare
     - name: Verify Rust tools before application builds
-      if: inputs.verify == 'true'
+      if: inputs.verify == 'true' || inputs.verify == 'on-cache-miss' && steps.executables.outputs.cache-hit != 'true'
       shell: bash
       run: xtask/target/debug/xtask ci tools verify
     - name: Retire superseded compatible tool sources after verification

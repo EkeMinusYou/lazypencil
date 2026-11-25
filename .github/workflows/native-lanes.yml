@@ -55,6 +55,18 @@ jobs:
       phase: ${{ inputs.suite != 'core' && inputs.suite != 'conversation' && 'verify' || 'full' }}
       suite: ${{ inputs.suite }}
       targets: ${{ inputs.targets }}
+      separate_mac_checks: true
+      rebuild_application: ${{ inputs.rebuild_application }}
+  mac-checks:
+    if: inputs.os == 'macos-26'
+    uses: ./.github/workflows/native.yml
+    with:
+      os: ${{ inputs.os }}
+      lane: mac-checks
+      phase: full
+      suite: ${{ inputs.suite }}
+      targets: ${{ inputs.targets }}
+      verify_tools: ${{ github.ref == 'refs/heads/main' }}
       rebuild_application: ${{ inputs.rebuild_application }}
   runtime:
     if: inputs.os == 'macos-26'
@@ -87,8 +99,8 @@ jobs:
       native_tools_artifact: ${{ needs.build.outputs.native_tools_artifact }}
       binaries_artifact: ${{ needs.build.outputs.binaries_artifact }}
   tests:
-    # Release completion frees a hosted Mac slot. Its failure must not skip
-    # independent tests when the shared build succeeded.
+    # The other consumers can share the five standard Mac slots with mac-checks
+    # and release. Schedule the fourth consumer when release frees its slot.
     if: ${{ !cancelled() && inputs.os == 'macos-26' && needs.build.result == 'success' }}
     needs: [build, release]
     # Keep the quiet launch interval and Material checks on one allocation;

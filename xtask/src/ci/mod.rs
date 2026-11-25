@@ -1,4 +1,5 @@
 pub mod cache;
+mod cargo_inputs;
 pub mod commands;
 pub mod component;
 pub mod focus;
@@ -100,14 +101,41 @@ impl Command {
             } => {
                 let root = util::root();
                 let event = std::env::var("GITHUB_EVENT_NAME").unwrap_or_default();
-                let paths = verification::changed_paths(&root, &event)?;
+                let release = event == "push" && verification::pending_release(&root).unwrap_or_else(|error| {
+                    eprintln!("Could not establish the published version; requiring full verification: {error:#}");
+                    true
+                });
+                let full = full || release || !matches!(event.as_str(), "pull_request" | "push");
+                let changes = verification::changes(&root, &event, full)?;
+                let paths = changes.paths;
                 let platform = focus::retry_platform(&platform);
                 let mut plan = focus::select(&root, &paths, &platform)?;
-                let (verification, reason) =
-                    verification::select(if full { "workflow_call" } else { &event }, &paths);
-                if verification == "docs" {
-                    verification::check_documentation(&root)?;
-                }
+                let (verification, reason) = if let Some(base) = changes.base.filter(|_| !full) {
+                    let ordinary = verification::select(&event, &paths);
+                    let preparation = event == "pull_request"
+                        && ordinary.0 == "full"
+                        && verification::release_preparation(&root, &base, &paths).unwrap_or_else(
+                            |error| {
+                                eprintln!(
+                                    "Could not verify release preparation metadata: {error:#}"
+                                );
+                                false
+                            },
+                        );
+                    if ordinary.0 == "docs" || preparation {
+                        verification::check_documentation(&root, &base)?;
+                    }
+                    if preparation {
+                        (
+                            "tools",
+                            "Release metadata and notices only; the candidate is fully verified on main",
+                        )
+                    } else {
+                        ordinary
+                    }
+                } else {
+                    verification::select("workflow_call", &paths)
+                };
                 if verification == "focused" && verification::presentation_only(&paths) {
                     plan.suite = "graphics".into();
                     plan.targets = ["tui", "agent", "user_config"].map(str::to_owned).to_vec();

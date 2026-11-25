@@ -1,8 +1,11 @@
 //! Select the completion contract independently of early reproduction ordering.
-use crate::{process, util};
-use anyhow::{Result, ensure};
+use crate::{
+    dist::release::{Release, SOURCE_PATH},
+    process, util,
+};
+use anyhow::{Context, Result, ensure};
 use serde_json::Value;
-use std::{path::Path, process::Command, time::Duration};
+use std::{fs, path::Path, process::Command, time::Duration};
 
 mod outcome;
 pub use outcome::{gate, write_gate_report};
@@ -42,10 +45,10 @@ fn presentation(path: &str) -> bool {
 }
 
 pub fn select(event: &str, paths: &[String]) -> (&'static str, &'static str) {
-    if event != "pull_request" {
+    if !matches!(event, "pull_request" | "push") {
         return (
             "full",
-            "Integration, manual and reusable runs retain complete verification",
+            "Release candidates, explicit verification and unavailable baselines require the complete graph",
         );
     }
     if paths.iter().all(|p| documentation(p)) {
@@ -164,46 +167,96 @@ fn pr_base(root: &Path, event: &Value) -> Result<String> {
     .to_owned())
 }
 
-/// PRs verify against the tested merge's base; main retains the verified baseline.
-pub fn changed_paths(root: &Path, event_name: &str) -> Result<Vec<String>> {
-    if event_name != "pull_request" {
-        return super::focus::changed_paths(root);
-    }
-    let changes = (|| -> Result<String> {
-        let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
-        let base = pr_base(root, &event)?;
-        process::text(Command::new("git").current_dir(root).args([
-            "diff",
-            "--name-only",
-            "-z",
-            &base,
-            "HEAD",
-        ]))
-    })();
-    let paths = match changes {
-        Ok(paths) => paths,
-        Err(error) => {
-            eprintln!(
-                "Unable to establish the PR diff; requiring complete verification: {error:#}"
-            );
-            return Ok(vec!["Cargo.toml".into()]);
-        }
+pub(super) fn changes(root: &Path, event_name: &str, full: bool) -> Result<super::focus::Changes> {
+    let baseline = if event_name == "pull_request" {
+        (|| {
+            let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
+            pr_base(root, &event)
+        })()
+    } else {
+        super::focus::verified_base(root, full)
     };
-    Ok(paths
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(str::to_owned)
-        .collect())
+    super::focus::changes_since(root, baseline)
 }
 
-pub fn check_documentation(root: &Path) -> Result<()> {
-    let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
-    let base = pr_base(root, &event)?;
+pub(super) fn check_documentation(root: &Path, base: &str) -> Result<()> {
     process::checked(
         Command::new("git")
             .current_dir(root)
-            .args(["diff", "--check", &base, "HEAD"]),
+            .args(["diff", "--check", base, "HEAD"]),
         Duration::from_secs(30),
     )?;
     Ok(())
+}
+
+fn stable_version(version: &str) -> Result<[u32; 3]> {
+    let components = version
+        .split('.')
+        .map(str::parse)
+        .collect::<std::result::Result<Vec<u32>, _>>()?;
+    let [major, minor, patch] = components
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Expected a stable release version"))?;
+    ensure!(
+        version == format!("{major}.{minor}.{patch}"),
+        "Expected a canonical release version"
+    );
+    Ok([major, minor, patch])
+}
+
+pub(super) fn pending_release(root: &Path) -> Result<bool> {
+    let repo = std::env::var("GITHUB_REPOSITORY")?;
+    let declaration = fs::read(root.join(SOURCE_PATH))?;
+    let release: Release = serde_json::from_slice(&declaration)?;
+    let release = Release::parse(&declaration, &release.version)?;
+    ensure!(
+        release.ready_for("aarch64-apple-darwin"),
+        "Expected a stable release declaration"
+    );
+    let latest: Value = serde_json::from_str(&process::text(
+        Command::new("gh")
+            .current_dir(root)
+            .args(["api", &format!("repos/{repo}/releases/latest")]),
+    )?)?;
+    let published = latest["tag_name"]
+        .as_str()
+        .and_then(|tag| tag.strip_prefix('v'))
+        .context("Missing published version")?;
+    Ok(stable_version(&release.version)? > stable_version(published)?)
+}
+
+pub(super) fn release_preparation(root: &Path, base: &str, paths: &[String]) -> Result<bool> {
+    let required = ["Cargo.toml", "Cargo.lock", SOURCE_PATH, "CHANGELOG.md"];
+    if !required
+        .iter()
+        .all(|required| paths.iter().any(|path| path == required))
+        || paths.iter().any(|path| {
+            !required.contains(&path.as_str())
+                && !["RUST-NOTICES.txt", "index.json", "manifest.json"]
+                    .iter()
+                    .any(|name| path.strip_prefix("resources/licenses/rust/") == Some(name))
+        })
+    {
+        return Ok(false);
+    }
+    let at_base = |path| {
+        process::text(
+            Command::new("git")
+                .current_dir(root)
+                .args(["show", &format!("{base}:{path}")]),
+        )
+    };
+    let (old, before) =
+        super::cargo_inputs::dependencies(&at_base("Cargo.toml")?, &at_base("Cargo.lock")?)?;
+    let (new, after) = super::cargo_inputs::dependencies(
+        &fs::read_to_string(root.join("Cargo.toml"))?,
+        &fs::read_to_string(root.join("Cargo.lock"))?,
+    )?;
+    if before != after || stable_version(&old)? >= stable_version(&new)? {
+        return Ok(false);
+    }
+    let mut previous = Release::parse(at_base(SOURCE_PATH)?.as_bytes(), &old)?;
+    let current = Release::parse(&fs::read(root.join(SOURCE_PATH))?, &new)?;
+    previous.version = new;
+    Ok(previous == current && current.ready_for("aarch64-apple-darwin"))
 }

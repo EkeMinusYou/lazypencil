@@ -386,7 +386,7 @@ fn history_json(mut request: impl FnMut(Duration) -> Result<process::Output>) ->
     unreachable!("Each final attempt returns its result")
 }
 
-pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
+pub(super) fn verified_base(root: &Path, full: bool) -> Result<String> {
     fn api(root: &Path, endpoint: &str) -> Result<Value> {
         history_json(|timeout| {
             process::output(
@@ -397,61 +397,70 @@ pub fn changed_paths(root: &Path) -> Result<Vec<String>> {
             )
         })
     }
-    fn baseline(root: &Path) -> Result<String> {
-        let repo = std::env::var("GITHUB_REPOSITORY")?;
-        let runs = api(
+    let repo = std::env::var("GITHUB_REPOSITORY")?;
+    let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
+    let before = event["before"].as_str().unwrap_or("HEAD");
+    let check = if full {
+        "Verified source artifact"
+    } else {
+        "Verification"
+    };
+    let runs = api(
+        root,
+        &format!(
+            "repos/{repo}/actions/workflows/ci.yml/runs?status=success&event=push&branch=main&per_page=20"
+        ),
+    )?;
+    for run in runs["workflow_runs"]
+        .as_array()
+        .context("Missing workflow history")?
+    {
+        let original = run["head_sha"]
+            .as_str()
+            .context("Missing source identity")?;
+        let sha = verified_baseline(root, original, || {
+            let commit = api(root, &format!("repos/{repo}/git/commits/{original}"))?;
+            ensure!(
+                commit["sha"] == original,
+                "Verified source identity changed"
+            );
+            Ok(commit["tree"]["sha"]
+                .as_str()
+                .context("Missing verified file tree")?
+                .to_owned())
+        });
+        let Ok(sha) = sha else { continue };
+        // A newer success must not hide changes from a failed or cancelled
+        // predecessor when an older push is rerun.
+        let ancestor = process::output(
+            Command::new("git").current_dir(root).args([
+                "merge-base",
+                "--is-ancestor",
+                &sha,
+                before,
+            ]),
+            Duration::from_secs(15),
+        )?;
+        if !ancestor.status.success() || ancestor.timed_out {
+            continue;
+        }
+        let jobs = api(
             root,
             &format!(
-                "repos/{repo}/actions/workflows/ci.yml/runs?status=success&branch=main&per_page=3"
+                "repos/{repo}/actions/runs/{}/jobs?filter=latest&per_page=100",
+                run["id"]
             ),
         )?;
-        for run in runs["workflow_runs"]
+        if jobs["jobs"]
             .as_array()
-            .context("Missing workflow history")?
+            .context("Missing jobs")?
+            .iter()
+            .any(|j| j["name"] == check && j["conclusion"] == "success")
         {
-            let jobs = api(
-                root,
-                &format!("repos/{repo}/actions/runs/{}/jobs?per_page=100", run["id"]),
-            )?;
-            if jobs["jobs"]
-                .as_array()
-                .context("Missing jobs")?
-                .iter()
-                .any(|j| j["name"] == "Verified source artifact" && j["conclusion"] == "success")
-            {
-                let original = run["head_sha"]
-                    .as_str()
-                    .context("Missing source identity")?;
-                let mut sha = verified_baseline(root, original, || {
-                    let commit = api(root, &format!("repos/{repo}/git/commits/{original}"))?;
-                    ensure!(
-                        commit["sha"] == original,
-                        "Verified source identity changed"
-                    );
-                    Ok(commit["tree"]["sha"]
-                        .as_str()
-                        .context("Missing verified file tree")?
-                        .to_owned())
-                })?;
-                let event: Value = util::json(Path::new(&std::env::var("GITHUB_EVENT_PATH")?))?;
-                let base = event["pull_request"]["base"]["sha"]
-                    .as_str()
-                    .or_else(|| event["before"].as_str());
-                if let Some(base) = base.filter(|s| !s.chars().all(|c| c == '0')) {
-                    sha = process::text(Command::new("git").current_dir(root).args([
-                        "merge-base",
-                        base,
-                        &sha,
-                    ]))?
-                    .trim()
-                    .into();
-                }
-                return Ok(sha);
-            }
+            return Ok(sha);
         }
-        anyhow::bail!("No verified all-platform baseline")
     }
-    paths_since(root, baseline(root))
+    anyhow::bail!("No successful {check} baseline in the tested ancestry")
 }
 
 fn verified_baseline(
@@ -492,32 +501,44 @@ fn verified_baseline(
     Ok(matching.to_owned())
 }
 
-fn paths_since(root: &Path, baseline: Result<String>) -> Result<Vec<String>> {
+pub(super) struct Changes {
+    pub base: Option<String>,
+    pub paths: Vec<String>,
+}
+
+pub(super) fn changes_since(root: &Path, baseline: Result<String>) -> Result<Changes> {
     let changes = baseline.and_then(|base| {
-        process::text(Command::new("git").current_dir(root).args([
+        let paths = process::text(Command::new("git").current_dir(root).args([
             "diff",
             "--name-only",
             "-z",
             &base,
             "HEAD",
-        ]))
+        ]))?;
+        Ok((Some(base), paths))
     });
-    let bytes = match changes {
-        Ok(bytes) => bytes,
+    let (base, paths) = match changes {
+        Ok(changes) => changes,
         Err(error) => {
             eprintln!("Expanding focus: {error:#}");
-            process::text(
-                Command::new("git")
-                    .current_dir(root)
-                    .args(["ls-files", "-z"]),
-            )?
+            (
+                None,
+                process::text(
+                    Command::new("git")
+                        .current_dir(root)
+                        .args(["ls-files", "-z"]),
+                )?,
+            )
         }
     };
-    Ok(bytes
-        .split('\0')
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect())
+    Ok(Changes {
+        base,
+        paths: paths
+            .split('\0')
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    })
 }
 
 /// A single release target needs no parent-run API query to choose its runner.
@@ -543,6 +564,8 @@ mod history_tests {
     fn unavailable_baseline_objects_expand_to_all_tracked_files_after_a_history_rewrite() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
+        let paths_since =
+            |root, baseline| changes_since(root, baseline).map(|changes| changes.paths);
         let git = |args: &[&str]| {
             process::text(
                 Command::new("git")

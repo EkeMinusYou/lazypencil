@@ -23,12 +23,23 @@ preflight() {
 
 check_ci() {
   : "${GITHUB_REPOSITORY:?}" "${GITHUB_SHA:?}" "${GH_TOKEN:?}"
-  gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&event=push&branch=main&per_page=1" |
-    jq -e --arg revision "$GITHUB_SHA" \
-      '.workflow_runs | any(.head_sha == $revision and .head_branch == "main" and .event == "push" and .status == "completed" and .conclusion == "success")' >/dev/null || {
-    echo 'Publication requires an existing successful main CI run for this exact commit.' >&2
-    return 1
-  }
+  local runs ids id jobs
+  runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&event=push&branch=main&per_page=20")
+  ids=$(jq -r --arg revision "$GITHUB_SHA" '
+    .workflow_runs[] | select(.head_sha == $revision and .head_branch == "main"
+      and .event == "push" and .status == "completed" and .conclusion == "success")
+    | .id | select(type == "number" and . > 0 and . == floor)' <<< "$runs")
+  for id in $ids; do
+    # This job succeeds only for full verification. Keep the proof available
+    # after the downloadable source and verification report expire.
+    jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100")
+    if jq -e '.jobs | any(.name == "Verified source artifact" and .conclusion == "success")' \
+        <<< "$jobs" >/dev/null; then
+      return 0
+    fi
+  done
+  echo 'Publication requires a successful full main CI run for this exact commit.' >&2
+  return 1
 }
 
 cleanup() {

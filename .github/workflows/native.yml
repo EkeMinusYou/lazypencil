@@ -77,6 +77,9 @@ on:
       verify_tools:
         type: boolean
         default: false
+      separate_mac_checks:
+        type: boolean
+        default: false
       rebuild_application:
         type: boolean
         default: false
@@ -365,13 +368,12 @@ jobs:
         if: ${{ (inputs.lane == 'all' || inputs.lane == 'core') && (inputs.phase != 'focus') }}
         timeout-minutes: 15
         run: xtask/target/debug/xtask ci native core-lint
-      - name: Retain platform-specific core checks on the shared Mac builder
-        if: inputs.lane == 'build' && runner.os == 'macOS' && inputs.phase != 'focus'
+      - name: Run platform-specific core checks alongside the shared Mac build
+        if: inputs.lane == 'mac-checks' || inputs.lane == 'build' && runner.os == 'macOS' && inputs.phase != 'focus' && !inputs.separate_mac_checks
         timeout-minutes: 55
         run: xtask/target/debug/xtask ci native core-platform
       - name: Check all default targets independently of compiled test consumers
-        # Reuse the shared Mac dependency graph instead of another Mac host.
-        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || (inputs.lane == 'core' || inputs.lane == 'build') && runner.os == 'macOS') && (inputs.phase != 'focus') }}
+        if: ${{ (inputs.lane == 'all' || inputs.lane == 'default' || inputs.lane == 'mac-checks' || runner.os == 'macOS' && (inputs.lane == 'core' || inputs.lane == 'build' && !inputs.separate_mac_checks)) && inputs.phase != 'focus' }}
         timeout-minutes: 15
         run: xtask/target/debug/xtask ci native default-lint
       - name: Verify normal default-feature development compilation before test-profile binaries
@@ -638,7 +640,7 @@ jobs:
         id: compatible-save
         # Core --no-run success preserves compiler outputs after a later test
         # failure, under the same input verification used by default builds.
-        if: ${{ (inputs.lane != 'release') && !cancelled() && (success() || (inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && github.ref == 'refs/heads/main' }}
+        if: ${{ (inputs.lane != 'release' && inputs.lane != 'mac-checks') && !cancelled() && (success() || (inputs.lane == 'core' && steps.core-build.outcome == 'success') || steps.default-build.outputs.compiled_catalog == github.sha) && inputs.phase != 'focus' && steps.application-key.outcome == 'success' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         timeout-minutes: 3
         run: xtask/target/debug/xtask ci cache application stage --source "$RUNNER_TEMP/lazypencil-source" --target "$CARGO_TARGET_DIR" --directory "$RUNNER_TEMP/lazypencil-compatible-cache" --native-key '${{ steps.cache-key.outputs.primary }}${{ inputs.lane == 'core' && '-core' || '' }}'

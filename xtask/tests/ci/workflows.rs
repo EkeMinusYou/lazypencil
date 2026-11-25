@@ -244,6 +244,8 @@ fn portable_core_moves_to_linux_while_mac_keeps_native_contracts_and_normal_buil
     assert!(core.contains("os: ubuntu-24.04\n"));
     assert!(core.contains("phase: full\n"));
     assert!(core.contains("lane: core\n"));
+    assert!(lanes.contains("separate_mac_checks: true\n"));
+    assert!(lanes.contains("lane: mac-checks\n"));
     let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
     assert!(workflow.contains("xtask/target/debug/xtask ci linux-core-dependencies"));
     let position = |text| workflow.find(text).unwrap();

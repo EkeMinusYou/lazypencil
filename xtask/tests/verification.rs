@@ -77,7 +77,12 @@ fn pr_contracts_distinguish_prose_tools_behavior_and_shared_compiler_inputs() {
             expected,
             "{paths:?}"
         );
-        for event in ["push", "workflow_dispatch", "workflow_call", ""] {
+        assert_eq!(
+            verification::select("push", &paths).0,
+            expected,
+            "{paths:?}"
+        );
+        for event in ["workflow_dispatch", "workflow_call", ""] {
             assert_eq!(verification::select(event, &paths).0, "full");
         }
     }
@@ -441,5 +446,54 @@ fn pr_planner_uses_the_actual_base_diff_and_rejects_bad_documentation() {
         assert!(result.status.success());
         let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(output["verification"], "full");
+    }
+
+    let write_release = |version: &str, dependency: &str| {
+        fs::write(
+            root.join("Cargo.toml"),
+            format!("[package]\nname='lazypencil'\nversion='{version}'\n"),
+        )
+        .unwrap();
+        fs::write(root.join("Cargo.lock"), format!(
+            "version=4\n[[package]]\nname='lazypencil'\nversion='{version}'\n[[package]]\nname='dep'\nversion='{dependency}'\nsource='registry+https://example.invalid'\n",
+        )).unwrap();
+        fs::write(root.join("CHANGELOG.md"), format!("# {version}\n")).unwrap();
+        fs::write(
+            root.join("resources/release.json"),
+            serde_json::to_vec(&json!({"format_version":1,"version":version,"channel":"stable","target":"aarch64-apple-darwin","minimum_os":"26.0.0","limitations":[]})).unwrap(),
+        ).unwrap();
+    };
+    fs::create_dir(root.join("resources")).unwrap();
+    let release_paths = [
+        "Cargo.toml",
+        "Cargo.lock",
+        "CHANGELOG.md",
+        "resources/release.json",
+    ];
+    let commit_release = || {
+        git(&[&["add"][..], &release_paths].concat());
+        git(&["commit", "--quiet", "-m", "Release metadata"]);
+    };
+    write_release("0.0.0", "1.0.0");
+    commit_release();
+    fs::write(
+        &event,
+        serde_json::to_vec(
+            &json!({"pull_request":{"base":{"sha":git(&["rev-parse", "HEAD"]).trim()}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for (dependency, expected) in [("1.0.0", "tools"), ("1.1.0", "full")] {
+        write_release("0.0.1", dependency);
+        commit_release();
+        let result = plan();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let output: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(output["verification"], expected);
     }
 }

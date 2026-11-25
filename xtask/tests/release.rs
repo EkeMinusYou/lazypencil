@@ -72,14 +72,24 @@ fn publication_requires_a_matching_tag_supported_runner_and_complete_credentials
 }
 
 #[test]
-fn publication_reuses_only_successful_main_push_ci_for_the_exact_commit() {
+fn publication_requires_successful_full_main_push_ci_for_the_exact_commit() {
     let temp = tempfile::tempdir().unwrap();
     let bin = temp.path().join("bin");
     fs::create_dir(&bin).unwrap();
-    executable(&bin.join("gh"), "#!/bin/bash\ncat \"$TEST_CI_RUNS\"\n");
+    executable(
+        &bin.join("gh"),
+        r#"#!/bin/bash
+case "$2" in
+    repos/owner/repo/actions/workflows/ci.yml/runs\?*) cat "$TEST_CI_RUNS" ;;
+    repos/owner/repo/actions/runs/42/jobs\?filter=latest\&*) cat "$TEST_CI_JOBS" ;;
+    *) exit 1 ;;
+esac
+"#,
+    );
     let fixture = temp.path().join("runs.json");
+    let jobs = temp.path().join("jobs.json");
     let revision = "a".repeat(40);
-    let valid = json!({"head_sha":revision,"head_branch":"main","event":"push","status":"completed","conclusion":"success"});
+    let valid = json!({"id":42,"head_sha":revision,"head_branch":"main","event":"push","status":"completed","conclusion":"success"});
     let run = || {
         command("macos.sh", temp.path())
             .arg("check-ci")
@@ -90,6 +100,7 @@ fn publication_reuses_only_successful_main_push_ci_for_the_exact_commit() {
             .env("GITHUB_REPOSITORY", "owner/repo")
             .env("GITHUB_SHA", &revision)
             .env("TEST_CI_RUNS", &fixture)
+            .env("TEST_CI_JOBS", &jobs)
             .output()
             .unwrap()
     };
@@ -98,6 +109,20 @@ fn publication_reuses_only_successful_main_push_ci_for_the_exact_commit() {
         serde_json::to_vec(&json!({"workflow_runs":[valid]})).unwrap(),
     )
     .unwrap();
+    let write_jobs = |source| {
+        fs::write(
+            &jobs,
+            serde_json::to_vec(&json!({"jobs": [
+                {"name":"Verification", "conclusion":"success"},
+                {"name":"Verified source artifact", "conclusion":source},
+            ]}))
+            .unwrap(),
+        )
+        .unwrap();
+    };
+    write_jobs("skipped");
+    assert!(!run().status.success());
+    write_jobs("success");
     assert!(run().status.success());
     for (key, value) in [
         ("head_sha", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),

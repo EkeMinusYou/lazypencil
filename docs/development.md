@@ -70,13 +70,15 @@ Rust notice bundles, and reviewed Skia wrapper sources without a native build.
 In a checkout with no existing hook configuration, enable the automatic check
 for pushes to `main` with `git config --local core.hooksPath .githooks`.
 
-CI selects checks from the PR's tested changes. Main pushes, manual runs and
-reusable full-verification calls use the complete graph.
+CI selects checks from the PR's tested changes or from the last successfully
+verified ancestor of a `main` push. An unpublished release version on `main`, or
+an explicit full-verification run, uses the complete graph.
 
-| Contract | PR changes | Required work |
+| Contract | Changes | Required work |
 | --- | --- | --- |
 | docs | Repository Markdown prose and fixture README files | Plan and whitespace validation |
 | tools | Independent developer-tool inputs | Tool tests, lint and dependency policy on Linux |
+| tools | Release preparation PR with only the application version, release notes and matching notice updates | Tool tests, dependency policy and notice verification on Linux |
 | focused | Known presentation/key paths, including input, saved conversations and document UI | Library/TUI/agent/configuration/history checks on Mac |
 | focused | Portable ACP client and adapter settings | Core library, agent, history, MCP and adapter configuration checks on Linux |
 | focused | Runtime installation and downloads | Core library and runtime consumer checks on Linux |
@@ -95,10 +97,12 @@ route also publishes **Verified source artifact** after source/provenance gates.
 Use **Verification** for branch protection so intentional skips outside a selected
 contract do not block a PR.
 
-Native dependency and application caches are tied to source, build scripts, compiler,
-SDK and native inputs. Restored application outputs still pass Cargo freshness
-checks. Full verification builds the executable catalogue once and passes it to
-normal, pixel, runtime and terminal consumers.
+Native dependency and application caches are tied to their build inputs, compiler
+and SDK. A version-only bump preserves the dependency cache key. The application
+cache still binds the complete manifests, and Cargo checks restored outputs for
+freshness. Full verification builds the executable catalogue once and passes it to
+normal, pixel, runtime and terminal consumers. The macOS core checks and Clippy run
+on a separate runner in parallel with that build.
 
 ## Observe one existing CI run
 
@@ -278,9 +282,10 @@ To publish a **new** version:
    and release notes together. Regenerate `resources/licenses/rust` with the Rust
    notice collector after changing the package identity, then verify the bundle
    using the commands in [licenses](#licenses-and-third-party-inputs).
-   Merge the reviewed commit to `main` and wait for its
-   existing push CI run to succeed. The release workflow reuses that result; it does
-   not dispatch another full CI run.
+   Merge the reviewed commit to `main` and wait for its full push CI run to succeed.
+   Publication checks that this run completed the verified source job for the same
+   commit. It also reuses exact, verified macOS tool and mapped application outputs
+   when available.
 2. Create and push an immutable `vVERSION` tag at that exact commit. The version must
    match `resources/release.json`. Do not reuse an existing published tag.
 3. Run **Release build evidence** on that tag with `os=macos-26` and

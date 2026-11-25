@@ -90,7 +90,7 @@ jobs:
           reserve-source-headroom: 'true'
       # Tool tests and lint run in the independent audit job. Selection needs
       # the tool binary, but must not serialize every native job behind its gate.
-      - name: Select changes since the last fully verified baseline
+      - name: Select changes since the applicable verified baseline
         id: focus
         env:
           GH_TOKEN: ${{ github.token }}

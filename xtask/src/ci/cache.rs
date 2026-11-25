@@ -605,7 +605,28 @@ pub fn dependency_tree(root: &Path) -> Result<String> {
             && bytes.windows(12).any(|s| s == b"\tCargo.toml\n"),
         "Missing dependency manifests"
     );
-    Ok(util::digest(bytes))
+    let committed_file = |path: &str| {
+        process::text(
+            Process::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(["show", &format!("HEAD:{path}")]),
+        )
+    };
+    let (_, inputs) = super::cargo_inputs::dependencies(
+        &committed_file("Cargo.toml")?,
+        &committed_file("Cargo.lock")?,
+    )?;
+    // Only the root package version is discarded. Cargo checks all restored
+    // dependencies, and the application checkpoint still hashes both files.
+    let mut tree: Vec<u8> = bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .filter(|entry| !entry.ends_with(b"\tCargo.toml\n") && !entry.ends_with(b"\tCargo.lock\n"))
+        .flatten()
+        .copied()
+        .collect();
+    tree.extend(serde_json::to_vec(&inputs)?);
+    Ok(util::digest(tree))
 }
 
 pub fn native_identity(

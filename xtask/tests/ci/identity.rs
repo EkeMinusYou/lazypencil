@@ -350,14 +350,30 @@ fn native_dependency_tree_requires_clean_committed_inputs_and_ignores_docs() {
         );
     };
     git(&["init", "--quiet"]);
-    fs::write(root.join("Cargo.toml"), "[package]\nname='fixture'\n").unwrap();
-    fs::write(root.join("Cargo.lock"), "version=4\n").unwrap();
+    let files = |version, lock_version, registry_version| {
+        fs::write(
+            root.join("Cargo.toml"),
+            format!("[package]\nname='fixture'\nversion='{version}'\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("Cargo.lock"),
+            format!("version={lock_version}\n[[package]]\nname='fixture'\nversion='{version}'\n[[package]]\nname='deps'\nversion='{registry_version}'\nsource='registry+https://example.invalid'\n"),
+        )
+        .unwrap();
+    };
+    files("0.1.0", 4, "1.0.0");
     git(&["add", "Cargo.toml", "Cargo.lock"]);
     git(&["commit", "-m", "Create fixture"]);
     let original = cache::dependency_tree(root).unwrap();
     fs::write(root.join("README.md"), "docs").unwrap();
     assert_eq!(cache::dependency_tree(root).unwrap(), original);
-    fs::write(root.join("Cargo.lock"), "version=3\n").unwrap();
+    files("0.2.0", 4, "1.0.0");
+    assert!(cache::dependency_tree(root).is_err());
+    git(&["add", "Cargo.toml", "Cargo.lock"]);
+    git(&["commit", "-m", "Bump application version"]);
+    assert_eq!(cache::dependency_tree(root).unwrap(), original);
+    files("0.2.0", 4, "1.1.0");
     assert!(cache::dependency_tree(root).is_err());
     git(&["add", "Cargo.lock"]);
     assert!(cache::dependency_tree(root).is_err());
