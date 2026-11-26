@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "badb780ab80d3bf0b70f48ff8386cce9322528306e939208a360c115f0bf93ab",
+  "cargo_lock_sha256": "7df9e7974b73df6d3c9e7b169e1a7cbff57f94ae63bc74e261c37b6b26137f63",
   "format_version": 1,
   "license_references": [
     {
@@ -7028,10 +7028,10 @@
         }
       ],
       "license": "MIT",
-      "manifest_sha256": "e9f973960b7c4b37f970c86f5c69de5d0c054356185ddcaea3a9fb837d062a87",
+      "manifest_sha256": "495b88bf966f6446254abe83548008eb624fb5c4cd7bc4784c879320b47d0a07",
       "name": "lazypencil",
       "source": "workspace",
-      "version": "0.2.14",
+      "version": "0.2.15",
       "workspace_path": "."
     },
     {
