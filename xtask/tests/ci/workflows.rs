@@ -248,6 +248,14 @@ fn portable_core_moves_to_linux_while_mac_keeps_native_contracts_and_normal_buil
     assert!(lanes.contains("lane: mac-checks\n"));
     let workflow = fs::read_to_string(root.join(".github/workflows/native.yml")).unwrap();
     assert!(workflow.contains("xtask/target/debug/xtask ci linux-core-dependencies"));
+    let fish_setup = workflow
+        .split("- name: Install Fish for shell completion integration tests\n")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap();
+    assert!(fish_setup.contains("inputs.lane == 'mac-checks'"));
     let position = |text| workflow.find(text).unwrap();
     assert!(position("ci native core-platform\n") < position("id: default-build\n"));
     assert!(position("ci native default-lint\n") < position("id: default-build\n"));

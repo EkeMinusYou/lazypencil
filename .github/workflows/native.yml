@@ -156,7 +156,7 @@ jobs:
           verify: ${{ inputs.verify_tools || inputs.lane == 'all' || inputs.lane == 'core' && runner.os == 'macOS' && inputs.phase != 'focus' }}
           retire-old-tools: 'true'
       - name: Install Fish for shell completion integration tests
-        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.phase != 'focus' && (inputs.lane == 'core' || inputs.lane == 'all' || inputs.lane == 'build') || contains(fromJSON(inputs.targets), 'completions'))
+        if: runner.os == 'macOS' && inputs.lane != 'release' && (inputs.phase != 'focus' && (inputs.lane == 'core' || inputs.lane == 'all' || inputs.lane == 'mac-checks' || inputs.lane == 'build' && !inputs.separate_mac_checks) || contains(fromJSON(inputs.targets), 'completions'))
         timeout-minutes: 10
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
